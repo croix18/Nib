@@ -1,0 +1,9 @@
+.github-token
+node_modules/
+__pycache__/
+*.pyc
+training/scratch
+dist/artifact/
+test/shots/
+*.ckpt
+demo/node_modules

@@ -1,0 +1,323 @@
+<title>Nib</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--FONT_LINK-->
+<style>
+/*FONT_FACES*/
+/*KATEX_CSS*/
+/* A writing desk: the sheet you write on, and beside it the typeset result. */
+:root {
+  --paper: #f8f3e6;      /* cream page */
+  --sheet: #fffdf7;      /* writing surface */
+  --rule: #e7dcc2;       /* guide lines, hairlines */
+  --ink: #1b2a4a;        /* navy: text and pen */
+  --muted: #5d6678;
+  --gold: #c9a227;       /* accent */
+  --gold-ink: #8a6a10;   /* gold that reads on cream */
+  --gold-wash: #f4e7bd;
+  --coral: #d9654f;      /* alerts only */
+  --shadow: 0 1px 0 rgba(27, 42, 74, .04), 0 10px 30px -18px rgba(27, 42, 74, .35);
+  --f-display: "DM Serif Display", Georgia, "Times New Roman", serif;
+  --f-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1628; --sheet: #142038; --rule: #26334f; --ink: #f1eadb; --muted: #a7afc0;
+    --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --coral: #ef8a73;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 14px 34px -20px rgba(0, 0, 0, .8);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1628; --sheet: #142038; --rule: #26334f; --ink: #f1eadb; --muted: #a7afc0;
+  --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --coral: #ef8a73;
+  --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 14px 34px -20px rgba(0, 0, 0, .8);
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.app {
+  max-width: 1240px; margin: 0 auto; min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 28px;
+}
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+h1 { font-family: var(--f-display); font-weight: 400; font-size: 34px; line-height: 1; margin: 0; letter-spacing: .01em; }
+h1 .dot { color: var(--gold); }
+
+.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--sheet); border: 1px solid var(--rule); gap: 2px; }
+.seg button {
+  font: 500 13px/1 var(--f-body); color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 8px 14px; cursor: pointer;
+}
+.seg button[aria-checked="true"] { background: var(--ink); color: var(--sheet); }
+.seg button:focus-visible, .tool:focus-visible, .chip:focus-visible, .copy:focus-visible, summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.desk {
+  display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; align-items: start; flex: 1;
+  grid-template-areas: "sheet math" "sheet chips" "sheet src" "sheet ."; grid-template-rows: auto auto auto 1fr;
+}
+.sheet { grid-area: sheet; } #mathcard { grid-area: math; } #chipcard { grid-area: chips; } #srccard { grid-area: src; }
+@media (max-width: 860px) {
+  .desk { grid-template-columns: minmax(0, 1fr); grid-template-areas: "math" "sheet" "chips" "src"; grid-template-rows: none; gap: 14px; }
+  .math { min-height: 84px; }
+}
+@media (max-width: 480px) { #undo .t, #redo .t, #boxes .t { display: none; } #undo, #redo, #boxes { padding: 9px; } .tools { gap: 2px; } }
+
+.sheet { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
+.pad {
+  position: relative; height: min(62vh, 560px); min-height: 280px; cursor: crosshair; --nib-ink: var(--ink); --nib-box: var(--gold);
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 71px, var(--rule) 71px, var(--rule) 72px);
+  background-position: 0 30px;
+}
+@media (max-width: 860px) { .pad { height: 46vh; min-height: 240px; } }
+.badge {
+  position: absolute; left: 14px; top: 12px; font: 600 11px/1 var(--f-body); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--gold-ink); background: var(--gold-wash); padding: 6px 8px; border-radius: 6px; pointer-events: none;
+}
+.tools { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--rule); flex-wrap: wrap; }
+.tools .sp { flex: 1; }
+.tool {
+  display: inline-flex; align-items: center; gap: 7px; font: 500 13px/1 var(--f-body); color: var(--ink); background: transparent;
+  border: 1px solid transparent; border-radius: 9px; padding: 8px 10px; cursor: pointer;
+}
+.tool svg { width: 18px; height: 18px; flex: none; }
+.tool:hover:not(:disabled) { background: var(--paper); }
+.tool:disabled { opacity: .35; cursor: default; }
+.tool[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
+
+.card { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow); padding: 18px; min-width: 0; }
+.math { min-height: 118px; display: flex; flex-direction: column; justify-content: center; gap: 6px; overflow-x: auto; }
+.math .katex-display { margin: 0; }
+.math .katex { font-size: 1.85em; }
+.math .empty { color: var(--muted); font-size: 15px; }
+.math.low .katex { color: var(--ink); }
+.flag { display: none; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--coral); }
+.math.low + .flag { display: flex; }
+.flag::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--coral); }
+
+.label { font: 600 11px/1 var(--f-body); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; }
+.chip {
+  font: 15px/1 var(--f-body); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 8px;
+  min-width: 34px; height: 34px; padding: 0 9px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.chip .katex { font-size: 1.05em; }
+.chip[aria-expanded="true"] { border-color: var(--gold); background: var(--gold-wash); }
+.chip.fixed { border-color: var(--gold); }
+.alts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--rule); }
+.alts .hint { font-size: 12px; color: var(--muted); margin-right: 4px; }
+.alts .chip .p { font: 11px/1 var(--f-mono); color: var(--muted); margin-left: 7px; }
+
+.field + .field { margin-top: 14px; }
+.row { display: flex; align-items: flex-start; gap: 8px; }
+code.src {
+  flex: 1; min-width: 0; font: 13.5px/1.55 var(--f-mono); color: var(--ink); background: var(--paper); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 9px 11px; white-space: pre-wrap; word-break: break-all; min-height: 20px; user-select: all;
+}
+.copy {
+  flex: none; font: 500 12px/1 var(--f-body); color: var(--ink); background: transparent; border: 1px solid var(--rule); border-radius: 8px;
+  padding: 10px 11px; cursor: pointer; min-width: 64px;
+}
+.copy:hover { border-color: var(--gold); }
+.copy.done { color: var(--gold-ink); border-color: var(--gold); }
+
+details.dev { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; padding: 0 18px; }
+details.dev summary { cursor: pointer; padding: 14px 0; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 10px; }
+details.dev summary::-webkit-details-marker { display: none; }
+details.dev summary::before { content: "+"; font: 500 16px/1 var(--f-mono); color: var(--gold-ink); width: 14px; }
+details.dev[open] summary::before { content: "\2212"; }
+.dev .body { padding: 0 0 18px; display: grid; gap: 14px; max-width: 900px; }
+.dev p { margin: 0; color: var(--muted); max-width: 68ch; }
+.dev pre { margin: 0; overflow-x: auto; font: 13px/1.6 var(--f-mono); background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; }
+.foot { color: var(--muted); font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.dev .meta { font-size: 13px; }
+.dev .meta #timing:not(:empty)::before { content: " \00b7  "; }
+.k { font-family: var(--f-mono); font-size: .92em; }
+.link { font: inherit; color: var(--gold-ink); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .chip, .tool, .copy { transition: background .15s, border-color .15s, color .15s; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1>Nib<span class="dot">.</span></h1>
+    <div class="seg" role="radiogroup" aria-label="Symbols to recognise">
+      <button type="button" role="radio" id="set-school" data-set="school" aria-checked="true">School</button>
+      <button type="button" role="radio" id="set-all" data-set="all" aria-checked="false">Everything</button>
+      <button type="button" role="radio" id="set-numbers" data-set="numbers" aria-checked="false">Numbers</button>
+    </div>
+  </header>
+
+  <main class="desk">
+    <section class="sheet" aria-label="Writing area">
+      <div class="pad" id="pad"><span class="badge" id="badge">Sample</span></div>
+      <div class="tools">
+        <button type="button" class="tool" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span class="t">Undo</span></button>
+        <button type="button" class="tool" id="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg><span class="t">Redo</span></button>
+        <button type="button" class="tool" id="erase" aria-pressed="false" title="Erase strokes" aria-label="Erase"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg><span class="t">Erase</span></button>
+        <button type="button" class="tool" id="clear" title="Clear the sheet" aria-label="Clear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg><span class="t">Clear</span></button>
+        <span class="sp"></span>
+        <button type="button" class="tool" id="boxes" aria-pressed="false" title="Show how the ink was read" aria-label="Boxes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="3 2.5"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/></svg><span class="t">Boxes</span></button>
+      </div>
+    </section>
+
+    <div class="card" id="mathcard" aria-live="polite">
+      <div class="math" id="math"><span class="empty">Write an expression on the sheet.</span></div>
+      <div class="flag">Some symbols are uncertain. Tap one below to correct it.</div>
+    </div>
+    <div class="card" id="chipcard">
+      <p class="label">Symbols</p>
+      <div class="chips" id="chips"></div>
+      <div class="alts" id="alts" hidden></div>
+    </div>
+    <div class="card" id="srccard">
+      <div class="field">
+        <p class="label">LaTeX</p>
+        <div class="row"><code class="src" id="latex"></code><button type="button" class="copy" id="copy-latex">Copy</button></div>
+      </div>
+      <div class="field">
+        <p class="label">Plain text</p>
+        <div class="row"><code class="src" id="text"></code><button type="button" class="copy" id="copy-text">Copy</button></div>
+      </div>
+    </div>
+  </main>
+
+  <details class="dev" id="dev">
+    <summary>Use Nib in a project</summary>
+    <div class="body">
+      <p>Paste <span class="k">nib.js</span> into the page once (a script tag or inline). It needs no internet and stores nothing.</p>
+<pre>&lt;nib-pad id="answer" symbols="school" style="height:240px"&gt;&lt;/nib-pad&gt;
+&lt;script&gt;
+  answer.addEventListener('change', e =&gt; {
+    const r = e.detail;          // null when the pad is cleared
+    if (r) console.log(r.latex); // "\frac{3}{4}x+2=11"
+  });
+  // answer.undo(); answer.clear(); answer.latex; answer.strokes
+&lt;/script&gt;</pre>
+<pre>// Your own canvas or saved ink: strokes are arrays of [x, y] points
+const r = Nib.recognize(strokes, { symbols: 'numbers' });
+r.latex   // LaTeX for KaTeX/MathJax
+r.text    // "3/4x+2=11"
+r.lines   // one entry per written line
+r.symbols // each symbol: label, box, candidates</pre>
+      <p>Symbol sets: <span class="k">school</span> (default), <span class="k">all</span>, <span class="k">numbers</span>, or a list such as <span class="k">['0','1','2','x','+','=']</span>.</p>
+      <p class="meta">Nib <span class="k" id="ver"></span><span id="timing"></span></p>
+    </div>
+  </details>
+  <div class="foot" id="mem" hidden><span id="memn"></span><button type="button" class="link" id="forget">Forget them</button></div>
+</div>
+
+<!--KATEX_JS-->
+<script>/*ENGINE*/</script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const SAMPLE = /*SAMPLE*/null;
+  let current = null, openChip = -1, sample = !!SAMPLE;
+  const tex = (s, el, display) => {
+    if (window.katex) { try { katex.render(s, el, { displayMode: !!display, throwOnError: false, strict: false }); return; } catch (e) { /* fall through */ } }
+    el.textContent = s;
+  };
+  const pad = Nib.attach($('pad'), { symbols: 'school', onResult: show, onChange: tools });
+  $('ver').textContent = Nib.version;
+
+  function show(r) {
+    current = r; openChip = -1;
+    const math = $('math');
+    math.classList.toggle('low', !!(r && r.confidence < 0.55));
+    math.textContent = '';
+    if (!r || !r.lines.length) {
+      math.innerHTML = '<span class="empty">Write an expression on the sheet.</span>';
+      $('latex').textContent = ''; $('text').textContent = ''; $('chips').textContent = ''; $('alts').hidden = true; $('timing').textContent = '';
+      return;
+    }
+    for (const l of r.lines) { const d = document.createElement('div'); math.appendChild(d); tex(l.latex, d, true); }
+    $('latex').textContent = r.latex;
+    $('text').textContent = r.text;
+    $('timing').textContent = 'last read: ' + r.symbols.length + ' symbols in ' + r.ms + ' ms';
+    const chips = $('chips'); chips.textContent = '';
+    r.symbols.forEach((s, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip' + (s.fixed ? ' fixed' : '');
+      b.setAttribute('aria-expanded', 'false'); b.title = 'Change this symbol';
+      tex(s.latex, b, false);
+      b.onclick = () => toggle(i, b);
+      chips.appendChild(b);
+    });
+    $('alts').hidden = true;
+    memo();
+  }
+  function memo() {
+    const n = Nib.memory.size;
+    $('mem').hidden = !n;
+    $('memn').textContent = n === 1 ? 'Remembers 1 correction.' : 'Remembers ' + n + ' corrections.';
+  }
+  $('forget').onclick = () => { Nib.memory.clear(); memo(); pad.recognize(); };
+  function toggle(i, btn) {
+    const alts = $('alts');
+    document.querySelectorAll('#chips .chip').forEach(c => c.setAttribute('aria-expanded', 'false'));
+    if (openChip === i) { openChip = -1; alts.hidden = true; return; }
+    openChip = i; btn.setAttribute('aria-expanded', 'true');
+    const s = current.symbols[i];
+    alts.textContent = '';
+    const h = document.createElement('span'); h.className = 'hint'; h.textContent = 'Did you mean'; alts.appendChild(h);
+    s.candidates.slice(1).concat(EXTRA.filter(x => !s.candidates.some(c => c[0] === x)).map(x => [x, 0])).slice(0, 8).forEach(([lab, p]) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'chip';
+      const m = document.createElement('span'); tex(TEXOF[lab] || lab, m, false); b.appendChild(m);
+      if (p > 0.005) { const q = document.createElement('span'); q.className = 'p'; q.textContent = Math.round(p * 100) + '%'; b.appendChild(q); }
+      b.onclick = () => { pad.relabel(s, lab); };
+      alts.appendChild(b);
+    });
+    alts.hidden = false;
+  }
+  const TEXOF = { '%': '\\%', '$': '\\$' };
+  const EXTRA = ['x', '\\times', '1', '0', '-'];
+
+  function tools() {
+    $('undo').disabled = !pad.canUndo; $('redo').disabled = !pad.canRedo; $('clear').disabled = !pad.strokes.length;
+  }
+  // writing on the sample starts a fresh sheet
+  $('pad').addEventListener('pointerdown', () => {
+    if (!sample) return;
+    sample = false; $('badge').hidden = true; pad.setStrokes([]);
+  }, true);
+  $('undo').onclick = () => pad.undo();
+  $('redo').onclick = () => pad.redo();
+  $('clear').onclick = () => { pad.clear(); sample = false; $('badge').hidden = true; };
+  $('erase').onclick = e => { const on = pad.mode !== 'erase'; pad.mode = on ? 'erase' : 'draw'; e.currentTarget.setAttribute('aria-pressed', on); };
+  $('boxes').onclick = e => { const on = !pad.o.boxes; pad.setOptions({ boxes: on }); e.currentTarget.setAttribute('aria-pressed', on); };
+  document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-checked', x === b));
+    pad.setOptions({ symbols: b.dataset.set });
+  });
+  document.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+    e.preventDefault(); e.shiftKey ? pad.redo() : pad.undo();
+  });
+  function copy(id, btn) {
+    const t = $(id).textContent; if (!t) return;
+    const ok = () => { btn.textContent = 'Copied'; btn.classList.add('done'); setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1400); };
+    const sel = () => { const r = document.createRange(); r.selectNodeContents($(id)); const s = getSelection(); s.removeAllRanges(); s.addRange(r); };
+    try { navigator.clipboard.writeText(t).then(ok, sel); } catch (e) { sel(); }
+  }
+  $('copy-latex').onclick = e => copy('latex', e.currentTarget);
+  $('copy-text').onclick = e => copy('text', e.currentTarget);
+
+  // the sample: real handwriting, scaled onto the sheet
+  function loadSample() {
+    if (!SAMPLE) { $('badge').hidden = true; tools(); return; }
+    const r = $('pad').getBoundingClientRect();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const s of SAMPLE) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+    const k = Math.min((r.width - 64) / (x1 - x0), (r.height * 0.55) / (y1 - y0), 2.2);
+    const ox = 32 + Math.max(0, (r.width - 64 - (x1 - x0) * k) / 2), oy = (r.height - (y1 - y0) * k) / 2;
+    pad.setStrokes(SAMPLE.map(s => s.map(p => [ox + (p[0] - x0) * k, oy + (p[1] - y0) * k])));
+    tools();
+  }
+  requestAnimationFrame(() => requestAnimationFrame(loadSample));
+})();
+</script>

@@ -1,0 +1,3 @@
+/*! Nib __VERSION__ — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+ *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes)  — see README.md / docs/HANDOFF.md
+ *  Symbol models trained on CROHME (research data). */

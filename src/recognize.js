@@ -1,0 +1,795 @@
+// ================================================================== recognition
+const MAXK = 4, GAPMAX = 1.2;
+const RELATIONS = new Set(['=', '<', '>', '\\le', '\\ge', '\\ne', '\\rightarrow']);
+const NO_SCRIPT = new Set(['+', '-', '=', '<', '>', '\\le', '\\ge', '\\ne', '\\times', '\\div', '\\pm', '\\cdot', '(', '[', '\\{',
+  '/', ',', '.', '\\rightarrow', ':', '\\in']);
+const CIRCLES = new Set(['o', '0', 'O']);
+const DOTTED = new Set(['i', 'j', '\\div', '!', '\\ldots', ':', ';', '?']);
+const DEFAULTS = { symbols: 'school', lines: true, degrees: true, wJunk: 2.0, wClass: 1.0, wJoin: 0.2, beta: 0.5, lm: 0.35, size: 0, maxGap: 1.6, prune: 0.03, barH: 1.1, barW: 0.15, prior: 0.5, dotPen: 3, parenPen: 3, lmSeg: 0 };
+
+function normStrokes(input) {
+  const out = [], src = [];
+  (input || []).forEach((s, i) => {
+    const pts = Array.isArray(s) ? s : (s && (s.points || s.pts)) || [];
+    const q = [];
+    for (const p of pts) {
+      const x = Array.isArray(p) ? +p[0] : +p.x, y = Array.isArray(p) ? +p[1] : +p.y;
+      if (!isFinite(x) || !isFinite(y)) continue;
+      if (q.length && q[q.length - 1][0] === x && q[q.length - 1][1] === y) continue;
+      q.push([x, y]);
+    }
+    if (q.length) { out.push(q); src.push(i); }
+  });
+  return { strokes: out, src };
+}
+
+class Recognizer {
+  constructor(o) { this.cache = new Map(); this.jcache = new Map(); this.ids = new WeakMap(); this.next = 1; this.max = (o && o.cacheSize) || 6000; this.cref = 0; this.lastIds = new Set(); }
+  // The size reference the classifier sees. While the same ink keeps growing (a pad being written on) it is held
+  // steady unless the writing's scale really changes, so earlier symbols are not re-classified after every stroke.
+  classRef(ref, ids) {
+    const same = ids.some(id => this.lastIds.has(id));
+    this.lastIds = new Set(ids);
+    if (!(same && this.cref > 0 && Math.abs(Math.log(ref / this.cref)) < 0.15)) this.cref = ref;
+    return this.cref;
+  }
+  idOf(o, pts) {
+    if (o && typeof o === 'object') { let id = this.ids.get(o); if (!id) { id = 'k' + this.next++; this.ids.set(o, id); } return id; }
+    return 'p' + pts.length + ':' + pts[0] + ':' + pts[pts.length - 1];
+  }
+  probs(group, ref, key, useMemory) {
+    const k = key + '|' + Math.round(Math.log(ref) * 40);
+    let e = this.cache.get(k);
+    if (!e) {
+      this.classified = (this.classified || 0) + 1;
+      e = classifyGroup(group, ref);
+      if (this.cache.size > this.max) this.cache.clear();
+      this.cache.set(k, e);
+    }
+    if (useMemory === false) return e;
+    if (e.memv !== MEM.version) { e.mem = memApply(e); e.memv = MEM.version; }
+    return e.mem;
+  }
+  pjoin(a, b, ref, key) {
+    const k = key + '|' + Math.round(Math.log(ref) * 40);
+    let p = this.jcache.get(k);
+    if (p === undefined) {
+      p = mlp(DATA.join, joinFeatures(a, b, ref))[0];
+      if (this.jcache.size > this.max) this.jcache.clear();
+      this.jcache.set(k, p);
+    }
+    return clip(p, 1e-4, 1 - 1e-4);
+  }
+
+  recognize(input, options) {
+    const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+    const opts = Object.assign({}, DEFAULTS, options || {});
+    const { strokes, src } = normStrokes(input);
+    const ids = strokes.map((s, i) => this.idOf(input[src[i]], s));
+    const empty = { latex: '', text: '', lines: [], symbols: [], tree: [], confidence: 0 };
+    if (!strokes.length) return Object.assign(empty, { ms: 0 });
+    const ref = refSize(strokes);
+    const mask = allowedMask(opts.symbols);
+    // user corrections: [{strokes: [input indices], label}] -> contiguous internal ranges
+    const fixOf = new Int32Array(strokes.length).fill(-1), fixes = [];
+    for (const f of opts.fix || []) {
+      const ix = f.strokes.map(i => src.indexOf(i)).filter(i => i >= 0).sort((a, b) => a - b);
+      if (!ix.length || ix[ix.length - 1] - ix[0] !== ix.length - 1 || ix.some(i => fixOf[i] >= 0)) continue;
+      for (const i of ix) fixOf[i] = fixes.length;
+      fixes.push({ i: ix[0], j: ix[ix.length - 1], label: f.label });
+    }
+    this.prior = priorVector(opts);
+    const cref = this.classRef(ref, ids);
+    const syms = opts.oracle ? opts.oracle(strokes, ref) : this.segment(strokes, ids, ref, mask, opts, fixOf, fixes, cref);
+    for (const s of syms) s.strokes = s.strokes.map(i => src[i]);
+    const res = finish(syms, ref, opts);
+    res.ms = Math.round((typeof performance !== 'undefined' ? performance : Date).now() - t0);
+    return res;
+  }
+
+  // Classifies, one group per step, every stroke group the segmentation may score (newest ink first), so a
+  // caller can spread the work over several frames and keep the page responsive. recognize() then hits the cache.
+  *warmup(input, options) {
+    const opts = Object.assign({}, DEFAULTS, options || {});
+    const { strokes, src } = normStrokes(input);
+    if (!strokes.length) return;
+    const ids = strokes.map((s, i) => this.idOf(input[src[i]], s));
+    const ref = refSize(strokes), cref = this.classRef(ref, ids), n = strokes.length, boxes = strokes.map(sbox);
+    const pj = [];
+    for (let k = 0; k + 1 < n; k++) pj.push(this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1]));
+    const bucket = '|' + Math.round(Math.log(cref) * 40);
+    for (let i = n - 1; i >= 0; i--) {
+      let u = boxes[i], gmax = 0;
+      for (let j = i; j < Math.min(n, i + MAXK); j++) {
+        if (j > i) {
+          gmax = Math.max(gmax, boxGap(u, boxes[j])); if (gmax > GAPMAX * ref || pj[j - 1] < opts.prune) break;
+          u = ubox(u, boxes[j]);
+        }
+        const key = ids.slice(i, j + 1).join(',');
+        if (!this.cache.has(key + bucket)) { this.probs(strokes.slice(i, j + 1), cref, key, false); yield; }
+      }
+    }
+  }
+
+  // time-ordered dynamic programme over stroke groups of size <= MAXK
+  segment(strokes, ids, ref, mask, opts, fixOf, fixes, cref) {
+    cref = cref || ref;
+    const n = strokes.length, M = model();
+    const boxes = strokes.map(sbox);
+    const pj = [];
+    for (let k = 0; k + 1 < n; k++) pj.push(this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1]));
+    // Dynamic programme over (strokes used, label of the last symbol). With opts.lmSeg > 0 the context model
+    // scores the labels in writing order while segmenting, so "4" drawn in two strokes beats "1 +" and "="
+    // beats "- -"; opts.beta (a per-symbol cost) balances the extra factor each additional symbol brings.
+    const K = opts.lmSeg > 0 ? 4 : 1, BEAM = 8;
+    const states = Array.from({ length: n + 1 }, () => new Map());
+    states[0].set('<s>', { s: 0, pos: -1, lab: null, c: null });
+    for (let i = 0; i < n; i++) {
+      if (!states[i].size) continue;
+      if (states[i].size > BEAM) {
+        const keep = [...states[i].entries()].sort((x, y) => y[1].s - x[1].s).slice(0, BEAM);
+        states[i] = new Map(keep);
+      }
+      let u = boxes[i], gmax = 0, inner = 0;
+      for (let j = i; j < Math.min(n, i + MAXK); j++) {
+        if (j > i) {
+          gmax = Math.max(gmax, boxGap(u, boxes[j])); if (gmax > GAPMAX * ref && !(fixOf && fixOf[i] >= 0)) break;
+          if (pj[j - 1] < opts.prune && !(fixOf && fixOf[i] >= 0)) break; // the join model is sure these are two symbols
+          u = ubox(u, boxes[j]); inner += opts.wJoin * Math.log(pj[j - 1]);
+        }
+        let forced = null;
+        if (fixOf) {
+          let bad = false;
+          for (let k = i; k <= j; k++) if (fixOf[k] !== fixOf[i]) bad = true;
+          if (fixOf[i] >= 0) { const f = fixes[fixOf[i]]; if (bad || f.i !== i || f.j < j) continue; if (f.j !== j) continue; forced = f.label; }
+          else if (bad) break;
+        }
+        const group = strokes.slice(i, j + 1);
+        const p = withPrior(this.probs(group, cref, ids.slice(i, j + 1).join(','), opts.memory), this.prior);
+        let tot = 0; for (let c = 0; c < p.length; c++) if (mask[c]) tot += p[c];
+        const pjunk = p[M.junk] / tot, norm = tot * Math.max(1 - pjunk, 1e-6);
+        const list = [];
+        for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) list.push([M.cls[c], p[c] / norm]);
+        list.sort((x, y) => y[1] - x[1]);
+        let base = forced ? 0 : opts.wJunk * Math.log(Math.max(1 - pjunk, 1e-4)) - opts.beta +
+          inner + (j + 1 < n ? opts.wJoin * Math.log(1 - pj[j]) : 0);
+        if (!forced && j > i) {
+          const tl = list[0][0];
+          // a decimal point does not hide inside a digit or letter (4.7 is not 47); a stray tap at the end of a
+          // bar or other sign is part of that sign
+          if (!DOTTED.has(tl) && /^[0-9A-Za-z]$/.test(tl)) {
+            const gs = Math.max(u[2] - u[0], u[3] - u[1]);
+            // a decimal point sits on the baseline: a tiny mark in the bottom of the group, off to one side
+            for (let k = i; k <= j; k++) {
+              const b = boxes[k], d = Math.max(b[2] - b[0], b[3] - b[1]);
+              if (d < 0.12 * ref && d < 0.2 * gs && (b[1] + b[3]) / 2 > u[1] + 0.7 * (u[3] - u[1]) &&
+                ((b[0] + b[2]) / 2 > u[0] + 0.75 * (u[2] - u[0]) || (b[0] + b[2]) / 2 < u[0] + 0.25 * (u[2] - u[0]))) { base -= opts.dotPen; break; }
+            }
+          }
+          // two tall arcs back to back are brackets, not an x: (-3)(7)
+          if (j === i + 1 && (tl === 'x' || tl === 'X' || tl === '\\times') && (u[3] - u[1]) > 1.3 * localHeight(boxes, i, j, ref)) {
+            const pa = this.probs([strokes[i]], cref, ids[i], opts.memory), pb = this.probs([strokes[j]], cref, ids[j], opts.memory);
+            // ...and only when a bracket was opened before them (some writers draw every x as ")(")
+            let opened = false;
+            for (let k = Math.max(0, i - 10); k < i && !opened; k++) if (this.probs([strokes[k]], cref, ids[k], opts.memory)[M.idx['(']] > 0.5) opened = true;
+            if (opened && pa[M.idx[')']] > 0.4 && pb[M.idx['(']] > 0.4) base -= opts.parenPen;
+          }
+        }
+        const c = { p, tot, pjunk, box: u, forced, list, i };
+        const labels = forced ? [[forced, 1]] : list.slice(0, K);
+        for (const [L, q] of labels) {
+          const ls = forced ? 0 : opts.wClass * Math.log(Math.max(q, 1e-6));
+          for (const [pl, st] of states[i]) {
+            const v = st.s + base + ls + (opts.lmSeg > 0 ? opts.lmSeg * lmLogp(lmTok(pl), lmTok(L)) : 0);
+            const cur = states[j + 1].get(L);
+            if (!cur || v > cur.s) states[j + 1].set(L, { s: v, pos: i, lab: pl, c });
+          }
+        }
+      }
+    }
+    if (!states[n].size) return fixes && fixes.length ? this.segment(strokes, ids, ref, mask, opts, null, null, cref) : [];
+    let endLab = null, endS = -Infinity;
+    for (const [L, st] of states[n]) {
+      const v = st.s + (opts.lmSeg > 0 ? opts.lmSeg * lmLogp(lmTok(L), '</s>') : 0);
+      if (v > endS) { endS = v; endLab = L; }
+    }
+    const syms = [];
+    for (let j = n, L = endLab; j > 0;) {
+      const st = states[j].get(L), c = st.c, i = st.pos;
+      const strokesIdx = []; for (let k = i; k < j; k++) strokesIdx.push(k);
+      if (c.forced) syms.push({ label: c.forced, cands: [[c.forced, 1]].concat(c.list.filter(x => x[0] !== c.forced).slice(0, 5)), strokes: strokesIdx, box: c.box, pts: strokes.slice(i, j), junk: 0, fixed: true });
+      else syms.push({ label: L, cands: c.list.slice(0, 6), strokes: strokesIdx, box: c.box, pts: strokes.slice(i, j), junk: c.pjunk });
+      j = i; L = st.lab;
+    }
+    return syms.reverse();
+  }
+}
+
+// median height of the ordinary strokes written around strokes i..j (dots and long bars left out)
+function localHeight(boxes, i, j, ref) {
+  const hs = [];
+  for (let k = Math.max(0, i - 5); k < Math.min(boxes.length, j + 6); k++) {
+    if (k >= i && k <= j) continue;
+    const b = boxes[k], w = b[2] - b[0], h = b[3] - b[1];
+    if (h > 0.3 * ref && w < 3 * h) hs.push(h);
+  }
+  return hs.length >= 2 ? median(hs) : ref;
+}
+
+// prior shift: the classifier learned CROHME's symbol frequencies (university maths); a school set
+// re-weights each class by (school frequency / CROHME frequency) ^ opts.prior
+function priorVector(opts) {
+  const set = opts.symbols === undefined ? 'school' : opts.symbols;
+  if (!opts.prior || typeof set !== 'string' || !DATA.prior || !DATA.prior[set]) return null;
+  return Float64Array.from(DATA.prior[set], r => Math.pow(r, opts.prior));
+}
+function withPrior(p, f) {
+  if (!f) return p;
+  const { junk } = model();
+  let before = 0, after = 0;
+  const q = new Float64Array(p.length);
+  for (let c = 0; c < p.length; c++) { if (c === junk) { q[c] = p[c]; continue; } q[c] = p[c] * f[c]; before += p[c]; after += q[c]; }
+  const k = after > 0 ? before / after : 1;
+  for (let c = 0; c < p.length; c++) if (c !== junk) q[c] *= k;
+  q.hidden = p.hidden;
+  return q;
+}
+
+// ------------------------------------------------------------------ symbol-level fix-ups
+function mergeColons(syms, ref) {
+  // a dot: small and roughly as wide as it is tall (a short dash of a small = is not a dot)
+  const tiny = b => { const w = b[2] - b[0], h = b[3] - b[1], d = Math.max(w, h); return d < 0.25 * ref && d < 2.5 * Math.min(w, h) + 0.06 * ref; };
+  // one symbol made of two stacked dots
+  for (const s of syms) if (s.pts.length === 2 && !s.fixed) {
+    const a = sbox(s.pts[0]), b = sbox(s.pts[1]);
+    if (tiny(a) && tiny(b) && Math.abs((a[0] + a[2]) - (b[0] + b[2])) / 2 < 0.3 * ref &&
+      Math.max(a[1], b[1]) - Math.min(a[3], b[3]) > 0.05 * ref) { s.label = ':'; s.cands = [[':', 1]]; }
+  }
+  // two dot symbols stacked
+  const out = [], used = new Set();
+  for (let i = 0; i < syms.length; i++) {
+    if (used.has(i)) continue;
+    const a = syms[i];
+    if (tiny(a.box) && !a.fixed) {
+      for (let j = i + 1; j < Math.min(syms.length, i + 3); j++) {
+        const b = syms[j];
+        if (used.has(j) || !tiny(b.box) || b.fixed) continue;
+        const dx = Math.abs((a.box[0] + a.box[2]) - (b.box[0] + b.box[2])) / 2;
+        const gy = Math.max(a.box[1], b.box[1]) - Math.min(a.box[3], b.box[3]);
+        if (dx < 0.3 * ref && gy > 0.05 * ref && gy < 0.8 * ref) {
+          used.add(j);
+          out.push({ label: ':', cands: [[':', 1]], strokes: a.strokes.concat(b.strokes), box: ubox(a.box, b.box), pts: a.pts.concat(b.pts), junk: 0 });
+          a.merged = true; break;
+        }
+      }
+    }
+    if (!a.merged) out.push(a);
+  }
+  return mergeStacked(out, ref);
+}
+
+// two strokes the segmentation kept apart that are really one sign: "-" over "-" is "=", "+" over "-" is "±".
+// Not when something sits directly above or below the pair (a fraction bar has a numerator and denominator).
+function mergeStacked(syms, ref) {
+  const flat = b => (b[3] - b[1]) < 0.35 * (b[2] - b[0]) && (b[3] - b[1]) < 0.3 * ref;
+  const clearAround = (pair, top, bot) => !syms.some(o => {
+    if (pair.includes(o)) return false;
+    const b = o.box, cx = (b[0] + b[2]) / 2;
+    if (cx < Math.min(top[0], bot[0]) - 0.1 * ref || cx > Math.max(top[2], bot[2]) + 0.1 * ref) return false;
+    return (b[3] <= top[1] + 0.05 * ref && b[3] > top[1] - 0.9 * ref) || (b[1] >= bot[3] - 0.05 * ref && b[1] < bot[3] + 0.9 * ref) ||
+      (b[1] >= top[3] && b[3] <= bot[1]);
+  });
+  const out = [], used = new Set();
+  for (let i = 0; i < syms.length; i++) {
+    if (used.has(i)) continue;
+    const a = syms[i];
+    let done = false;
+    for (let j = i + 1; j < Math.min(syms.length, i + 3) && !done; j++) {
+      const b = syms[j];
+      if (used.has(j) || a.fixed || b.fixed) continue;
+      const [up, lo] = a.box[1] <= b.box[1] ? [a, b] : [b, a];
+      const U = up.box, L = lo.box, wu = U[2] - U[0], wl = L[2] - L[0];
+      const gap = L[1] - U[3], dcx = Math.abs((U[0] + U[2]) - (L[0] + L[2])) / 2;
+      let label = null;
+      if (up.label === '-' && lo.label === '-' && flat(U) && flat(L) && Math.max(wu, wl) < 1.8 * Math.min(wu, wl) &&
+        dcx < 0.35 * Math.max(wu, wl) && gap > 0.04 * ref && gap < 0.7 * ref) label = '=';
+      else if (up.label === '+' && lo.label === '-' && flat(L) && wl > 0.5 * wu && wl < 2 * wu && dcx < 0.4 * wu &&
+        gap > -0.1 * ref && gap < 0.5 * ref) label = '\\pm';
+      if (label && clearAround([a, b], U, L)) {
+        used.add(j); done = true;
+        out.push({ label, cands: [[label, 1]], strokes: a.strokes.concat(b.strokes), box: ubox(a.box, b.box), pts: a.pts.concat(b.pts), junk: 0 });
+      }
+    }
+    if (!done) out.push(a);
+  }
+  return out;
+}
+
+// absolute value: tall thin strokes read as 1 or a bracket that enclose something on the same row
+function fixBars(row, ref, opts) {
+  // CROHME statistics: a bar is near-straight (width/height ~0.05) and hangs below the line of characters
+  // (median 0.32 of their height) and rises above it (0.86); a 1 sits on the line (median -0.03 / 0.10).
+  const base = row.filter(u => u.k === 's' && /^[02-9ace-z]$/.test(u.sym.label)).map(u => u.box);
+  const h0 = base.length ? median(base.map(b => b[3] - b[1])) : 0.8 * ref;
+  const bot = base.length ? median(base.map(b => b[3])) : null;
+  const bar = u => {
+    if (u.k !== 's' || u.sym.fixed || !['1', '|', 'l', 'I', ')', '(', '/'].includes(u.sym.label)) return false;
+    const w = u.box[2] - u.box[0], h = u.box[3] - u.box[1];
+    if (w > opts.barW * h || h < opts.barH * h0) return false;
+    if (!(u.sym.cands || []).some(([l, q]) => l === '|' && q >= 0.05)) return false;   // the classifier must find a bar plausible
+    const below = bot === null ? 0 : (u.box[3] - bot) / h0;
+    return below > 0.1 || h > 1.35 * h0;
+  };
+  let changed = false;
+  const idx = row.map((u, i) => bar(u) ? i : -1).filter(i => i >= 0);
+  for (let k = 0; k + 1 < idx.length; k += 2) {
+    const a = row[idx[k]], b = row[idx[k + 1]];
+    if (idx[k + 1] - idx[k] < 2) continue;
+    if (Math.abs((a.box[3] - a.box[1]) - (b.box[3] - b.box[1])) > 0.35 * Math.max(a.box[3] - a.box[1], b.box[3] - b.box[1])) continue;
+    for (const u of [a, b]) if (u.sym.label !== '|') { u.sym.label = '|'; u.type = symType('|'); changed = true; }
+    a.sym.fixed = b.sym.fixed = true;
+  }
+  for (const u of row) for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) changed = fixBars(u[k], ref, opts) || changed;
+  return changed;
+}
+
+// ------------------------------------------------------------------ layout
+function unitOf(s) { return { k: 's', sym: s, box: s.box, type: symType(s.label) }; }
+function cxy(b) { return [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]; }
+function area(b) { return (b[2] - b[0]) * (b[3] - b[1]); }
+function isBar(u) { return u.k === 's' && u.sym.label === '-'; }
+
+function ptsOf(sym) { const out = []; for (const s of sym.pts) for (const p of s) out.push(p); return out; }
+
+function takeRoots(units, ref, opts) {
+  const used = new Set(), made = [];
+  const rads = units.filter(u => u.k === 's' && u.sym.label === '\\sqrt').sort((a, b) => area(b.box) - area(a.box));
+  for (const R of rads) {
+    if (used.has(R)) continue;
+    const b = R.box, w = b[2] - b[0], h = b[3] - b[1];
+    // the bottom of the check mark: lowest point in the left part of the radical
+    let vx = b[0] + 0.3 * Math.min(w, h), vy = -Infinity;
+    for (const p of ptsOf(R.sym)) if (p[0] < b[0] + 0.6 * w && p[1] > vy) { vy = p[1]; vx = p[0]; }
+    const body = [], idx = [];
+    for (const u of units) { // index: small, up and to the left, above the overline's start
+      if (u === R || used.has(u)) continue;
+      const bb = u.full || u.box, [cx, cy] = cxy(bb), uw = bb[2] - bb[0], uh = bb[3] - bb[1];
+      if (cx < vx + 0.2 * h && cx > b[0] - 0.3 * h && bb[2] > b[0] - 0.05 * h && cy < b[1] + 0.3 * h && bb[3] < b[1] + 0.55 * h &&
+        cy > b[1] - 0.8 * h && uh < 0.6 * h && uw < 0.6 * h + 0.2 * w && !(u.k === 's' && (u.type === T_OP || u.type === T_PAREN))) idx.push(u);
+    }
+    let xr = b[2], yr = b[3], changed = true;
+    while (changed) {
+      changed = false;
+      for (const u of units) {
+        if (u === R || used.has(u) || body.includes(u) || idx.includes(u)) continue;
+        const bb = u.full || u.box, [cx, cy] = cxy(bb), uw = bb[2] - bb[0];
+        const lab = u.k === 's' ? u.sym.label : null;
+        if (lab !== null && RELATIONS.has(lab) && bb[2] > xr - 0.1 * ref) continue;
+        if (u.type === T_SMALL && cx > xr - 0.15 * ref) continue;
+        if ((u.type === T_OP || u.type === T_PAREN && lab !== '(') && cx > xr - 0.1 * ref) continue;
+        const flat = (bb[3] - bb[1]) < 0.25 * ref;
+        if (lab === '-' && uw > 0.5 * w && cy > b[1] + 0.7 * h) continue;    // a fraction bar under the root
+        if (bb[1] > yr - 0.1 * h) continue;                                     // starts below the root
+        if (cx > vx && bb[0] < xr + 0.2 * ref && cx < xr + 0.55 * ref && cy > b[1] && cy < yr + (flat ? 0.0 : 0.2) * h && uw < 1.5 * w) {
+          body.push(u); changed = true;
+          if (u.k === 's' && u.sym.label === '\\sqrt') { xr = Math.max(xr, bb[2]); yr = Math.max(yr, bb[3]); }
+        }
+      }
+    }
+    if (!body.length) continue;
+    for (const u of body.concat(idx)) used.add(u);
+    used.add(R);
+    let box = b; for (const u of body.concat(idx)) box = ubox(box, u.full || u.box);
+    made.push({ k: 'r', rad: R.sym, body: region(body, ref, opts), idx: idx.length ? region(idx, ref, opts) : null, box, full: box, type: T_ROOT });
+  }
+  return units.filter(u => !used.has(u)).concat(made);
+}
+
+function barLine(sym) {
+  const P = ptsOf(sym); let n = P.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (const p of P) { sx += p[0]; sy += p[1]; sxx += p[0] * p[0]; sxy += p[0] * p[1]; }
+  const den = n * sxx - sx * sx; let m = den > 1e-9 ? (n * sxy - sx * sy) / den : 0;
+  m = clip(m, -0.3, 0.3);
+  const c = (sy - m * sx) / n;
+  return x => m * x + c;
+}
+
+function takeFractions(units, ref, opts) {
+  const used = new Set(), made = [];
+  const bars = units.filter(u => isBar(u)).sort((a, b) => (b.box[2] - b.box[0]) - (a.box[2] - a.box[0]));
+  for (const B of bars) {
+    if (used.has(B)) continue;
+    const b = B.box, w = b[2] - b[0], tol = 0.15 * w + 0.25 * Math.min(ref, w), yb = barLine(B.sym);
+    const inRange = u => { const bb = u.full || u.box, c = (bb[0] + bb[2]) / 2; return c >= b[0] - tol && c <= b[2] + tol && (bb[2] - bb[0]) <= 1.35 * w + 0.3 * ref; };
+    const okUnit = (u, dir, y) => {
+      const bb = u.full || u.box, cy = (bb[1] + bb[3]) / 2, lab = u.k === 's' ? u.sym.label : null;
+      const side = dir < 0 ? y - cy : cy - y;
+      if (side <= 0.12 * ref) return false;
+      const hh = Math.max(bb[3] - bb[1], 1e-9);
+      if ((dir < 0 ? (y - bb[1]) / hh : (bb[3] - y) / hh) < 0.75) return false;               // straddles the bar
+      if (lab === '-' && (side < 0.3 * ref || bb[0] < b[0] - 0.1 * ref)) return false;          // a minus beside the bar
+      if (lab !== null && RELATIONS.has(lab) && !(bb[0] > b[0] + 0.1 * w && bb[2] < b[2] - 0.1 * w)) return false;
+      if (u.type === T_OP && lab !== '-' && ((bb[0] + bb[2]) / 2 < b[0] + 0.02 * w || (bb[0] + bb[2]) / 2 > b[2] - 0.02 * w)) return false;
+      return true;
+    };
+    const grow = (dir) => {
+      const set = [];
+      // first ring: close to the bar line, clearly on one side of it
+      for (const u of units) {
+        if (u === B || used.has(u) || !inRange(u)) continue;
+        const bb = u.full || u.box, cx = (bb[0] + bb[2]) / 2, y = yb(cx);
+        const gap = dir < 0 ? y - bb[3] : bb[1] - y;
+        if (okUnit(u, dir, y) && gap <= opts.maxGap * ref) set.push(u);
+      }
+      if (!set.length) return set;
+      // stack further units above/below the ring (nested fractions, tall numerators)
+      let frontier = dir < 0 ? Math.min(...set.map(u => (u.full || u.box)[1])) : Math.max(...set.map(u => (u.full || u.box)[3]));
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const u of units) {
+          if (u === B || used.has(u) || set.includes(u) || !inRange(u)) continue;
+          const bb = u.full || u.box, cx = (bb[0] + bb[2]) / 2, y = yb(cx);
+          if (!okUnit(u, dir, y)) continue;
+          const gap = dir < 0 ? frontier - bb[3] : bb[1] - frontier;
+          if (gap <= 0.6 * ref) { set.push(u); frontier = dir < 0 ? Math.min(frontier, bb[1]) : Math.max(frontier, bb[3]); changed = true; }
+        }
+      }
+      // units running past the ends of the bar (long numerators, scripts)
+      const others = units.filter(v => v !== B && !used.has(v) && isBar(v) && (v.box[2] - v.box[0]) > 0.5 * ref);
+      const nearOther = u => { const bb = u.full || u.box, cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2;
+        return others.some(v => cx > v.box[0] - 0.3 * ref && cx < v.box[2] + 0.3 * ref && Math.abs((v.box[1] + v.box[3]) / 2 - cy) < 1.6 * ref); };
+      changed = true;
+      while (changed) {
+        changed = false;
+        const x0 = Math.min(...set.map(u => (u.full || u.box)[0])), x1 = Math.max(...set.map(u => (u.full || u.box)[2]));
+        const y0 = Math.min(...set.map(u => (u.full || u.box)[1])), y1 = Math.max(...set.map(u => (u.full || u.box)[3]));
+        for (const u of units) {
+          if (u === B || used.has(u) || set.includes(u)) continue;
+          const bb = u.full || u.box, cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2, y = yb(cx);
+          if (!okUnit(u, dir, y) || (dir < 0 ? bb[3] > y + 0.05 * ref : bb[1] < y - 0.05 * ref)) continue;
+          if (cy < y0 - 0.3 * ref || cy > y1 + 0.3 * ref || u.type === T_OP) continue;
+          if ((bb[3] - bb[1]) > 1.3 * Math.max(...set.map(v => (v.full || v.box)[3] - (v.full || v.box)[1])) + 0.1 * ref) continue;
+          const right = bb[0] < x1 + 0.4 * ref && bb[0] > x1 - 0.5 * ref && cx < b[2] + 1.5 * ref;
+          const left = bb[2] > x0 - 0.4 * ref && bb[2] < x0 + 0.5 * ref && cx > b[0] - 1.5 * ref;
+          if ((right && x1 > b[2] - 0.3 * ref || left && x0 < b[0] + 0.3 * ref) && !nearOther(u)) { set.push(u); changed = true; }
+        }
+      }
+      return set;
+    };
+    const up = grow(-1); if (!up.length) continue;
+    const dn = grow(1); if (!dn.length) continue;
+    const span = s => { let x0 = Infinity, x1 = -Infinity; for (const u of s) { const bb = u.full || u.box; x0 = Math.min(x0, bb[0]); x1 = Math.max(x1, bb[2]); } return x1 - x0; };
+    if (w < 0.45 * Math.max(span(up), span(dn))) continue;
+    const centred = st => { let x0 = Infinity, x1 = -Infinity; for (const u of st) { const bb = u.full || u.box; x0 = Math.min(x0, bb[0]); x1 = Math.max(x1, bb[2]); }
+      const ov = Math.min(x1, b[2]) - Math.max(x0, b[0]);
+      return ov >= 0.5 * Math.min(w, x1 - x0) && Math.abs((x0 + x1) / 2 - (b[0] + b[2]) / 2) < 0.35 * w + 0.3 * ref; };
+    if (!centred(up) || !centred(dn)) continue;
+    for (const u of up.concat(dn)) used.add(u);
+    used.add(B);
+    let box = b; for (const u of up.concat(dn)) box = ubox(box, u.full || u.box);
+    made.push({ k: 'f', bar: B.sym, num: region(up, ref, opts), den: region(dn, ref, opts), box, full: box, type: T_FRAC });
+  }
+  return units.filter(u => !used.has(u)).concat(made);
+}
+
+function region(units, ref, opts) {
+  let us = takeRoots(units.slice(), ref, opts);
+  us = takeFractions(us, ref, opts);
+  return baseline(us, ref);
+}
+
+function relProbs(cur, u, ref) {
+  return mlp(DATA.rel, relFeatures(cur.box, cur.type, u.full || u.box, u.type, ref, cur.k === 's' ? cur.sym.label : null, u.k === 's' ? u.sym.label : null));
+}
+function relOf(cur, u, ref) {
+  const cl = cur.k === 's' ? cur.sym.label : null, ul = u.k === 's' ? u.sym.label : null;
+  if (cl !== null && NO_SCRIPT.has(cl)) return 0;
+  if (ul !== null && RELATIONS.has(ul)) return 0;
+  const p = relProbs(cur, u, ref);
+  // an x that might be a times sign does not take a numeric subscript (4 x 4, not 4x_4)
+  if (p[2] > p[1] && cl !== null && (cl === 'x' || cl === 'X') && ul !== null && (/^[0-9]$/.test(ul) || ul === '(') &&
+    (cur.sym.cands || []).some(([l, q]) => l === '\\times' && q >= 0.08)) return 0;
+  // digit after digit: an exponent sits clearly higher (CROHME: centre at least ~0.35 of the base's height above);
+  // digit subscripts on digits do not occur in school maths
+  if (cl !== null && ul !== null && /^[0-9]$/.test(cl) && /^[0-9]$/.test(ul)) {
+    const cb = cur.box, ub = u.full || u.box, h = Math.max(cb[3] - cb[1], 0.3 * ref);
+    const dy = ((ub[1] + ub[3]) - (cb[1] + cb[3])) / 2 / h;
+    if (p[1] > SUP_MIN && p[1] >= p[2] && dy < -0.3) return 1;
+    return 0;
+  }
+  if (p[2] > SUB_MIN && p[2] > p[1]) return 2;
+  if (p[1] > SUP_MIN && p[1] >= p[2]) return 1;
+  return 0;
+}
+let SUB_MIN = 0.7, SUP_MIN = 0.5;
+const cxOf = u => { const b = u.full || u.box; return (b[0] + b[2]) / 2; };
+
+function timesLike(u) {
+  return u.k === 's' && (u.sym.label === '\\times' || ((u.sym.label === 'x' || u.sym.label === 'X') &&
+    (u.sym.cands || []).some(([l, q]) => l === '\\times' && q >= 0.02)));
+}
+
+function baseline(units, ref) {
+  if (!units.length) return [];
+  units.sort((a, b) => (cxOf(a) - cxOf(b)) || (a.box[1] - b.box[1]));
+  let cur = units[0]; cur.supU = []; cur.subU = [];
+  let last = null, lastKind = 0;
+  const row = [cur];
+  for (let i = 1; i < units.length; i++) {
+    const u = units[i];
+    let r = relOf(cur, u, ref);
+    const ul = u.k === 's' ? u.sym.label : null;
+    // a cross between two numbers is a times sign, and the number after it is not its subscript: 8 × 7
+    if (r === 2 && timesLike(cur) && ul !== null && /^[0-9]$/.test(ul) && row.length > 1) {
+      const pv = row[row.length - 2];
+      if ((pv.k === 's' && /^[0-9)]$/.test(pv.sym.label)) || pv.k === 'f' || pv.k === 'r') r = 0;
+    }
+    if (r === 0 && last && last.k === 's' && (last.sym.label === '-' || last.sym.label === '+' || last.sym.label === '\\pm') &&
+      (lastKind === 1 ? cur.supU : cur.subU).length === 1 && !(ul !== null && (RELATIONS.has(ul) || NO_SCRIPT.has(ul)))) {
+      // a script that starts with a sign continues with its number: d^{-7}
+      const lb = last.box, ub = u.full || u.box, cb = cur.box;
+      const cyu = (ub[1] + ub[3]) / 2, cyl = (lb[1] + lb[3]) / 2, cyc = (cb[1] + cb[3]) / 2;
+      if (ub[0] < lb[2] + 0.6 * ref && Math.abs(cyu - cyl) < Math.abs(cyu - cyc)) r = lastKind;
+    }
+    if (r === 0 && ul !== null && (ul === '-' || ul === '+' || ul === '\\pm') && i + 1 < units.length && !(cur.k === 's' && NO_SCRIPT.has(cur.sym.label))) {
+      // an operator leading a superscript: x^{-2}
+      const v = units[i + 1], pu = relProbs(cur, u, ref);
+      if (pu[1] > 0.25 || pu[2] > 0.25) {
+        const pv = relProbs(cur, v, ref), k = pu[1] >= pu[2] ? 1 : 2;
+        if (pv[k] > 0.6 && v.box[0] < u.box[2] + 0.6 * ref) r = k;
+      } else if (ul === '-' && v.k === 's' && /^[0-9a-z]$/.test(v.sym.label)) {
+        const pv = relProbs(cur, v, ref), cb = cur.box, vb = v.box, ub2 = u.box;
+        const cyu = (ub2[1] + ub2[3]) / 2, cyv = (vb[1] + vb[3]) / 2;
+        if (pv[1] > 0.75 && v.box[0] < u.box[2] + 0.5 * ref && cyu < cb[1] + 0.25 * (cb[3] - cb[1]) && Math.abs(cyu - cyv) < 0.35 * (vb[3] - vb[1] + 1e-9)) r = 1;
+      }
+    }
+    if (r === 0) { cur = u; cur.supU = []; cur.subU = []; row.push(u); last = null; }
+    else { (r === 1 ? cur.supU : cur.subU).push(u); last = u; lastKind = r; }
+  }
+  for (const u of row) {
+    if (u.supU.length) u.sup = baseline(u.supU, ref);
+    if (u.subU.length) u.sub = baseline(u.subU, ref);
+    delete u.supU; delete u.subU;
+  }
+  return row;
+}
+
+function splitLines(units, ref) {
+  const bands = [];
+  const sorted = units.slice().sort((a, b) => (a.full || a.box)[1] - (b.full || b.box)[1]);
+  for (const u of sorted) {
+    const b = u.full || u.box, tol = 0.2 * ref;
+    let hit = null;
+    for (const band of bands) if (b[1] < band.y1 + tol && b[3] > band.y0 - tol) { hit = band; break; }
+    if (hit) { hit.units.push(u); hit.y0 = Math.min(hit.y0, b[1]); hit.y1 = Math.max(hit.y1, b[3]); }
+    else bands.push({ y0: b[1], y1: b[3], units: [u] });
+  }
+  bands.sort((a, b) => a.y0 - b.y0);
+  let out = [];
+  for (const band of bands) {
+    const last = out[out.length - 1];
+    if (last && band.y0 < last.y1 - 0.1 * ref) { last.units.push(...band.units); last.y1 = Math.max(last.y1, band.y1); }
+    else out.push(band);
+  }
+  // a band of a few small symbols, each sitting like an exponent just above and to the right of a symbol in the
+  // line below, is that line's exponents written high (x² · y³), not a line of its own
+  const hOf = u => { const b = u.full || u.box; return b[3] - b[1]; };
+  let merged = true;
+  while (merged && out.length > 1) {
+    merged = false;
+    for (let i = 0; i + 1 < out.length; i++) {
+      const band = out[i], tgt = out[i + 1];
+      if (band.units.length > 4 || tgt.y0 - band.y1 > 0.8 * ref) continue;
+      const th = median(tgt.units.map(hOf)), top = median(tgt.units.map(t => (t.full || t.box)[1]));
+      // each unit starts just right of a symbol in the line below, or right after the previous unit of the band
+      const us = band.units.slice().sort((a, b) => (a.full || a.box)[0] - (b.full || b.box)[0]);
+      let prevX1 = null;
+      const scriptLike = us.every(u => {
+        const b = u.full || u.box;
+        if (hOf(u) > th + 0.15 * ref || b[3] > top + 0.5 * th) return false;
+        const ok = (prevX1 !== null && b[0] < prevX1 + 0.8 * ref) || tgt.units.some(t => {
+          const tb = t.full || t.box;
+          return b[0] > tb[0] + 0.3 * (tb[2] - tb[0]) && b[0] < tb[2] + 0.8 * ref && b[3] < tb[1] + 0.5 * (tb[3] - tb[1]);
+        });
+        prevX1 = Math.max(prevX1 === null ? -Infinity : prevX1, b[2]);
+        return ok;
+      });
+      if (!scriptLike) continue;
+      tgt.units.push(...band.units); tgt.y0 = Math.min(tgt.y0, band.y0); tgt.y1 = Math.max(tgt.y1, band.y1);
+      out.splice(i, 1); merged = true; break;
+    }
+  }
+  return out.map(b => b.units);
+}
+
+function layout(syms, ref, opts) {
+  let units = syms.map(unitOf);
+  units = takeRoots(units, ref, opts);
+  units = takeFractions(units, ref, opts);
+  const lines = opts.lines ? splitLines(units, ref) : [units];
+  return lines.map(l => baseline(l, ref));
+}
+
+// ------------------------------------------------------------------ post-layout fix-ups
+function fixRow(row, ref, opts) {
+  for (let i = 0; i < row.length; i++) {
+    const u = row[i];
+    // 8 x 7 between numbers is multiplication (a variable would not sit between two numbers in school maths)
+    if (u.k === 's' && (u.sym.label === 'x' || u.sym.label === 'X') && !u.sym.fixed && !u.sup && !u.sub && i > 0 && i + 1 < row.length) {
+      const a = row[i - 1], b = row[i + 1];
+      const numL = (a.k === 's' && /^[0-9)]$/.test(a.sym.label) && !a.sup) || a.k === 'f';
+      const numR = (b.k === 's' && /^[0-9]$/.test(b.sym.label)) || b.k === 'f';
+      if (numL && numR && (u.sym.cands || []).some(([l, q]) => l === '\\times' && q >= 0.02)) { u.sym.label = '\\times'; u.type = symType('\\times'); }
+    }
+    if (u.k === 's' && (u.sym.label === '.' || u.sym.label === '\\cdot')) {
+      // decimal point sits on the baseline; a centred dot is multiplication
+      const nb = [row[i - 1], row[i + 1]].filter(v => v && v.k === 's' && (v.type === T_ASC || v.type === T_XH));
+      if (nb.length) {
+        let lift = 0;
+        for (const v of nb) { const vb = v.box; lift += (vb[3] - (u.box[1] + u.box[3]) / 2) / Math.max(vb[3] - vb[1], 0.3 * ref); }
+        lift /= nb.length;
+        u.sym.label = lift > 0.3 ? '\\cdot' : '.';
+      }
+    }
+    if (opts.degrees && u.sup && u.sup.length === 1 && u.sup[0].k === 's' && CIRCLES.has(u.sup[0].sym.label) && !u.sup[0].sup && !u.sup[0].sub) {
+      const c = u.sup[0], cb = c.box, ub = u.box, h = cb[3] - cb[1], w = cb[2] - cb[0];
+      const baseOk = u.k === 's' && (/^[0-9]$/.test(u.sym.label) || u.sym.label === ')');
+      if (baseOk && h < 0.55 * (ub[3] - ub[1]) && w / Math.max(h, 1e-9) > 0.6) c.sym.label = '\\circ';
+    }
+    for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) fixRow(u[k], ref, opts);
+  }
+}
+
+// ------------------------------------------------------------------ bigram context model
+let LMD = null;
+function lmData() {
+  if (LMD) return LMD;
+  const d = DATA.lm, V = d.vocab.length, ix = Object.fromEntries(d.vocab.map((v, i) => [v, i]));
+  const uni = d.uni, N = uni.reduce((a, b) => a + b, 0);
+  const puni = uni.map(c => (c + 0.5) / (N + 0.5 * V));
+  const big = new Map(), cnt = new Float64Array(V), types = new Float64Array(V);
+  for (const [a, b, c] of d.bi) { big.set(a * V + b, c); cnt[a] += c; types[a] += 1; }
+  LMD = { V, ix, puni, big, cnt, types };
+  return LMD;
+}
+function lmLogp(a, b) {
+  const L = lmData();
+  const ia = L.ix[a] !== undefined ? L.ix[a] : L.ix['<unk>'], ib = L.ix[b] !== undefined ? L.ix[b] : L.ix['<unk>'];
+  const c = L.cnt[ia], lam = c > 0 ? c / (c + L.types[ia]) : 0;
+  const ml = c > 0 ? (L.big.get(ia * L.V + ib) || 0) / c : 0;
+  return Math.log(lam * ml + (1 - lam) * L.puni[ib]);
+}
+function tokOf(u) { return u.k === 's' ? u.sym.label : u.k === 'f' ? 'FRAC' : 'ROOT'; }
+function lmTok(l) { return l === '\\sqrt' ? 'ROOT' : l; }
+
+// how well a symbol's height fits a class, against the digits and capitals on the same row
+const SIZE_MU = { [T_ASC]: 1.0, [T_XH]: 0.62 };
+function sizeFit(row, u, label, g) {
+  if (!g) return 0;
+  const t = symType(label); if (!(t in SIZE_MU)) return 0;
+  const hs = [];
+  for (const v of row) if (v !== u && v.k === 's' && /^[0-9A-Z]$/.test(v.sym.label)) hs.push(v.box[3] - v.box[1]);
+  if (!hs.length) return 0;
+  const r = (u.box[3] - u.box[1]) / median(hs), d = r - SIZE_MU[t];
+  return -g * d * d / (2 * 0.18 * 0.18);
+}
+
+function rescore(row, start, w, g) {
+  if (!row.length) return;
+  const opts = row.map(u => (u.k === 's' && u.sym.cands && u.sym.cands.length > 1 && !u.sym.fixed)
+    ? u.sym.cands.slice(0, 5).map(([l, p]) => [l, Math.log(Math.max(p, 1e-6)) + sizeFit(row, u, l, g)]) : [[tokOf(u), 0]]);
+  // Viterbi
+  let prev = opts[0].map(([l, s]) => ({ l, s: s + w * lmLogp(start, l), b: -1 }));
+  const hist = [prev];
+  for (let i = 1; i < opts.length; i++) {
+    const cur = opts[i].map(([l, s]) => {
+      let bs = -Infinity, bi = 0;
+      prev.forEach((p, k) => { const v = p.s + w * lmLogp(p.l, l); if (v > bs) { bs = v; bi = k; } });
+      return { l, s: bs + s, b: bi };
+    });
+    hist.push(cur); prev = cur;
+  }
+  let bi = 0, bs = -Infinity;
+  prev.forEach((p, k) => { const v = p.s + w * lmLogp(p.l, '</s>'); if (v > bs) { bs = v; bi = k; } });
+  for (let i = opts.length - 1; i >= 0; i--) {
+    const node = hist[i][bi];
+    const u = row[i];
+    if (u.k === 's' && opts[i].length > 1 && node.l !== u.sym.label) { u.sym.label = node.l; u.type = symType(node.l); }
+    bi = node.b;
+  }
+  for (const u of row) {
+    if (u.sup) rescore(u.sup, '<sup>', w, g);
+    if (u.sub) rescore(u.sub, '<sub>', w, g);
+    if (u.num) rescore(u.num, '<num>', w, g);
+    if (u.den) rescore(u.den, '<den>', w, g);
+    if (u.body) rescore(u.body, '<body>', w, g);
+    if (u.idx) rescore(u.idx, '<idx>', w, g);
+  }
+}
+
+// ------------------------------------------------------------------ output
+const TEX = { '%': '\\%', '$': '\\$', '\\circ': '\\circ', '\\prime': '\\prime' };
+const PLAIN = { '\\times': '*', '\\div': '/', '\\cdot': '*', '\\pi': 'pi', '\\le': '<=', '\\ge': '>=', '\\ne': '!=', '\\pm': '+-',
+  '\\theta': 'theta', '\\alpha': 'alpha', '\\beta': 'beta', '\\Delta': 'Delta', '\\circ': 'deg', '\\prime': "'", '\\infty': 'inf',
+  '\\rightarrow': '->', '\\ldots': '...', '\\{': '{', '\\}': '}', '\\sqrt': 'sqrt', '\\gamma': 'gamma', '\\lambda': 'lambda',
+  '\\mu': 'mu', '\\sigma': 'sigma', '\\phi': 'phi', '\\sum': 'sum', '\\int': 'int', '\\lim': 'lim', '\\log': 'log', '\\sin': 'sin',
+  '\\cos': 'cos', '\\tan': 'tan', '\\in': ' in ', '\\exists': 'exists', '\\forall': 'forall' };
+
+function rowTokens(row) {
+  const out = [];
+  for (const u of row) {
+    if (u.k === 's') out.push(u.sym.label);
+    else if (u.k === 'f') out.push('\\frac', '{', ...rowTokens(u.num), '}', '{', ...rowTokens(u.den), '}');
+    else { out.push('\\sqrt'); if (u.idx) out.push('[', ...rowTokens(u.idx), ']'); out.push('{', ...rowTokens(u.body), '}'); }
+    if (u.sub) out.push('_', '{', ...rowTokens(u.sub), '}');
+    if (u.sup) out.push('^', '{', ...rowTokens(u.sup), '}');
+  }
+  return out;
+}
+function joinTex(tokens) {
+  let s = '';
+  for (const t0 of tokens) {
+    const t = TEX[t0] || t0;
+    if (/\\[A-Za-z]+$/.test(s) && /^[A-Za-z0-9]/.test(t)) s += ' ';
+    s += t;
+  }
+  return s;
+}
+function plain(row) {
+  let s = '';
+  const wrap = (r) => { const t = plain(r); return /^[A-Za-z0-9.]+$/.test(t) || /^\(.*\)$/.test(t) && balanced(t.slice(1, -1)) ? t : '(' + t + ')'; };
+  row.forEach((u, i) => {
+    let t;
+    const nx = row[i + 1];
+    if (u.k === 's') t = PLAIN[u.sym.label] || u.sym.label;
+    else if (u.k === 'f') {
+      t = wrap(u.num) + '/' + wrap(u.den);
+      // (3/4)x, not 3/4x
+      if (nx && (nx.k !== 's' || /^[A-Za-z(]$|^\\(pi|theta|alpha|beta|sqrt)$/.test(nx.sym.label)) || u.sup) t = '(' + t + ')';
+    }
+    else t = (u.idx ? 'root(' + plain(u.idx) + ', ' + plain(u.body) + ')' : 'sqrt(' + plain(u.body) + ')');
+    if (u.k === 'f' && /[0-9.]$/.test(s)) s += ' ';
+    s += t;
+    if (u.sub) s += '_' + wrap(u.sub);
+    if (u.sup) s += (u.sup.length === 1 && u.sup[0].k === 's' && u.sup[0].sym.label === '\\circ') ? '°' : '^' + wrap(u.sup);
+  });
+  return s;
+}
+function balanced(t) { let d = 0; for (const c of t) { if (c === '(') d++; else if (c === ')') { d--; if (d < 0) return false; } } return d === 0; }
+
+function strip(row) {
+  return row.map(u => {
+    const o = u.k === 's' ? { k: 's', label: u.sym.label, strokes: u.sym.strokes } : u.k === 'f'
+      ? { k: 'frac', strokes: u.bar.strokes, num: strip(u.num), den: strip(u.den) }
+      : { k: 'root', strokes: u.rad.strokes, body: strip(u.body), idx: u.idx ? strip(u.idx) : undefined };
+    if (u.sup) o.sup = strip(u.sup); if (u.sub) o.sub = strip(u.sub);
+    return o;
+  });
+}
+
+function finish(syms, ref, opts) {
+  syms = mergeColons(syms, ref);
+  let lines = layout(syms, ref, opts);
+  let barsChanged = false;
+  for (const row of lines) barsChanged = fixBars(row, ref, opts) || barsChanged;
+  if (barsChanged) lines = layout(syms, ref, opts);
+  if (opts.lm > 0 && DATA.lm) {
+    const before = syms.map(s => s.label).join('\u0001');
+    for (const row of lines) rescore(row, '<s>', opts.lm, opts.size);
+    // the context model changed a symbol (x -> \times, 2 -> z): lay out again with the new labels
+    if (syms.map(s => s.label).join('\u0001') !== before) lines = layout(syms, ref, opts);
+  }
+  for (const row of lines) fixRow(row, ref, opts);
+  const lineOut = lines.map(row => { const tokens = rowTokens(row); return { latex: joinTex(tokens), text: plain(row), tokens }; });
+  let conf = 1;
+  for (const s of syms) conf *= (s.cands && s.cands[0] ? s.cands[0][1] : 1) * (1 - (s.junk || 0));
+  return {
+    latex: lineOut.length > 1 ? '\\begin{gathered}' + lineOut.map(l => l.latex).join(' \\\\ ') + '\\end{gathered}' : (lineOut[0] ? lineOut[0].latex : ''),
+    text: lineOut.map(l => l.text).join('\n'),
+    lines: lineOut,
+    tree: lines.map(strip),
+    symbols: syms.map(s => ({ label: s.label, latex: TEX[s.label] || s.label, strokes: s.strokes, box: { x: s.box[0], y: s.box[1], w: s.box[2] - s.box[0], h: s.box[3] - s.box[1] }, candidates: (s.cands || []).slice(0, 6), fixed: !!s.fixed })),
+    confidence: Math.pow(conf, 1 / Math.max(1, syms.length)),
+  };
+}
