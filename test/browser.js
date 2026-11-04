@@ -57,6 +57,26 @@ const D = (process.env.NIB_DATA || require('path').join(__dirname, '..', 'traini
   const chip = await page.$('#chips .chip');
   if (chip) { await chip.click(); await new Promise(r => setTimeout(r, 200)); }
   const alts = await page.$$eval('#alts .chip', a => a.length);
+  // the views: typeset in place, my hand without a hand saved (explained), back to ink — the reading never changes
+  await page.click('#boxes');                                   // boxes off again, so the canvas shows only the view
+  const views = {};
+  for (const v of ['ink', 'typeset', 'tidy', 'hand', 'ink']) {
+    await page.click(`#views button[data-view="${v}"]`);
+    await new Promise(r => setTimeout(r, 900));
+    views[v + (views[v] ? '2' : '')] = await page.evaluate(() => ({
+      latex: document.querySelector('#latex').textContent,
+      img: document.querySelector('#pad canvas').toDataURL(),
+      note: document.getElementById('handnote').hidden ? '' : document.getElementById('handnote').textContent,
+      file: !document.getElementById('handfile').hidden,
+    }));
+    if (v === 'typeset') await page.screenshot({ path: out + '/desktop-typeset.png' });
+  }
+  const viewFails = [];
+  if (Object.values(views).some(x => x.latex !== drawn)) viewFails.push('a view changed the reading');
+  if (views.typeset.img === views.ink.img || views.tidy.img === views.ink.img) viewFails.push('a view did not change what is drawn');
+  if (views.ink2.img !== views.ink.img) viewFails.push('back to ink does not show the ink as written');
+  if (!/Replicator/.test(views.hand.note) || !views.hand.file) viewFails.push('My hand without a hand does not explain itself');
+  if (views.ink2.note || views.ink2.file) viewFails.push('the hand note stays after leaving My hand');
   await page.close();
 
   // 3. phone, light and dark
@@ -77,5 +97,7 @@ const D = (process.env.NIB_DATA || require('path').join(__dirname, '..', 'traini
   console.log(`result ${readMs} ms after the last pen-up (includes the 450 ms rest delay)`);
   console.log('drew', expr.id, 'truth', expr.truth);
   console.log('recognised   :', drawn, '|', timing, '| alternatives shown:', alts);
+  console.log('views        :', viewFails.length ? 'FAIL ' + viewFails.join('; ') : 'ink, typeset, tidy, my hand (explained) and back: ok');
   console.log('errors:', errors.length ? errors : 'none');
+  process.exit(errors.length || viewFails.length ? 1 : 0);
 })();

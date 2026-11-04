@@ -122,6 +122,21 @@ ok(differ === 0, 'two fresh recognizers agree');
 const inc = new Nib.Recognizer(), r5 = sample[5];
 let last = null; for (let k = 1; k <= r5.strokes.length; k++) last = inc.recognize(r5.strokes.slice(0, k));
 ok(last.latex === new Nib.Recognizer().recognize(r5.strokes).latex, 'stroke-by-stroke reading ends where a single read does');
+// the time-sliced warm-up leaves the final pass nothing to classify (a page never freezes on it), and changes nothing:
+// plain, with a stroke added to an earlier symbol at the very end, and with a correction
+let warmLeft = 0, warmDiff = 0;
+sample.slice(0, 24).forEach((r, k) => {
+  let st = r.strokes.slice(), fix;
+  if (k % 3 === 1 && st.length > 3) { const [s] = st.splice(k % (st.length - 1), 1); st.push(s); }
+  if (k % 3 === 2 && st.length > 2) fix = [{ strokes: [1], label: '7' }];
+  const A = new Nib.Recognizer(), it = A.warmup(st, { fix });
+  while (!it.next().done) { /* step */ }
+  const before = A.classified || 0, ra = A.recognize(st, { fix });
+  if ((A.classified || 0) !== before) warmLeft++;
+  if (ra.latex !== new Nib.Recognizer().recognize(st, { fix }).latex) warmDiff++;
+});
+ok(warmLeft === 0, `after a warm-up the final read classifies nothing new (${warmLeft} of 24 did)`);
+ok(warmDiff === 0, `a warm-up never changes the reading (${warmDiff} of 24 differ)`);
 
 // ------------------------------------------------------------------ 5. options and corrections
 section('5. options and corrections');

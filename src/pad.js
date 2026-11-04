@@ -7,10 +7,63 @@ const PAD_DEFAULTS = {
   penOnly: false,       // ignore touch and mouse (stylus-only boards)
   boxes: false,         // draw recognised symbol boxes over the ink
   smooth: 0,            // smooth shaky ink along its path before reading (sigma as a share of the writing size)
+  view: 'ink',          // how read ink is shown: 'ink' as written, 'tidy', 'hand' (the writer's Replicator handwriting), 'typeset'
+  motion: true,         // animate ink into its tidy / handwritten / typeset form (off when the reader asks for less motion)
+  hand: null,           // handwriting for view 'hand' (the Replicator's saved data); default: whatever Nib.hand holds
+  separate: false,      // a board: writing in different places is read as separate expressions
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
 };
+
+// Writing in different places on a board: strokes near each other belong together — neighbours on a line (within
+// 1.5 writing heights across, 0.6 up or down) or stacked (fractions, steps of working: within 1.6 heights down and
+// overlapping across). Returns groups of stroke indices in reading order.
+function clustersOf(strokes) {
+  const n = strokes.length;
+  if (!n) return [];
+  const boxes = strokes.map(sbox), ref = refSize(strokes);
+  const up = Array.from({ length: n }, (_, i) => i);
+  const find = i => { while (up[i] !== i) { up[i] = up[up[i]]; i = up[i]; } return i; };
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const a = boxes[i], b = boxes[j];
+    const gx = Math.max(0, b[0] - a[2], a[0] - b[2]), gy = Math.max(0, b[1] - a[3], a[1] - b[3]);
+    if ((gx <= 1.5 * ref && gy <= 0.6 * ref) || (gx <= 0.3 * ref && gy <= 1.6 * ref)) { const ri = find(i), rj = find(j); if (ri !== rj) up[Math.max(ri, rj)] = Math.min(ri, rj); }
+  }
+  const groups = new Map();
+  for (let i = 0; i < n; i++) { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); }
+  const list = [...groups.values()].map(g => { let b = boxes[g[0]]; for (const i of g) b = ubox(b, boxes[i]); return { g, b }; });
+  // reading order: rows of groups that share some height, left to right within a row
+  list.sort((p, q) => p.b[1] - q.b[1]);
+  const rows = [];
+  for (const it of list) {
+    const row = rows.find(r => it.b[1] < r.y1 && it.b[3] > r.y0);
+    if (row) { row.items.push(it); row.y0 = Math.min(row.y0, it.b[1]); row.y1 = Math.max(row.y1, it.b[3]); }
+    else rows.push({ y0: it.b[1], y1: it.b[3], items: [it] });
+  }
+  return [].concat(...rows.map(r => r.items.sort((p, q) => p.b[0] - q.b[0]).map(it => it.g)));
+}
+// one reading made of several (each part's stroke indices mapped back to the whole board's)
+function joinParts(parts) {
+  const remap = (row, m) => row.map(u => {
+    const o = Object.assign({}, u, { strokes: (u.strokes || []).map(m) });
+    for (const k of ['num', 'den', 'body', 'idx', 'sup', 'sub']) if (u[k]) o[k] = remap(u[k], m);
+    return o;
+  });
+  const lines = [], symbols = [], tree = [];
+  let conf = 1, ms = 0;
+  for (const p of parts) {
+    const r = p.result, m = i => p.idx[i];
+    if (!r || !r.lines.length) continue;
+    lines.push(...r.lines); tree.push(...r.tree.map(row => remap(row, m)));
+    symbols.push(...r.symbols.map(sy => Object.assign({}, sy, { strokes: sy.strokes.map(m) })));
+    conf = Math.min(conf, r.confidence); ms += r.ms || 0;
+  }
+  return {
+    latex: lines.length > 1 ? '\\begin{gathered}' + lines.map(l => l.latex).join(' \\\\ ') + '\\end{gathered}' : lines.length ? lines[0].latex : '',
+    text: lines.map(l => l.text).join('\n'), lines, symbols, tree, confidence: lines.length ? conf : 0, skew: 0, ms, parts,
+  };
+}
 
 class Pad {
   constructor(el, options) {
@@ -19,7 +72,7 @@ class Pad {
     this.strokes = [];
     this.history = []; this.future = [];
     this.fixes = [];
-    this.result = null;
+    this.result = null; this.resultStrokes = [];
     this.rec = new Recognizer();
     this.mode = 'draw';
     const c = this.canvas = document.createElement('canvas');
@@ -29,6 +82,10 @@ class Pad {
     el.appendChild(c);
     this.ctx = c.getContext('2d');
     this.active = null; this.sawPen = false; this.timer = null; this.gen = 0;
+    this.plan = null; this.anim = null; this.sid = new WeakMap(); this.nsid = 1;
+    this.parts = new Map(); this.recs = new WeakMap(); this.optsVersion = 0;
+    this._handChanged = () => { if (this.o.view === 'hand') this._replan(true); };
+    if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
     c.addEventListener('pointerdown', this._down);
     c.addEventListener('pointermove', this._move);
@@ -45,7 +102,20 @@ class Pad {
     this._resize();
   }
 
-  setOptions(o) { Object.assign(this.o, o || {}); this.redraw(); if (this.strokes.length) this._schedule(0); }
+  setOptions(o) {
+    const before = this.o.view, hb = this.o.hand, rk = this._readKey();
+    Object.assign(this.o, o || {});
+    if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
+    // only options that change the reading read the ink again; a view, colour or pen width just redraws
+    const reread = this._readKey() !== rk;
+    if (reread) { this.optsVersion++; this.parts.clear(); }
+    if (this.o.view !== before || this.o.hand !== hb) this._replan(true); else this.redraw();
+    if (this.strokes.length && this.o.auto && (reread || (this.resultStrokes || []).length !== this.strokes.length)) this._schedule(0);
+  }
+  _readKey() {
+    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'auto', 'onResult', 'onChange']);
+    return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
+  }
 
   // ---------------------------------------------------------------- input
   _pt(e) { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top, Math.round(e.timeStamp)]; }
@@ -93,6 +163,14 @@ class Pad {
   }
   _eraseAt(p) {
     const r = Math.max(10, this.o.width * 4);
+    // in a tidy, handwritten or typeset view the eraser takes away what it touches as shown
+    if (this.plan) {
+      const live = new Set(this.strokes);
+      for (const it of this.plan.items) {
+        if (!it.from.every(s => live.has(s)) || !itemNear(it, p, r)) continue;
+        for (const s of it.from) { const i = this.strokes.indexOf(s); if (i >= 0) { this.erased.push({ i, s }); this.strokes.splice(i, 1); live.delete(s); } }
+      }
+    }
     for (let i = this.strokes.length - 1; i >= 0; i--) {
       if (this.strokes[i].some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < r)) {
         this.erased.push({ i, s: this.strokes[i] });
@@ -133,16 +211,79 @@ class Pad {
     const c = this.canvas, ctx = this.ctx, d = this.dpr || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.setTransform(d, 0, 0, d, 0, 0);
     this._ink();
-    for (const s of this.strokes) this._stroke(s);
+    const ink = ctx.strokeStyle, live = new Set(this.strokes), shown = new Set();
+    const A = this.anim, e = A ? A.e : 1;
+    // the read ink in its view; strokes still moving into it are drawn by the animation
+    if (this.plan) for (const it of this.plan.items) {
+      if (!it.from.every(s => live.has(s))) continue;
+      for (const s of it.from) shown.add(s);
+      const was = A && A.from.get(it);
+      if (was && e < 1) morphDraw(ctx, was, it, e, ink, this.o.width);
+      else drawItems(ctx, [it], { ink, width: this.o.width });
+    }
+    // views being left behind (back to ink, or symbols that no longer exist) fade out
+    if (A && e < 1) for (const g of A.leaving) if (g.from.every(s => live.has(s))) {
+      const raw = rawVisual(g.from.filter(s => !shown.has(s)));
+      if (raw.parts[0].paths.length) { morphDraw(ctx, g, raw, e, ink, this.o.width); for (const s of g.from) shown.add(s); }
+    }
+    this._ink();
+    for (const s of this.strokes) if (!shown.has(s)) this._stroke(s);
     if (this.cur) this._stroke(this.cur);
     if (this.o.boxes && this.result) this._boxes();
   }
+  // Lays the latest reading out in the pad's view and starts the animation from what was on screen.
+  _replan(animate) {
+    const old = this.plan, style = this.o.view;
+    const res = this.result, at = this.resultStrokes || [];
+    let plan = null;
+    if (style !== 'ink' && res && res.tree && res.tree.length && at.length) {
+      const hand = style === 'hand' && this.o.hand ? this.o.hand : undefined, items = [];
+      for (const part of res.parts || [{ strokes: at, result: res }]) {
+        let out = null;
+        try { out = inPlace(part.strokes, style, { result: part.result, hand }); } catch (err) { out = null; }
+        if (!out) continue;
+        for (const it of out.items) { it.from = it.src.map(i => part.strokes[i]).filter(Boolean); if (it.from.length) items.push(it); }
+      }
+      for (const it of items) it.id = it.from.map(s => this._sid(s)).join(',') + '|' + it.label;
+      plan = { style, items };
+      if (style === 'typeset') typeFontsReady().then(ok => { if (ok && this.plan === plan) this.redraw(); });
+    }
+    this.plan = plan;
+    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!animate || !this.o.motion || reduce) { this.anim = null; this.redraw(); return; }
+    // where each item comes from: the same symbol in the old view, or the ink as written
+    const before = new Map(old ? old.items.map(it => [it.id, it]) : []);
+    const from = new Map(), used = new Set();
+    if (plan) for (const it of plan.items) {
+      const was = before.get(it.id) || (old && old.items.find(o => o.from.length === it.from.length && o.from.every(s => it.from.includes(s))));
+      if (was) { from.set(it, was); used.add(was); }
+      else from.set(it, rawVisual(it.from));
+    }
+    const leaving = old ? old.items.filter(o => !used.has(o)) : [];
+    if (!from.size && !leaving.length) { this.anim = null; this.redraw(); return; }
+    const A = this.anim = { t0: performance.now(), dur: 260, from, leaving, e: 0 };
+    const tick = now => {
+      if (this.anim !== A) return;
+      const t = Math.min(1, (now - A.t0) / A.dur);
+      A.e = 1 - Math.pow(1 - t, 3);
+      this.redraw();
+      if (t < 1) requestAnimationFrame(tick); else { this.anim = null; this.redraw(); }
+    };
+    requestAnimationFrame(tick);
+  }
+  _sid(s) { let id = this.sid.get(s); if (!id) { id = this.nsid++; this.sid.set(s, id); } return id; }
   _boxes() {
     const ctx = this.ctx, cs = getComputedStyle(this.el);
     const col = cs.getPropertyValue('--nib-box').trim() || 'rgba(201,162,39,.85)';
     ctx.save(); ctx.lineWidth = 1; ctx.strokeStyle = col; ctx.fillStyle = col;
     ctx.font = '11px system-ui, sans-serif'; ctx.textBaseline = 'bottom';
-    for (const s of this.result.symbols) {
+    if (this.plan) {
+      const live = new Set(this.strokes);
+      for (const it of this.plan.items) {
+        if (!it.from.every(st => live.has(st))) continue;
+        const b = it.box; ctx.strokeRect(b[0] - 3, b[1] - 3, b[2] - b[0] + 6, b[3] - b[1] + 6); ctx.fillText(it.label, b[0] - 3, b[1] - 4);
+      }
+    } else for (const s of this.result.symbols) {
       const b = s.box; ctx.strokeRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6); ctx.fillText(s.label, b.x - 3, b.y - 4);
     }
     ctx.restore();
@@ -160,7 +301,7 @@ class Pad {
     this.redraw();
     if (this.o.onChange) this.o.onChange(this);
     this.el.dispatchEvent(new CustomEvent('nib:change', { detail: this, bubbles: true }));
-    if (!this.strokes.length) { this._emit(null); return; }
+    if (!this.strokes.length) { clearTimeout(this.timer); this.gen++; this._emit(null); return; }  // nothing left to read
     if (this.o.auto) this._schedule(this.o.delay);
   }
   // Read the ink without freezing the page: classify the new stroke groups a few milliseconds at a time,
@@ -169,7 +310,7 @@ class Pad {
     clearTimeout(this.timer);
     const gen = ++this.gen;
     this.timer = setTimeout(() => {
-      const it = this.rec.warmup(this.strokes, this._ropts()), start = performance.now();
+      const it = this._warm(this._ropts()), start = performance.now();
       const step = () => {
         if (gen !== this.gen) return;
         const t0 = performance.now();
@@ -181,6 +322,8 @@ class Pad {
   }
   _emit(res) {
     this.result = res;
+    this.resultStrokes = res ? this.strokes.slice() : [];
+    this._replan(true);
     if (this.o.boxes) this.redraw();
     if (this.o.onResult) this.o.onResult(res, this);
     this.el.dispatchEvent(new CustomEvent('nib:result', { detail: res, bubbles: true }));
@@ -188,20 +331,58 @@ class Pad {
   recognize(start) {
     clearTimeout(this.timer); this.gen++;
     if (!this.strokes.length) { this._emit(null); return null; }
-    const fix = this.fixes.map(f => ({ strokes: f.strokes.map(s => this.strokes.indexOf(s)), label: f.label }))
-      .filter(f => f.strokes.every(i => i >= 0));
-    const res = this.rec.recognize(this.strokes, Object.assign(this._ropts(), { fix }));
+    let res;
+    if (this.o.separate) res = this._readParts(this._ropts());
+    else res = this.rec.recognize(this.strokes, Object.assign(this._ropts(), { fix: this._fixFor(this.strokes) }));
     if (typeof start === 'number') res.ms = Math.round(performance.now() - start); // the whole read, not just its last pass
     this._emit(res);
     return res;
   }
   // the recogniser's options (the pad's own)
   _ropts() { const o = Object.assign({}, this.o); o.smooth = +o.smooth > 0 ? +o.smooth : 0; return o; }
+  // the classifier work for the next read, one stroke group per step (newest ink first)
+  *_warm(ro) {
+    if (!this.o.separate) { yield* this.rec.warmup(this.strokes, Object.assign({}, ro, { fix: this._fixFor(this.strokes) })); return; }
+    for (const g of clustersOf(this.strokes)) {
+      const st = g.map(i => this.strokes[i]);
+      if (!this._partCached(st, ro)) yield* this._recFor(st[0]).warmup(st, Object.assign({}, ro, { fix: this._fixFor(st) }));
+    }
+  }
+  // the corrections that apply to these strokes, as indices into them
+  _fixFor(st) {
+    return this.fixes.filter(f => f.strokes.every(x => st.includes(x))).map(f => ({ strokes: f.strokes.map(x => st.indexOf(x)), label: f.label }));
+  }
+  // A board: each group of writing is read on its own (and kept while it does not change), then put together.
+  _readParts(ro) {
+    const parts = [];
+    for (const g of clustersOf(this.strokes)) {
+      const st = g.map(i => this.strokes[i]);
+      const key = this._partKey(st, ro);
+      let res = this.parts.get(key);
+      if (!res) {
+        res = this._recFor(st[0]).recognize(st, Object.assign({}, ro, { fix: this._fixFor(st) }));
+        if (this.parts.size > 300) this.parts.clear();
+        this.parts.set(key, res);
+      }
+      parts.push({ idx: g, strokes: st, result: res });
+    }
+    return joinParts(parts);
+  }
+  _partKey(st, ro) {
+    const fx = this.fixes.filter(f => f.strokes.every(x => st.includes(x))).map(f => f.strokes.map(x => this._sid(x)).join('.') + '=' + f.label).join(';');
+    return st.map(x => this._sid(x)).join(',') + '|' + fx + '|' + this.optsVersion + '|' + MEM.version;
+  }
+  _partCached(st, ro) { return this.parts.has(this._partKey(st, ro)); }
+  _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
   // re-label one recognised symbol (from result.symbols[i].candidates) and re-run
   relabel(symbol, label) {
-    const ss = symbol.strokes.map(i => this.strokes[i]);
+    // the symbol's strokes as they were read (its indices are into the ink of that reading), still on the pad
+    const at = this.resultStrokes && this.resultStrokes.length ? this.resultStrokes : this.strokes;
+    const ss = symbol.strokes.map(i => at[i]).filter(s => s && this.strokes.includes(s));
+    if (!ss.length) return this.result;
     this.fixes = this.fixes.filter(f => !f.strokes.some(s => ss.includes(s)));
     this.fixes.push({ strokes: ss, label });
+    this.parts.clear();
     // remember the shape so the same writer's next one reads right (stays in this browser)
     if (this.o.learn !== false && this.o.memory !== false) {
       try {
@@ -234,12 +415,17 @@ class Pad {
   get canRedo() { return this.future.length > 0; }
   getStrokes() { return this.strokes.map(s => s.map(p => p.slice())); }
   setStrokes(strokes) {
-    this.strokes = (strokes || []).map(s => s.map(p => Array.isArray(p) ? p.slice() : [p.x, p.y, p.t || 0]));
+    // [[x, y, t?], ...] or {x, y, t?} points, or {points} strokes; anything that is not a point is dropped
+    const pt = p => (Array.isArray(p) ? [+p[0], +p[1], +p[2] || 0] : p && typeof p === 'object' ? [+p.x, +p.y, +p.t || 0] : null);
+    this.strokes = (Array.isArray(strokes) ? strokes : [])
+      .map(s => (Array.isArray(s) ? s : s && Array.isArray(s.points) ? s.points : []).map(pt).filter(p => p && isFinite(p[0]) && isFinite(p[1])))
+      .filter(s => s.length);
     this.history = []; this.future = []; this.fixes = []; this._changed();
     if (this.strokes.length && this.o.auto) this._schedule(0);   // no need to wait for a pen to rest
   }
   destroy() {
-    clearTimeout(this.timer); this.gen++;
+    clearTimeout(this.timer); this.gen++; this.anim = null;
+    if (typeof window !== 'undefined') window.removeEventListener('nib:hand', this._handChanged);
     if (this.ro) this.ro.disconnect();
     if (this.mo) this.mo.disconnect();
     if (this.mq) this.mq.removeEventListener('change', this._theme);
@@ -250,7 +436,7 @@ class Pad {
 // <nib-pad symbols="school" delay="450" ink="#1b2a4a" stroke-width="3" boxes></nib-pad>
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
-    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth']; }
+    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -265,6 +451,9 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         lines: a('lines') !== 'false',
         degrees: a('degrees') !== 'false',
         smooth: has('smooth') && +a('smooth') > 0 ? +a('smooth') : 0,
+        view: ['tidy', 'hand', 'typeset'].includes(a('view')) ? a('view') : 'ink',
+        motion: a('motion') !== 'false',
+        separate: has('separate') && a('separate') !== 'false',
       };
     }
     connectedCallback() {
@@ -292,6 +481,11 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     get text() { return this.pad && this.pad.result ? this.pad.result.text : ''; }
     get strokes() { return this.pad ? this.pad.getStrokes() : []; }
     set strokes(v) { if (this.pad) this.pad.setStrokes(v); }
+    get view() { return this.pad ? this.pad.o.view : (this.getAttribute('view') || 'ink'); }
+    set view(v) { this.setAttribute('view', ['tidy', 'hand', 'typeset'].includes(v) ? v : 'ink'); }
+    // what the view shows: [{label, box, parts}] in the pad's coordinates (parts as drawn: ink paths, text, rules)
+    get shown() { return this.pad && this.pad.plan ? this.pad.plan.items.map(it => ({ label: it.label, box: it.box.slice(), parts: it.parts })) : []; }
+    toImage(type) { return this.pad ? this.pad.canvas.toDataURL(type || 'image/png') : ''; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
     set mode(v) { if (this.pad) this.pad.mode = v === 'erase' ? 'erase' : 'draw'; }
     recognize() { return this.pad && this.pad.recognize(); }

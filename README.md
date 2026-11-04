@@ -5,6 +5,7 @@ Handwritten maths to LaTeX, in the browser. One file, no internet, no dependenci
 ```
 dist/nib.js            the engine and the writing pad (drop into any page)
 dist/Nib.html          a self-contained tester: open it from Drive or your desktop
+dist/Board.html        a whiteboard for the class display: tidies, re-writes or typesets what you write, in place
 dist/Replicator.html   turn your own handwriting into a font (see the end of this page)
 ```
 
@@ -54,9 +55,9 @@ Paste `nib.js` into the page once — as `<script src="nib.js"></script>` next t
 </script>
 ```
 
-Attributes: `symbols="school|all|numbers|0,1,2,x,+"`, `ink="#1b2a4a"`, `stroke-width="3"`, `delay="450"` (ms of rest before reading), `auto="false"` (only read when you call `recognize()`), `boxes` (draw what was read), `pen-only` (ignore fingers and palms), `lines="false"`, `degrees="false"`, `smooth="0.03"` (smooth very shaky ink before reading; off by default, as finger ink already reads as well as pen ink).
+Attributes: `symbols="school|all|numbers|0,1,2,x,+"`, `ink="#1b2a4a"`, `stroke-width="3"`, `delay="450"` (ms of rest before reading), `auto="false"` (only read when you call `recognize()`), `boxes` (draw what was read), `pen-only` (ignore fingers and palms), `lines="false"`, `degrees="false"`, `smooth="0.03"` (smooth very shaky ink before reading; off by default, as finger ink already reads as well as pen ink), `view="tidy|hand|typeset"` (show what was read in place — see below), `motion="false"` (change views without animating), `separate` (a board: writing in different places is read as separate expressions).
 
-Properties and methods: `latex`, `text`, `result`, `strokes` (get or set), `mode` (`'draw'` or `'erase'`), `undo()`, `redo()`, `clear()`, `recognize()`, `relabel(symbol, label)`.
+Properties and methods: `latex`, `text`, `result`, `strokes` (get or set), `view` (get or set), `shown` (what the view draws), `mode` (`'draw'` or `'erase'`), `undo()`, `redo()`, `clear()`, `recognize()`, `relabel(symbol, label)`, `toImage()`.
 
 The pad takes its ink colour from the CSS variable `--nib-ink` (or the element's text colour), so it follows each tool's theme. Reading happens a few milliseconds at a time between frames, so the page never freezes while a long expression is read (checked with the processor slowed four times). With a pen in use, a resting palm draws nothing. Two pads on one page work independently, and a pad moved or removed and put back keeps its ink.
 
@@ -93,6 +94,35 @@ const r2 = await Nib.recognizeAsync(strokes);                // same, without bl
 
 `candidates` drive a "did you mean" menu: call `pad.relabel(symbol, label)` and the expression is re-read with that symbol fixed.
 
+## In place: tidy, your hand, typeset
+
+A pad can show what it read right where it was written, at the size it was written. Set `view` on the pad (or switch it at any time) and the ink glides into its new form a moment after the pen rests:
+
+- `tidy` — your own strokes, cleaned up: every symbol straightened and sized to one line (digits and capitals one height, small letters one height, `g y p` hanging below), signs made square (`=` level and even, `+` upright, fraction bars and roots straight), lines that drifted uphill levelled, and the spacing evened out while keeping your gaps.
+- `hand` — each symbol redrawn with the same character from your [Replicator](#replicator-your-handwriting-as-a-font) handwriting, on the same lines and spacing. Characters you never wrote there are tidied instead.
+- `typeset` — the LaTeX itself, set in KaTeX's maths fonts (built in, no internet needed) exactly where the writing was: fractions, powers, roots, and work over several lines with the equals signs lined up.
+
+Every symbol stays tied to the strokes that made it: the eraser takes away what you touch as shown, undo brings it back, a correction with `relabel` redraws that symbol, and new writing joins the view as soon as it is read. The read itself is never changed by a view.
+
+```js
+const t = Nib.neaten(strokes);                     // tidy: { latex, items, strokes } — strokes to draw anywhere
+const h = Nib.neaten(strokes, { style: 'hand' });  // in your handwriting (Nib.hand, or { hand: savedFile })
+const s = Nib.typeset(strokes);                    // items with text, rules and positions in the ink's coordinates
+Nib.hand.load(savedJsonText);                      // the file Replicator saves; kept in this browser
+Nib.hand.size; Nib.hand.name; Nib.hand.has('7'); Nib.hand.clear();
+```
+
+## Nib Board
+
+`dist/Board.html` is a whiteboard for the classroom display, in one file that works offline. Write anywhere: each expression is read on its own, and the board shows it **Tidy**, in **My hand** or **Typeset** — or as **Ink**, exactly as written (keys 1–4). Along the top:
+
+- **Fix** (X): tap a symbol that was read wrong and pick what it is. The board re-reads it, and Nib remembers your shape.
+- **Erase** (E), **Undo** (Ctrl+Z), **Redo** (Ctrl+Y or Ctrl+Shift+Z) and **Clear** (Undo brings it back).
+- **My handwriting** opens the file Replicator saves. When Replicator and the Board are opened from the same computer in Chrome, the Board also picks up what you last wrote in Replicator by itself; whichever is newer, your file or your Replicator work, wins.
+- **Copy LaTeX** copies the whole board, one line per expression. **Full screen** (F).
+
+The board keeps its writing and view in the browser, so a reload loses nothing.
+
 ## It learns your handwriting
 
 Every correction made with `relabel` is remembered: Nib keeps a compact fingerprint of that symbol's shape and, the next time the same writer makes a nearly identical shape, leans toward the corrected label. In a simulation where each writer corrected every mistake once, this fixed about three later mistakes for every correct reading it disturbed. The memory lives in the browser's local storage (key `nib-memory-v1`, up to 400 shapes, ink is not stored), is shared by every tool on the same site (and, in Chrome, by every HTML file opened from the same computer), and never leaves the device. The Replicator's "Teach Nib my handwriting" fills it with every character you write there.
@@ -118,7 +148,8 @@ Restricting the set is the single best way to raise accuracy in a given box.
 - Writing that drifts uphill or downhill is levelled before it is laid out (`result.skew` says by how much); straight writing is left alone.
 - A stroke added later to an earlier symbol (crossing a t at the end, finishing a 4 after the next number) is joined back to it when the shapes overlap and the joined symbol reads clearly.
 - Multi-line work is read line by line.
-- The engine file is about 870 KB. A new stroke is read in roughly 0.1–0.3 s on a laptop; a whole expression handed over at once takes longer (about 0.05 s per stroke).
+- The engine file is about 1 MB (the typeset fonts are 70 KB of it). A new stroke is read in roughly 0.1–0.3 s on a laptop; a whole expression handed over at once takes longer (about 0.05 s per stroke). The reading is done a few milliseconds at a time, so the page stays responsive throughout, even on a crowded board with the processor slowed four times.
+- The typeset view uses the KaTeX fonts, embedded unchanged under the SIL Open Font License 1.1 (`licenses/OFL-KaTeX-fonts.txt`).
 
 `docs/HANDOFF.md` explains how it works and how to change it; `training/README.md` how to retrain it; `node test/check.js` runs the regression suite.
 
@@ -129,7 +160,7 @@ Restricting the set is the single best way to raise accuracy in a given box.
 - **Pen weight, letter spacing and smoothing** change the whole font at once. **Line up with the guides** sets letters that sit a little high or low onto the line.
 - **Download font (.ttf)** gives a TrueType font. On Windows or a Mac, double-click it and choose Install; it then appears in Word, PowerPoint, Pages and the rest. In Canva, add it under Brand Kit → Fonts → Upload. Chromebooks cannot install fonts, and Google Docs and Slides only offer Google's own fonts.
 - **Copy font for web pages** copies a `@font-face` rule with the whole font inside it. Paste it into the `<style>` of any single-file tool and use `font-family: "My Handwriting"` (or whatever you named it).
-- **Save handwriting** keeps your strokes as a `.json` file; **Open handwriting** brings them back on any computer to change a character or try a different pen weight.
+- **Save handwriting** keeps your strokes as a `.json` file; **Open handwriting** brings them back on any computer to change a character or try a different pen weight. The same file opened in Nib Board's **My handwriting** shows the board in your hand.
 - **Teach Nib my handwriting** stores the shape of every character you wrote in Nib's memory in this browser, so tools that use Nib read your writing better.
 
 Your writing stays in the browser (local storage) until you save it. Missing characters fall back to the system font wherever the font is used.

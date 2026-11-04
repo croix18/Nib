@@ -104,6 +104,18 @@ function crosses(p1, p2, q1, q2) {
   return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
 }
 
+// user corrections: [{strokes: [input indices], label}] -> contiguous ranges of the strokes as read (src maps back)
+function fixesOf(list, src, n) {
+  const fixOf = new Int32Array(n).fill(-1), fixes = [];
+  for (const f of list || []) {
+    const ix = f.strokes.map(i => src.indexOf(i)).filter(i => i >= 0).sort((a, b) => a - b);
+    if (!ix.length || ix[ix.length - 1] - ix[0] !== ix.length - 1 || ix.some(i => fixOf[i] >= 0)) continue;
+    for (const i of ix) fixOf[i] = fixes.length;
+    fixes.push({ i: ix[0], j: ix[ix.length - 1], label: f.label });
+  }
+  return { fixOf, fixes };
+}
+
 class Recognizer {
   constructor(o) { this.cache = new Map(); this.jcache = new Map(); this.ids = new WeakMap(); this.next = 1; this.max = (o && o.cacheSize) || 6000; this.cref = 0; this.lastIds = new Set(); }
   // The size reference the classifier sees. While the same ink keeps growing (a pad being written on) it is held
@@ -122,6 +134,12 @@ class Recognizer {
     const k = key + '|' + Math.round(Math.log(ref) * 40);
     let e = this.cache.get(k);
     if (!e) {
+      // a rehearsal (warmup) only notes what it would classify, and reads it as junk for now
+      if (this.misses) {
+        this.misses.push({ group, key });
+        const d = new Float32Array(model().cls.length); d[model().junk] = 1;
+        return d;
+      }
       this.classified = (this.classified || 0) + 1;
       e = classifyGroup(group, ref);
       if (this.cache.size > this.max) this.cache.clear();
@@ -165,15 +183,9 @@ class Recognizer {
     if (!strokes.length) return Object.assign(empty, { skew: 0, ms: 0 });
     const ref = refSize(strokes);
     const mask = allowedMask(opts.symbols);
-    // user corrections: [{strokes: [input indices], label}] -> contiguous internal ranges
-    const fixOf = new Int32Array(strokes.length).fill(-1), fixes = [];
-    for (const f of opts.fix || []) {
-      const ix = f.strokes.map(i => src.indexOf(i)).filter(i => i >= 0).sort((a, b) => a - b);
-      if (!ix.length || ix[ix.length - 1] - ix[0] !== ix.length - 1 || ix.some(i => fixOf[i] >= 0)) continue;
-      for (const i of ix) fixOf[i] = fixes.length;
-      fixes.push({ i: ix[0], j: ix[ix.length - 1], label: f.label });
-    }
+    const { fixOf, fixes } = fixesOf(opts.fix, src, strokes.length);
     this.prior = priorVector(opts);
+    this.misses = null;
     const cref = this.classRef(ref, ids);
     let syms = opts.oracle ? opts.oracle(strokes, ref) : this.segment(strokes, ids, ref, mask, opts, fixOf, fixes, cref);
     if (!opts.oracle && opts.delayed) syms = this.mergeDelayed(syms, strokes, ids, ref, cref, mask, opts);
@@ -207,11 +219,13 @@ class Recognizer {
     return res;
   }
 
-  // Classifies, one group per step, every stroke group the segmentation may score (newest ink first), so a
-  // caller can spread the work over several frames and keep the page responsive. recognize() then hits the cache.
+  // Classifies, one group per step, every stroke group the reading will score, so a caller can spread the work
+  // over several frames and keep the page responsive; recognize() with the same options then only hits the cache.
+  // First the segmentation's groups (newest ink first), then the reading is rehearsed against the cache to find the
+  // rest — a stroke added later to an earlier symbol is scored together with it — until a rehearsal needs nothing new.
   *warmup(input, options) {
     const opts = Object.assign({}, DEFAULTS, options || {});
-    const { strokes, ids } = this.prepare(input, opts);
+    const { strokes, src, ids } = this.prepare(input, opts);
     if (!strokes.length) return;
     const ref = refSize(strokes), cref = this.classRef(ref, ids), n = strokes.length, boxes = strokes.map(sbox);
     const pj = [];
@@ -226,6 +240,22 @@ class Recognizer {
         }
         const key = ids.slice(i, j + 1).join(',');
         if (!this.cache.has(key + bucket)) { this.probs(strokes.slice(i, j + 1), cref, key, false); yield; }
+      }
+    }
+    if (opts.oracle) return;
+    const mask = allowedMask(opts.symbols), { fixOf, fixes } = fixesOf(opts.fix, src, n);
+    this.prior = priorVector(opts);
+    for (let pass = 0; pass < 12; pass++) {
+      const miss = this.misses = [];
+      try {
+        const syms = this.segment(strokes, ids, ref, mask, opts, fixOf, fixes, cref);
+        if (!miss.length && opts.delayed) this.mergeDelayed(syms, strokes, ids, ref, cref, mask, opts);
+      } finally { this.misses = null; }
+      if (!miss.length) return;
+      const done = new Set();
+      for (const m of miss) {
+        if (done.has(m.key) || this.cache.has(m.key + bucket)) continue;
+        done.add(m.key); this.probs(m.group, cref, m.key, false); yield;
       }
     }
   }
@@ -274,7 +304,8 @@ class Recognizer {
         if (dot && !DOTTED.has(m.list[0][0])) continue;
         if (gain > opts.delayGain && m.list[0][1] > 0.5 && m.pjunk < 0.5 && (!best || gain > best.gain)) best = { a, b, group, m, gain };
       }
-      if (!best) break;
+      // a rehearsal stops at the first round that needs the network: what follows depends on its answers
+      if (!best || (this.misses && this.misses.length)) break;
       const A = syms[best.a], B = syms[best.b];
       const merged = { label: best.m.list[0][0], cands: best.m.list.slice(0, 6), strokes: best.group, box: ubox(A.box, B.box),
         pts: best.group.map(i => strokes[i]), junk: best.m.pjunk };

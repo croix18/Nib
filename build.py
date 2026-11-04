@@ -5,7 +5,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.environ.get('NIB_WORK', os.path.join(HERE, 'training', 'scratch', 'work'))
 MODEL = sys.argv[1] if len(sys.argv) > 1 else os.path.join(WORK, 'model_v3.npz')
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 
 classes = open(os.path.join(WORK, 'ep', 'classes.txt')).read().split('\n')
 C = len(classes)
@@ -59,7 +59,27 @@ data = {
     'lm': lm,
     'prior': json.load(open(pick('prior.json'))) if os.path.exists(os.path.join(WORK, 'prior.json')) else None,
 }
-src = ''.join(open(os.path.join(HERE, 'src', f)).read() + '\n' for f in ('core.js', 'recognize.js', 'pad.js', 'api.js')
+
+# Typeset view: KaTeX's fonts (SIL Open Font License 1.1, embedded unchanged) and their metrics for the characters
+# Nib can write. Metrics per code point: [depth, height, italic correction, width] in em.
+KATEX = os.environ.get('NIB_KATEX', os.path.join(HERE, 'demo', 'node_modules', 'katex'))
+TS_FONTS = {'m': 'Main-Regular', 'i': 'Math-Italic', 's': 'Size1-Regular'}
+TS_CHARS = ('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+=<>()[]{}|/.,;:!?%$\u2212\u00d7\u00f7\u00b1'
+            '\u2264\u2265\u22c5\u2192\u2208\u221e\u2032\u2218\u03c0\u03b8\u03b1\u03b2\u03b3\u03bb\u03bc\u03c3\u03d5\u0394'
+            '\u2211\u222b\u2200\u2203\u2026\u221a')
+fm_src = open(os.path.join(KATEX, 'src', 'fontMetricsData.js')).read()
+fm_src = fm_src[fm_src.index('export default') + len('export default'):].strip().rstrip(';')
+import re
+fm = json.loads(re.sub(r',(\s*[}\]])', r'\1', fm_src))
+tsfm = {}
+for k, name in TS_FONTS.items():
+    t = fm[name]
+    tsfm[k] = {str(ord(c)): [round(v, 5) for v in (t[str(ord(c))][0], t[str(ord(c))][1], t[str(ord(c))][2], t[str(ord(c))][4])]
+               for c in TS_CHARS if str(ord(c)) in t}
+data['tsfm'] = tsfm
+data['tsfont'] = {k: b64(np.frombuffer(open(os.path.join(KATEX, 'dist', 'fonts', f'KaTeX_{name}.woff2'), 'rb').read(), np.uint8))
+                  for k, name in TS_FONTS.items()}
+src = ''.join(open(os.path.join(HERE, 'src', f)).read() + '\n' for f in ('core.js', 'recognize.js', 'neat.js', 'pad.js', 'api.js')
               if os.path.exists(os.path.join(HERE, 'src', f)))
 src = src.replace("'use strict';\n", '')
 src = src.replace('/*__DATA__*/ null', json.dumps(data, separators=(',', ':')))

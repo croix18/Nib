@@ -1,0 +1,284 @@
+<title>Nib Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--FONT_LINK-->
+<style>
+/*FONT_FACES*/
+/* A classroom board: one big writing surface, the tools in a slim rail across the top. */
+:root {
+  --board: #fbf8ef;     /* the writing surface */
+  --rail: #f3eddc;      /* the tool rail */
+  --rule: #e4d9bd;
+  --dot: #e9e0c8;       /* the faint dot grid */
+  --ink: #1b2a4a;       /* navy: pen and text */
+  --muted: #5d6678;
+  --gold: #c9a227;
+  --gold-ink: #8a6a10;
+  --gold-wash: #f4e7bd;
+  --coral: #d9654f;
+  --f-display: "DM Serif Display", Georgia, "Times New Roman", serif;
+  --f-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --board: #101a2e; --rail: #0b1324; --rule: #26334f; --dot: #1d2943; --ink: #f1eadb; --muted: #a7afc0;
+    --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --coral: #ef8a73; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --board: #101a2e; --rail: #0b1324; --rule: #26334f; --dot: #1d2943; --ink: #f1eadb; --muted: #a7afc0;
+  --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --coral: #ef8a73; color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--board); color: var(--ink); font-family: var(--f-body); font-size: 14px; overflow: hidden; -webkit-font-smoothing: antialiased; }
+.board { position: fixed; inset: 0; display: flex; flex-direction: column; }
+.rail {
+  display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; background: var(--rail); border-bottom: 1px solid var(--rule);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: calc(8px + env(safe-area-inset-top, 0px)) 8px;
+}
+.mark { font: 400 24px/1 var(--f-display); margin: 0 6px 0 0; letter-spacing: .01em; }
+.mark span { color: var(--gold); }
+.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--board); border: 1px solid var(--rule); gap: 2px; }
+.seg button { font: 500 13px/1 var(--f-body); color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 8px 13px; cursor: pointer; }
+.seg button[aria-checked="true"] { background: var(--ink); color: var(--board); }
+.sp { flex: 1; }
+.tool {
+  display: inline-flex; align-items: center; gap: 7px; font: 500 13px/1 var(--f-body); color: var(--ink); background: transparent;
+  border: 1px solid transparent; border-radius: 9px; padding: 8px 10px; cursor: pointer;
+}
+.tool svg { width: 18px; height: 18px; flex: none; }
+.tool:hover:not(:disabled) { background: var(--board); }
+.tool:disabled { opacity: .35; cursor: default; }
+.tool[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
+.seg button:focus-visible, .tool:focus-visible, .notebtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.surface { position: relative; flex: 1; min-height: 0; }
+nib-pad {
+  position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--gold);
+  background-image: radial-gradient(var(--dot) 1.2px, transparent 1.4px); background-size: 28px 28px; background-position: 14px 14px;
+}
+.note {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  max-width: min(560px, calc(100% - 32px)); box-sizing: border-box; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--rail); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 12px 10px 14px; color: var(--ink);
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .5); font-size: 14px;
+}
+.note p { margin: 0; flex: 1; min-width: 200px; }
+.notebtn { font: 500 13px/1 var(--f-body); color: var(--board); background: var(--ink); border: 0; border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+.notebtn.quiet { color: var(--ink); background: transparent; border: 1px solid var(--rule); }
+.fixlayer { position: absolute; inset: 0; cursor: pointer; touch-action: none; }
+.fixpop {
+  position: absolute; display: flex; gap: 6px; padding: 6px; background: var(--rail); border: 1px solid var(--rule); border-radius: 14px;
+  box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .55); z-index: 2;
+}
+.cand {
+  min-width: 52px; height: 52px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--rule); background: var(--board); color: var(--ink);
+  font: 28px/1 "Nib KaTeX Main", "Cambria Math", "STIX Two Math", "Times New Roman", serif; cursor: pointer;
+}
+.cand[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); }
+.cand:hover:not([aria-pressed="true"]) { border-color: var(--ink); }
+.cand:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.latexbox { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); top: 10px; }
+.latexbox textarea { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--rail); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; resize: none; }
+@media (max-width: 720px) { .tool .t { display: none; } .tool { padding: 8px; } .mark { display: none; } .seg button { padding: 8px 10px; } }
+@media (prefers-reduced-motion: no-preference) { .tool, .seg button { transition: background .15s, color .15s, border-color .15s; } }
+</style>
+
+<div class="board">
+  <header class="rail">
+    <h1 class="mark">Nib<span>.</span></h1>
+    <div class="seg" role="radiogroup" aria-label="How writing is shown" id="views">
+      <button type="button" role="radio" data-view="ink" aria-checked="false">Ink</button>
+      <button type="button" role="radio" data-view="tidy" aria-checked="true">Tidy</button>
+      <button type="button" role="radio" data-view="hand" aria-checked="false">My hand</button>
+      <button type="button" role="radio" data-view="typeset" aria-checked="false">Typeset</button>
+    </div>
+    <span class="sp"></span>
+    <button type="button" class="tool" id="erase" aria-pressed="false" title="Erase (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg><span class="t">Erase</span></button>
+    <button type="button" class="tool" id="fix" aria-pressed="false" title="Fix a misread symbol (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/><path d="m16 20 2 2 4-4"/></svg><span class="t">Fix</span></button>
+    <button type="button" class="tool" id="undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span class="t">Undo</span></button>
+    <button type="button" class="tool" id="redo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg><span class="t">Redo</span></button>
+    <button type="button" class="tool" id="clear" title="Clear the board (undo brings it back)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg><span class="t">Clear</span></button>
+    <button type="button" class="tool" id="hand" title="Open the handwriting you saved from Replicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="t">My handwriting</span></button>
+    <button type="button" class="tool" id="copy" title="Copy the LaTeX of everything on the board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="t">Copy LaTeX</span></button>
+    <button type="button" class="tool" id="full" title="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="t">Full screen</span></button>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+  </header>
+  <div class="surface">
+    <nib-pad id="pad" view="tidy" stroke-width="3.5" separate aria-label="Board"></nib-pad>
+    <div class="fixlayer" id="fixlayer" hidden></div>
+    <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
+    <div class="latexbox" id="latexbox" hidden><textarea id="latexout" rows="3" readonly aria-label="LaTeX"></textarea></div>
+    <div class="note" id="note" role="status" hidden><p id="notetext"></p><button type="button" class="notebtn" id="noteact" hidden></button><button type="button" class="notebtn quiet" id="noteclose">OK</button></div>
+  </div>
+</div>
+
+<script>/*ENGINE*/</script>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const pad = $('pad'), KEY = 'nib-board-v1';
+  // the board survives a reload: the view and the ink are kept in this browser
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { /* first visit or storage blocked */ }
+  const VIEWS = ['ink', 'tidy', 'hand', 'typeset'];
+  let view = saved && VIEWS.includes(saved.view) ? saved.view : 'tidy';
+  let saveTimer = null;
+  const persist = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify({ view, strokes: pad.strokes.map(s => s.map(p => [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10])) })); } catch (e) { /* full or blocked */ } }, 500);
+  };
+
+  // ---------------------------------------------------------------- notes
+  let noteAction = null, noteTimer = null;
+  function note(text, action, label) {
+    $('notetext').textContent = text; $('note').hidden = false;
+    noteAction = action || null; $('noteact').hidden = !action; if (action) $('noteact').textContent = label;
+    // a note that only tells something goes away by itself; one that asks for something (or holds the LaTeX) stays
+    clearTimeout(noteTimer);
+    if (!action) noteTimer = setTimeout(() => { if ($('latexbox').hidden && $('notetext').textContent === text) $('note').hidden = true; }, 6000);
+  }
+  $('noteact').onclick = () => { const a = noteAction; $('note').hidden = true; if (a) a(); };
+  $('noteclose').onclick = () => { $('note').hidden = true; };
+
+  // ---------------------------------------------------------------- views
+  function setView(v, quiet) {
+    view = v; pad.view = v; persist(); closePop();
+    document.querySelectorAll('#views button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.view === v)));
+    if (v === 'hand' && !Nib.hand.size && !quiet) note('Your handwriting is not on this computer yet. Open the file you saved from Replicator; until then the board shows your writing tidied.', () => $('file').click(), 'Open handwriting');
+    else if (!quiet) $('note').hidden = true;
+  }
+  document.querySelectorAll('#views button').forEach(b => { b.onclick = () => setView(b.dataset.view); });
+  // handwriting arriving from elsewhere (the Replicator in another tab) answers the note asking for it
+  window.addEventListener('nib:hand', () => { if (Nib.hand.size && !$('note').hidden && !$('noteact').hidden && noteAction && /Replicator/.test($('notetext').textContent)) $('note').hidden = true; });
+
+  // ---------------------------------------------------------------- tools
+  function tools() {
+    $('undo').disabled = !(pad.pad && pad.pad.canUndo); $('redo').disabled = !(pad.pad && pad.pad.canRedo);
+    $('clear').disabled = !pad.strokes.length; $('copy').disabled = !pad.latex;
+    const any = !!(pad.result && pad.result.symbols.length);
+    $('fix').disabled = !any; if (!any && fixing) fixMode(false);
+  }
+  pad.addEventListener('nib:change', () => { closePop(); tools(); persist(); });
+  pad.addEventListener('change', () => { closePop(); tools(); if (!$('latexbox').hidden) $('latexout').value = pad.latex; });
+  const erase = on => { pad.mode = on ? 'erase' : 'draw'; $('erase').setAttribute('aria-pressed', String(on)); if (on && fixing) fixMode(false); };
+
+  // ---------------------------------------------------------------- fix a misread symbol: tap it, pick what it is
+  const SHOW = { '-': '\u2212', '\\times': '\u00d7', '\\div': '\u00f7', '\\pm': '\u00b1', '\\le': '\u2264', '\\ge': '\u2265', '\\ne': '\u2260',
+    '\\cdot': '\u22c5', '\\pi': '\u03c0', '\\theta': '\u03b8', '\\alpha': '\u03b1', '\\beta': '\u03b2', '\\gamma': '\u03b3', '\\lambda': '\u03bb',
+    '\\mu': '\u03bc', '\\sigma': '\u03c3', '\\phi': '\u03d5', '\\Delta': '\u0394', '\\sqrt': '\u221a', '\\infty': '\u221e', '\\rightarrow': '\u2192',
+    '\\in': '\u2208', '\\circ': '\u00b0', '\\prime': '\u2032', '\\{': '{', '\\}': '}', '\\ldots': '\u2026', '\\sum': '\u2211', '\\int': '\u222b',
+    '\\forall': '\u2200', '\\exists': '\u2203', '\\lim': 'lim', '\\log': 'log', '\\sin': 'sin', '\\cos': 'cos', '\\tan': 'tan' };
+  const shownAs = l => SHOW[l] || l;
+  let fixing = false, popFor = null;
+  function fixMode(on) {
+    fixing = on; $('fix').setAttribute('aria-pressed', String(on)); $('fixlayer').hidden = !on; closePop();
+    if (on) {
+      if (pad.mode === 'erase') erase(false);
+      try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
+      note('Tap a symbol to fix how it was read.');
+    } else if (/^Tap a symbol/.test($('notetext').textContent)) $('note').hidden = true;
+  }
+  function closePop() { if (!$('fixpop').hidden) { $('fixpop').hidden = true; $('fixpop').textContent = ''; } popFor = null; }
+  // the symbol drawn under a point (as the view shows it: tidied, in your hand, typeset or as written): the smallest
+  // one the point is inside, else the closest one within a finger's width
+  function symbolAt(x, y) {
+    const P = pad.pad, res = P && P.result;
+    if (!res || !res.symbols.length) return null;
+    let inside = null, near = null;
+    for (const sym of res.symbols) {
+      const objs = sym.strokes.map(i => P.resultStrokes[i]);
+      const it = P.plan && P.plan.items.find(q => q.from.length === objs.length && q.from.every(o => objs.includes(o)));
+      const b = it ? it.box : [sym.box.x, sym.box.y, sym.box.x + sym.box.w, sym.box.y + sym.box.h];
+      const d = Math.hypot(Math.max(b[0] - x, 0, x - b[2]), Math.max(b[1] - y, 0, y - b[3]));
+      const area = Math.max(b[2] - b[0], 4) * Math.max(b[3] - b[1], 4);
+      if (d === 0) { if (!inside || area < inside.area) inside = { sym, box: b, area }; }
+      else if (d <= 12 && (!near || d < near.d)) near = { sym, box: b, d };
+    }
+    return inside || near;
+  }
+  function openPop(hit) {
+    const pop = $('fixpop'), sym = hit.sym;
+    pop.textContent = '';
+    const labels = [sym.label].concat(sym.candidates.map(c => c[0]).filter(l => l !== sym.label)).slice(0, 6);
+    for (const l of labels) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'cand'; b.textContent = shownAs(l); b.dataset.label = l;
+      b.setAttribute('aria-pressed', String(l === sym.label)); b.setAttribute('aria-label', l === sym.label ? 'Keep ' + l : 'Make it ' + l);
+      b.onclick = () => {
+        fixMode(false);                                  // back to writing
+        if (l === sym.label) return;
+        pad.relabel(sym, l);
+        note(`Changed to ${shownAs(l)}. Nib will read this shape better from now on.`);
+      };
+      pop.appendChild(b);
+    }
+    pop.hidden = false; popFor = sym;
+    // just below the symbol, or above it when there is no room; always inside the board
+    const S = pop.parentNode.getBoundingClientRect(), C = pad.querySelector('canvas').getBoundingClientRect();
+    const ox = C.left - S.left, oy = C.top - S.top, w = pop.offsetWidth, h = pop.offsetHeight;
+    let left = ox + (hit.box[0] + hit.box[2]) / 2 - w / 2, top = oy + hit.box[3] + 12;
+    if (top + h > S.height - 8) top = oy + hit.box[1] - h - 12;
+    pop.style.left = Math.max(8, Math.min(S.width - w - 8, left)) + 'px';
+    pop.style.top = Math.max(8, Math.min(S.height - h - 8, top)) + 'px';
+    const alt = pop.querySelector('.cand[aria-pressed="false"]'); (alt || pop.firstChild).focus();
+  }
+  $('fix').onclick = () => fixMode(!fixing);
+  $('fixlayer').addEventListener('click', e => {
+    const C = pad.querySelector('canvas').getBoundingClientRect();
+    const hit = symbolAt(e.clientX - C.left, e.clientY - C.top);
+    if (!hit) { closePop(); note('Tap a symbol to fix how it was read.'); return; }
+    if (popFor === hit.sym) { closePop(); return; }
+    $('note').hidden = true;
+    openPop(hit);
+  });
+  $('erase').onclick = () => erase(pad.mode !== 'erase');
+  $('undo').onclick = () => pad.undo();
+  $('redo').onclick = () => pad.redo();
+  $('clear').onclick = () => { pad.clear(); note('Board cleared. Undo brings it back.'); };
+  $('hand').onclick = () => $('file').click();
+  $('file').onchange = () => {
+    const f = $('file').files[0]; $('file').value = '';
+    if (!f) return;
+    f.text().then(t => {
+      let n = 0;
+      try { n = Nib.hand.load(t); } catch (e) { note('That file is not handwriting saved from Replicator.'); return; }
+      setView('hand', true);
+      note(`Your handwriting is ready: ${n} characters${Nib.hand.name ? ' from ' + Nib.hand.name : ''}. It stays in this browser.`);
+    });
+  };
+  $('copy').onclick = () => {
+    const t = pad.latex; if (!t) return;
+    const done = () => note('LaTeX copied.');
+    const manual = () => { $('latexbox').hidden = false; $('latexout').value = t; $('latexout').focus(); $('latexout').select(); note('Press Ctrl+C to copy the LaTeX.'); };
+    try { navigator.clipboard.writeText(t).then(done, manual); } catch (e) { manual(); }
+  };
+  $('noteclose').addEventListener('click', () => { $('latexbox').hidden = true; });
+  const canFull = !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false);
+  $('full').hidden = !canFull;
+  const toggleFull = () => { if (!canFull) return; (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); };
+  $('full').onclick = toggleFull;
+  document.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? pad.redo() : pad.undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); pad.redo(); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (k === 'escape') { if (!$('fixpop').hidden) closePop(); else if (fixing) fixMode(false); return; }
+    if (e.target && e.target.classList && e.target.classList.contains('cand') && (k === ' ' || k === 'enter')) return;
+    if (k === 'e') erase(pad.mode !== 'erase');
+    else if (k === 'x') { if (!$('fix').disabled || fixing) fixMode(!fixing); }
+    else if (k === 'f') toggleFull();
+    else if (k >= '1' && k <= '4') setView(VIEWS[+k - 1]);
+  });
+
+  // ---------------------------------------------------------------- start
+  customElements.whenDefined('nib-pad').then(() => {
+    setView(view, true);
+    if (saved && Array.isArray(saved.strokes) && saved.strokes.length) pad.strokes = saved.strokes.filter(s => Array.isArray(s) && s.length);
+    tools();
+  });
+})();
+</script>

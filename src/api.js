@@ -41,7 +41,19 @@ const Nib = {
     get size() { return memLoad().length; },
   },
   classes() { return model().cls.filter(c => c !== 'junk'); },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist },
+  // In place: the writing laid out again where it was written, as the writer's own strokes tidied up ('tidy'),
+  // in the writer's Replicator handwriting ('hand') or typeset ('typeset'). Returns {items, strokes, latex, ...}.
+  neaten(strokes, options) { const o = options || {}; return inPlace(strokes, o.style === 'hand' ? 'hand' : 'tidy', o); },
+  typeset(strokes, options) { return inPlace(strokes, 'typeset', options); },
+  hand: {
+    // data: the Replicator's saved handwriting ({glyphs: {char: strokes}}), as an object or its JSON text
+    load(data) { const n = handSet(typeof data === 'string' ? JSON.parse(data) : data); handNotify(); return n; },
+    clear() { HAND.glyphs = null; HAND.name = ''; HAND.loaded = true; HAND.version = (HAND.version || 0) + 1; try { localStorage.removeItem(HAND_KEY); } catch (e) { /* ok */ } handNotify(); },
+    get size() { const g = handLoad(); return g ? Object.keys(g).length : 0; },
+    get name() { handLoad(); return HAND.name || ''; },
+    has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
+  },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;

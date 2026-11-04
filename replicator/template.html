@@ -193,7 +193,7 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   }
   try { adopt(JSON.parse(localStorage.getItem(KEY) || 'null')); } catch (e) { /* first visit or storage blocked */ }
   let saveTimer = null;
-  const persist = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage full or blocked */ } }, 400); };
+  const persist = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign({ saved: Date.now() }, state))); } catch (e) { /* storage full or blocked */ } }, 400); };  // saved: Nib uses the newest handwriting in this browser
 
   // ---------------------------------------------------------------- sheet
   const count = sec => sec.chars.filter(c => (state.glyphs[c] || []).length).length;
@@ -392,7 +392,7 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
     try { navigator.clipboard.writeText(text).then(done, manual); } catch (e) { manual(); }
   };
   $('save').onclick = async () => {
-    if (await offer(fileName() + '.json', JSON.stringify(state), 'application/json')) note('Saved your handwriting. Open it here later to change any character.', 'ok');
+    if (await offer(fileName() + '.json', JSON.stringify(state), 'application/json')) note('Saved your handwriting. Open it here later to change any character, or in Nib Board to see your board in your own hand.', 'ok');
   };
   $('open').onclick = () => $('file').click();
   $('file').onchange = () => {

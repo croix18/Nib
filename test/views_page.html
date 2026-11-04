@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nib views test page</title>
+<style>
+  body { margin: 16px; font: 14px system-ui; background: #fffdf7; color: #1b2a4a; }
+  nib-pad { border: 1px solid #e7dcc2; margin-bottom: 10px; --nib-ink: #1b2a4a; }
+</style>
+</head>
+<body>
+<nib-pad id="a" style="height: 300px" view="tidy"></nib-pad>
+<nib-pad id="b" style="height: 200px"></nib-pad>
+<script src="../dist/nib.js"></script>
+<script>
+  window.events = [];
+  a.addEventListener('change', e => events.push(e.detail ? e.detail.latex : null));
+  window.longTasks = [];
+  try { new PerformanceObserver(l => { for (const e of l.getEntries()) longTasks.push(Math.round(e.duration)); }).observe({ entryTypes: ['longtask'] }); } catch (e) { /* unsupported */ }
+</script>
+</body>
+</html>
