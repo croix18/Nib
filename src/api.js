@@ -41,7 +41,7 @@ const Nib = {
     get size() { return memLoad().length; },
   },
   classes() { return model().cls.filter(c => c !== 'junk'); },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;

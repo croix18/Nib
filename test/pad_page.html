@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nib pad test page</title>
+<style>body { margin: 20px; font: 14px system-ui; } nib-pad { border: 1px solid #ccc; margin-bottom: 12px; } #b { --nib-ink: #8a6a10; }</style>
+</head>
+<body>
+<nib-pad id="a" style="height: 260px"></nib-pad>
+<nib-pad id="b" style="height: 160px" symbols="numbers" delay="200"></nib-pad>
+<div id="holder"></div>
+<script src="../dist/nib.js"></script>
+<script>
+  window.events = { a: [], b: [] };
+  a.addEventListener('change', e => events.a.push(e.detail ? e.detail.latex : null));
+  b.addEventListener('change', e => events.b.push(e.detail ? e.detail.latex : null));
+  // long tasks (main thread blocked > 50 ms) while the pad reads
+  window.longTasks = [];
+  try { new PerformanceObserver(l => { for (const e of l.getEntries()) longTasks.push(Math.round(e.duration)); }).observe({ entryTypes: ['longtask'] }); } catch (e) { /* unsupported */ }
+</script>
+</body>
+</html>

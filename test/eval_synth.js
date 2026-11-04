@@ -2,7 +2,7 @@
 // CROHME 2019 test-split handwriting).
 //   node test/eval_synth.js [optsJSON] [showErrors] [category]
 // optsJSON is merged over {symbols: 'school'}; showErrors = how many mismatches to print; category limits the run.
-// Env: NIB = engine path (default dist/nib.js), SYNTH = data file.
+// Env: NIB = engine path (default dist/nib.js), SYNTH = data file, EVERY = keep every n-th expression.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -11,7 +11,8 @@ const Nib = require(process.env.NIB || require('path').join(__dirname, '..', 'di
 const FILE = process.env.SYNTH || path.join(__dirname, 'school_synth.jsonl');
 const [optsJ = '{}', show = '0', only = ''] = process.argv.slice(2);
 const opts = JSON.parse(optsJ);
-const rows = fs.readFileSync(FILE, 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter(r => !only || r.cat === only);
+const rows = fs.readFileSync(FILE, 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter(r => !only || r.cat === only)
+  .filter((r, i) => !process.env.EVERY || i % +process.env.EVERY === 0);   // EVERY=2: every second expression
 if (!rows.length) { console.log('no rows' + (only ? ' for category ' + only : '')); process.exit(1); }
 
 // token-level Levenshtein distance (a softer number to watch while exact match is low)

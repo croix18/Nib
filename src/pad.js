@@ -6,6 +6,7 @@ const PAD_DEFAULTS = {
   delay: 450,           // ms of rest before recognising
   penOnly: false,       // ignore touch and mouse (stylus-only boards)
   boxes: false,         // draw recognised symbol boxes over the ink
+  smooth: 0,            // smooth shaky ink along its path before reading (sigma as a share of the writing size)
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
@@ -33,6 +34,7 @@ class Pad {
     c.addEventListener('pointermove', this._move);
     c.addEventListener('pointerup', this._up);
     c.addEventListener('pointercancel', this._up);
+    c.addEventListener('lostpointercapture', this._up);     // capture lost without a pointerup: finish the stroke
     c.addEventListener('contextmenu', e => e.preventDefault());
     this._theme = () => this.redraw();
     try { this.mq = matchMedia('(prefers-color-scheme: dark)'); this.mq.addEventListener('change', this._theme); } catch (e) { this.mq = null; }
@@ -78,6 +80,7 @@ class Pad {
   _up(e) {
     if (e.pointerId !== this.active) return;
     this.active = null;
+    if (e.type === 'pointercancel' && this.cur && this.cur.length < 3) { this.cur = null; this.redraw(); return; } // a cancelled tap
     if (this.mode === 'erase') {
       if (this.erased.length) { this.history.push({ erase: this.erased }); this.future = []; this._changed(); }
       return;
@@ -166,7 +169,7 @@ class Pad {
     clearTimeout(this.timer);
     const gen = ++this.gen;
     this.timer = setTimeout(() => {
-      const it = this.rec.warmup(this.strokes, this.o), start = performance.now();
+      const it = this.rec.warmup(this.strokes, this._ropts()), start = performance.now();
       const step = () => {
         if (gen !== this.gen) return;
         const t0 = performance.now();
@@ -187,11 +190,13 @@ class Pad {
     if (!this.strokes.length) { this._emit(null); return null; }
     const fix = this.fixes.map(f => ({ strokes: f.strokes.map(s => this.strokes.indexOf(s)), label: f.label }))
       .filter(f => f.strokes.every(i => i >= 0));
-    const res = this.rec.recognize(this.strokes, Object.assign({}, this.o, { fix }));
+    const res = this.rec.recognize(this.strokes, Object.assign(this._ropts(), { fix }));
     if (typeof start === 'number') res.ms = Math.round(performance.now() - start); // the whole read, not just its last pass
     this._emit(res);
     return res;
   }
+  // the recogniser's options (the pad's own)
+  _ropts() { const o = Object.assign({}, this.o); o.smooth = +o.smooth > 0 ? +o.smooth : 0; return o; }
   // re-label one recognised symbol (from result.symbols[i].candidates) and re-run
   relabel(symbol, label) {
     const ss = symbol.strokes.map(i => this.strokes[i]);
@@ -199,7 +204,12 @@ class Pad {
     this.fixes.push({ strokes: ss, label });
     // remember the shape so the same writer's next one reads right (stays in this browser)
     if (this.o.learn !== false && this.o.memory !== false) {
-      try { memLearn(classifyGroup(normStrokes(ss).strokes, refSize(normStrokes(this.strokes).strokes)).hidden, label); } catch (e) { /* ok */ }
+      try {
+        const ref = refSize(normStrokes(this.strokes).strokes), sm = this._ropts().smooth;
+        let g = normStrokes(ss).strokes;
+        if (sm > 0) g = g.map(st => smoothPath(st, sm * ref));
+        memLearn(classifyGroup(g, ref).hidden, label);
+      } catch (e) { /* ok */ }
     }
     return this.recognize();
   }
@@ -240,7 +250,7 @@ class Pad {
 // <nib-pad symbols="school" delay="450" ink="#1b2a4a" stroke-width="3" boxes></nib-pad>
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
-    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees']; }
+    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -254,15 +264,27 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         penOnly: has('pen-only'),
         lines: a('lines') !== 'false',
         degrees: a('degrees') !== 'false',
+        smooth: has('smooth') && +a('smooth') > 0 ? +a('smooth') : 0,
       };
     }
     connectedCallback() {
+      clearTimeout(this._gone);
       if (this.pad) return;
       if (!this.style.display) this.style.display = 'block';
       if (this.getBoundingClientRect().height < 4 && !this.style.height) this.style.height = '220px';
       this.pad = new Pad(this, Object.assign(this._opts(), {
         onResult: r => this.dispatchEvent(new CustomEvent('change', { detail: r, bubbles: true })),
       }));
+      if (this._saved) { this.pad.setStrokes(this._saved); this._saved = null; }
+    }
+    // moved within the page: keep everything; removed for good: release the canvas and observers (ink is kept
+    // in case the same element is put back later)
+    disconnectedCallback() {
+      clearTimeout(this._gone);
+      this._gone = setTimeout(() => {
+        if (this.isConnected || !this.pad) return;
+        this._saved = this.pad.getStrokes(); this.pad.destroy(); this.pad = null;
+      }, 0);
     }
     attributeChangedCallback() { if (this.pad) this.pad.setOptions(this._opts()); }
     get result() { return this.pad ? this.pad.result : null; }

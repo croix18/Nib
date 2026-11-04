@@ -1,0 +1,450 @@
+<title>Replicator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--FONT_LINK-->
+<style>
+/*FONT_FACES*/
+/* A specimen sheet: boxes ruled like a handwriting exercise book, and beside it the font taking shape. */
+:root {
+  --paper: #f8f3e6;
+  --sheet: #fffdf7;
+  --rule: #e7dcc2;
+  --guide: #d9c9a3;
+  --ink: #1b2a4a;
+  --muted: #5d6678;
+  --gold: #c9a227;
+  --gold-ink: #8a6a10;
+  --gold-wash: #f4e7bd;
+  --coral: #d9654f;
+  --shadow: 0 1px 0 rgba(27, 42, 74, .04), 0 10px 30px -18px rgba(27, 42, 74, .35);
+  --f-display: "DM Serif Display", Georgia, "Times New Roman", serif;
+  --f-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1628; --sheet: #142038; --rule: #26334f; --guide: #34456a; --ink: #f1eadb; --muted: #a7afc0;
+    --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --coral: #ef8a73;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 14px 34px -20px rgba(0, 0, 0, .8);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1628; --sheet: #142038; --rule: #26334f; --guide: #34456a; --ink: #f1eadb; --muted: #a7afc0;
+  --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --coral: #ef8a73;
+  --shadow: 0 1px 0 rgba(0, 0, 0, .3), 0 14px 34px -20px rgba(0, 0, 0, .8);
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { min-height: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+.app {
+  max-width: 1320px; margin: 0 auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 18px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 32px;
+}
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; }
+h1 { font-family: var(--f-display); font-weight: 400; font-size: 34px; line-height: 1; margin: 0; letter-spacing: .01em; }
+h1 .dot { color: var(--gold); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font-family: inherit; }
+.btn {
+  font: 500 13px/1 var(--f-body); color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); border-radius: 9px;
+  padding: 9px 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+}
+.btn:hover:not(:disabled) { border-color: var(--gold); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+.btn.primary:hover:not(:disabled) { background: var(--ink); border-color: var(--gold); }
+.btn svg { width: 16px; height: 16px; flex: none; }
+.btn:focus-visible, .tab:focus-visible, .x:focus-visible, input:focus-visible, textarea:focus-visible, .switch:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+.desk { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+@media (max-width: 980px) { .desk { grid-template-columns: minmax(0, 1fr); } }
+
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.tab {
+  font: 500 13px/1 var(--f-body); color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 999px;
+  padding: 8px 12px; cursor: pointer; display: inline-flex; gap: 8px; align-items: baseline;
+}
+.tab .n { font: 500 11px/1 var(--f-mono); color: var(--muted); }
+.tab[aria-selected="true"] { background: var(--sheet); border-color: var(--rule); color: var(--ink); }
+.tab.done .n { color: var(--gold-ink); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--box, 104px), 1fr)); gap: 10px; }
+.box {
+  position: relative; background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; aspect-ratio: 1100 / 1250;
+  overflow: hidden; box-shadow: var(--shadow); touch-action: none; max-width: 100%;
+}
+.box canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+.box .ch { position: absolute; left: 8px; top: 5px; font: 500 12px/1.2 var(--f-body); color: var(--muted); pointer-events: none; }
+.box .x {
+  position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent;
+  color: var(--muted); cursor: pointer; display: none; align-items: center; justify-content: center;
+}
+.box.has .x { display: inline-flex; }
+.box .x:hover { background: var(--paper); color: var(--ink); }
+@media (hover: hover) { .box.has .x { opacity: 0; } .box:hover .x, .box .x:focus-visible { opacity: 1; } }
+.box .x svg { width: 14px; height: 14px; }
+.box.has { border-color: color-mix(in srgb, var(--gold) 45%, var(--rule)); }
+
+.side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: calc(14px + env(safe-area-inset-top, 0px)); min-width: 0; }
+@media (max-width: 980px) { .side { position: static; } }
+.card { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow); padding: 16px; min-width: 0; }
+.label { font: 600 11px/1 var(--f-body); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.preview {
+  font-family: "Replicator Preview", var(--f-body); font-size: 30px; line-height: 1.3; min-height: 120px; overflow-wrap: anywhere;
+  color: var(--ink); white-space: pre-wrap;
+}
+.preview.small { font-size: 19px; min-height: 0; margin-top: 10px; color: var(--muted); }
+.empty { color: var(--muted); font: 15px/1.5 var(--f-body); }
+textarea, input[type="text"] {
+  width: 100%; box-sizing: border-box; font: 14px/1.45 var(--f-body); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--rule); border-radius: 9px; padding: 9px 11px; resize: vertical;
+}
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row + .row { margin-top: 12px; }
+.row label { font-size: 14px; }
+.row output { font: 12px/1 var(--f-mono); color: var(--muted); min-width: 34px; text-align: right; }
+input[type="range"] { width: 150px; accent-color: var(--gold); }
+.switch { appearance: none; width: 38px; height: 22px; border-radius: 999px; background: var(--rule); position: relative; cursor: pointer; margin: 0; flex: none; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--sheet); transition: left .15s; }
+.switch:checked { background: var(--gold); }
+.switch:checked::after { left: 19px; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.stack .btn { justify-content: center; padding: 11px 13px; }
+.note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+.note.ok { color: var(--gold-ink); }
+.note.err { color: var(--coral); }
+.status { font-size: 13px; color: var(--muted); }
+.k { font-family: var(--f-mono); font-size: .92em; }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1>Replicator<span class="dot">.</span></h1>
+    <div class="actions">
+      <button type="button" class="btn" id="undo" title="Undo the last stroke (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Undo</button>
+      <button type="button" class="btn" id="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M12 4v11"/><path d="m7 9 5-5 5 5"/></svg>Open handwriting</button>
+      <button type="button" class="btn" id="save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/></svg>Save handwriting</button>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+    </div>
+  </header>
+
+  <main class="desk">
+    <section aria-label="Writing sheet">
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <aside class="side">
+      <div class="card">
+        <p class="label">Your font</p>
+        <div class="preview" id="preview" aria-live="polite"><span class="empty">Write in the boxes and your font appears here.</span></div>
+        <div class="preview small" id="preview2" hidden></div>
+        <textarea id="sample" rows="2" aria-label="Preview text">Hamburgers & milkshakes 3 × 4 = 12</textarea>
+        <p class="status" id="status"></p>
+      </div>
+      <div class="card">
+        <div class="row"><label for="name">Name</label><input type="text" id="name" value="My Handwriting" style="width: 190px" maxlength="40"></div>
+        <div class="row"><label for="weight">Pen weight</label><input type="range" id="weight" min="40" max="150" step="5" value="80"><output id="weightV">80</output></div>
+        <div class="row"><label for="spacing">Letter spacing</label><input type="range" id="spacing" min="0" max="140" step="5" value="50"><output id="spacingV">50</output></div>
+        <div class="row"><label for="smooth">Smoothing</label><input type="range" id="smooth" min="0" max="6" step="1" value="2"><output id="smoothV">2</output></div>
+        <div class="row"><label for="tidy">Line up with the guides</label><input type="checkbox" class="switch" id="tidy" checked></div>
+        <div class="row"><label for="big">Bigger boxes</label><input type="checkbox" class="switch" id="big"></div>
+      </div>
+      <div class="card stack">
+        <button type="button" class="btn primary" id="download" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/></svg>Download font (.ttf)</button>
+        <button type="button" class="btn" id="css" disabled>Copy font for web pages</button>
+        <button type="button" class="btn" id="teach" hidden>Teach Nib my handwriting</button>
+        <p class="note" id="exportNote"></p>
+        <textarea id="cssOut" rows="4" readonly hidden aria-label="Font for web pages"></textarea>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<!--NIB_JS-->
+<script>/*CORE_JS*/</script>
+<script>
+(function () {
+  'use strict';
+  const R = window.Replicator, $ = id => document.getElementById(id);
+  const KEY = 'replicator-v1';
+  const state = { name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 2, tidy: true, big: false, glyphs: {}, section: 'upper' };
+  const history = [];          // [{ch, stroke}] for undo
+  const boxes = new Map();     // ch -> {el, canvas, ctx}
+  const cache = new Map();     // traced outlines, reused while a glyph's strokes and the pen settings are unchanged
+  let font = null, buildTimer = null, faceN = 0, lastFace = null;
+
+  // ---------------------------------------------------------------- saved work
+  // saved work, from this browser or a file: take only what makes sense, so an old or damaged file cannot break the page
+  function adopt(d) {
+    if (!d || typeof d !== 'object' || !d.glyphs || typeof d.glyphs !== 'object' || Array.isArray(d.glyphs)) return false;
+    const num = (v, lo, hi, def) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def);
+    const glyphs = {};
+    for (const sec of R.SECTIONS) for (const ch of sec.chars) { const st = R.cleanStrokes(d.glyphs[ch]); if (st.length) glyphs[ch] = st; }
+    state.glyphs = glyphs;
+    state.name = typeof d.name === 'string' ? d.name.slice(0, 40) : 'My Handwriting';
+    state.weight = num(d.weight, 40, 150, 80); state.spacing = num(d.spacing, 0, 140, 50); state.smoothing = Math.round(num(d.smoothing, 0, 6, 2));
+    state.tidy = typeof d.tidy === 'boolean' ? d.tidy : true; state.big = d.big === true;
+    if (R.SECTIONS.some(sec => sec.id === d.section)) state.section = d.section;
+    return true;
+  }
+  try { adopt(JSON.parse(localStorage.getItem(KEY) || 'null')); } catch (e) { /* first visit or storage blocked */ }
+  let saveTimer = null;
+  const persist = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage full or blocked */ } }, 400); };
+
+  // ---------------------------------------------------------------- sheet
+  const count = sec => sec.chars.filter(c => (state.glyphs[c] || []).length).length;
+  function renderTabs() {
+    const tabs = $('tabs'); tabs.textContent = '';
+    for (const sec of R.SECTIONS) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'tab' + (count(sec) === sec.chars.length ? ' done' : ''); b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(sec.id === state.section)); b.id = 'tab-' + sec.id;
+      b.innerHTML = '<span></span><span class="n"></span>';
+      b.firstChild.textContent = sec.name; b.lastChild.textContent = count(sec) + '/' + sec.chars.length;
+      b.onclick = () => { state.section = sec.id; persist(); renderTabs(); renderGrid(); };
+      tabs.appendChild(b);
+    }
+  }
+  function renderGrid() {
+    const grid = $('grid'); grid.textContent = ''; boxes.clear();
+    grid.style.setProperty('--box', state.big ? '168px' : '104px');
+    const sec = R.SECTIONS.find(s => s.id === state.section) || R.SECTIONS[0];
+    for (const ch of sec.chars) {
+      const el = document.createElement('div'); el.className = 'box';
+      el.innerHTML = '<canvas></canvas><span class="ch"></span><button type="button" class="x" title="Clear this box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
+      el.querySelector('.ch').textContent = ch;
+      el.querySelector('.x').setAttribute('aria-label', 'Clear ' + ch);
+      const canvas = el.querySelector('canvas');
+      canvas.setAttribute('aria-label', 'Write ' + ch);
+      grid.appendChild(el);
+      const b = { el, canvas, ctx: canvas.getContext('2d'), ch };
+      boxes.set(ch, b);
+      attach(b);
+      el.querySelector('.x').onclick = () => { if (!(state.glyphs[ch] || []).length) return; history.push({ ch, cleared: state.glyphs[ch] }); state.glyphs[ch] = []; changed(ch); };
+    }
+    sizeAll();
+  }
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => sizeAll()) : null;
+  function sizeAll() { for (const b of boxes.values()) { size(b); draw(b); if (ro) ro.observe(b.canvas); } }
+  function size(b) {
+    const r = b.canvas.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
+    if (b.canvas.width !== w || b.canvas.height !== h) { b.canvas.width = w; b.canvas.height = h; }
+    b.w = r.width; b.h = r.height; b.d = d;
+  }
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function draw(b, live) {
+    const { ctx } = b, W = b.canvas.width, H = b.canvas.height;
+    if (!b.w) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
+    // guides: cap height and x-height dashed, baseline solid, descender line dotted
+    const g = R.GUIDE_FRAC, line = (f, dash, alpha, wid) => { ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = css('--guide'); ctx.lineWidth = wid * b.d; ctx.setLineDash(dash.map(v => v * b.d)); ctx.beginPath(); ctx.moveTo(0, f * H); ctx.lineTo(W, f * H); ctx.stroke(); ctx.restore(); };
+    line(g.cap, [4, 4], 1, 1); line(g.x, [4, 4], 1, 1); line(g.base, [], 1, 1.5); line(g.desc, [1, 4], 1, 1);
+    const st = (state.glyphs[b.ch] || []).concat(live ? [live] : []);
+    ctx.strokeStyle = css('--ink'); ctx.fillStyle = css('--ink'); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(1.5 * b.d, state.weight / R.BOX.h * H);
+    for (const s of st) {
+      ctx.beginPath();
+      if (s.length === 1) { ctx.arc(s[0][0] * W, s[0][1] * H, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(); continue; }
+      ctx.moveTo(s[0][0] * W, s[0][1] * H);
+      for (let i = 1; i < s.length - 1; i++) ctx.quadraticCurveTo(s[i][0] * W, s[i][1] * H, (s[i][0] + s[i + 1][0]) / 2 * W, (s[i][1] + s[i + 1][1]) / 2 * H);
+      ctx.lineTo(s[s.length - 1][0] * W, s[s.length - 1][1] * H);
+      ctx.stroke();
+    }
+    b.el.classList.toggle('has', (state.glyphs[b.ch] || []).length > 0);
+  }
+  // pen, finger or mouse; with a pen in use, touches are ignored (a resting palm)
+  let sawPen = false;
+  function attach(b) {
+    let id = null, cur = null;
+    const pt = e => { const r = b.canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+    b.canvas.addEventListener('pointerdown', e => {
+      if (id !== null) return;
+      if (e.pointerType === 'pen') sawPen = true;
+      if (sawPen && e.pointerType === 'touch') return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      e.preventDefault(); id = e.pointerId; cur = [pt(e)];
+      try { b.canvas.setPointerCapture(id); } catch (err) { /* ok */ }
+      size(b); draw(b, cur);
+    });
+    b.canvas.addEventListener('pointermove', e => {
+      if (e.pointerId !== id) return;
+      e.preventDefault();
+      for (const ev of (e.getCoalescedEvents ? e.getCoalescedEvents() : [e])) { const p = pt(ev), q = cur[cur.length - 1]; if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) > 0.002) cur.push(p); }
+      draw(b, cur);
+    });
+    const up = e => {
+      if (e.pointerId !== id) return;
+      id = null;
+      if (!cur) return;
+      const s = cur.map(p => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000]); cur = null;
+      (state.glyphs[b.ch] = state.glyphs[b.ch] || []).push(s);
+      history.push({ ch: b.ch, stroke: s });
+      changed(b.ch);
+    };
+    b.canvas.addEventListener('pointerup', up); b.canvas.addEventListener('pointercancel', up); b.canvas.addEventListener('lostpointercapture', up);
+    b.canvas.addEventListener('contextmenu', e => e.preventDefault());
+  }
+  function changed(ch) {
+    const b = boxes.get(ch); if (b) draw(b);
+    renderTabs(); persist(); schedule();
+  }
+  function undo() {
+    const h = history.pop(); if (!h) return;
+    if (h.cleared) state.glyphs[h.ch] = h.cleared;
+    else { const st = state.glyphs[h.ch] || []; const i = st.lastIndexOf(h.stroke); if (i >= 0) st.splice(i, 1); }
+    if (!boxes.has(h.ch)) { state.section = (R.SECTIONS.find(s => s.chars.includes(h.ch)) || R.SECTIONS[0]).id; renderGrid(); }
+    changed(h.ch);
+  }
+
+  // ---------------------------------------------------------------- the font
+  let pending = false;
+  function schedule() { pending = true; clearTimeout(buildTimer); buildTimer = setTimeout(build, 500); }
+  const optsNow = () => ({ name: state.name.trim() || 'My Handwriting', weight: state.weight, spacing: state.spacing, smoothing: state.smoothing, tidy: state.tidy, cache });
+  // the font exactly as the sheet is now: a build still waiting or running is finished on the spot
+  function current() { if (pending) { clearTimeout(buildTimer); ++buildGen; assemble(optsNow()); } return font; }
+  // Tracing every glyph takes a moment (all of them change with the pen weight), so it is done a little at a
+  // time between frames; a newer build supersedes one still running.
+  let buildGen = 0;
+  function build() {
+    pending = true;
+    const gen = ++buildGen, opts = optsNow();
+    let it;
+    try { it = R.warm(state.glyphs, opts); } catch (e) { $('status').textContent = 'The font could not be built: ' + e.message; return; }
+    const step = () => {
+      if (gen !== buildGen) return;
+      const t0 = performance.now();
+      let r;
+      try { do { r = it.next(); } while (!r.done && performance.now() - t0 < 12); }
+      catch (e) { $('status').textContent = 'The font could not be built: ' + e.message; return; }
+      if (!r.done) { setTimeout(step, 0); return; }
+      assemble(opts);
+    };
+    step();
+  }
+  function assemble(opts) {
+    pending = false;
+    let res;
+    try { res = R.buildFont(state.glyphs, opts); }
+    catch (e) { $('status').textContent = 'The font could not be built: ' + e.message; return; }
+    font = res;
+    if (!$('cssOut').hidden) note('');                  // the copied font is out of date now
+    const fam = 'Replicator Preview ' + (++faceN), mine = faceN;
+    const face = new FontFace(fam, res.bytes);
+    face.load().then(f => {
+      if (mine !== faceN) return;                      // a newer build is already on its way
+      if (lastFace) document.fonts.delete(lastFace);
+      lastFace = f;
+      document.fonts.add(f);
+      for (const el of [$('preview'), $('preview2')]) el.style.fontFamily = '"' + fam + '", var(--f-body)';
+      showPreview();
+    }).catch(() => { if (mine === faceN) $('status').textContent = 'The browser could not load the preview.'; });
+    const total = R.SECTIONS.reduce((n, s) => n + s.chars.length, 0);
+    $('status').textContent = res.built.length ? `${res.built.length} of ${total} characters written` : '';
+    $('download').disabled = $('css').disabled = !res.built.length;
+    $('teach').disabled = !res.built.length;
+    if (!res.built.length) showPreview();
+  }
+  function showPreview() {
+    const has = font && font.built.length;
+    const p = $('preview');
+    if (!has) { p.innerHTML = '<span class="empty">Write in the boxes and your font appears here.</span>'; $('preview2').hidden = true; return; }
+    p.textContent = $('sample').value || ' ';
+    const p2 = $('preview2'); p2.hidden = false; p2.textContent = font.built.join('');
+  }
+  $('sample').addEventListener('input', showPreview);
+
+  // ---------------------------------------------------------------- export
+  const fileName = () => (state.name.trim() || 'My Handwriting').replace(/[^A-Za-z0-9 _-]+/g, '').trim().replace(/\s+/g, '-') || 'handwriting';
+  // Published on claude.ai the page cannot download by itself: it asks the viewer through the downloads capability.
+  let saver = null;
+  try { if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { saver = d; }, () => {}); } catch (e) { /* not in a viewer */ }
+  async function offer(name, data, type) {
+    if (saver) {
+      try { await saver.save({ filename: name, data: data instanceof Uint8Array ? data.slice() : data }); return true; }
+      catch (e) { if (e && e.code === 'declined') return false; }
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    return true;
+  }
+  function note(text, kind) { const n = $('exportNote'); n.textContent = text; n.className = 'note' + (kind ? ' ' + kind : ''); $('cssOut').hidden = true; }
+  $('download').onclick = async () => {
+    const f = current(); if (!f || !f.built.length) return;
+    const name = fileName() + '.ttf';
+    if (await offer(name, f.bytes, 'font/ttf')) note('Saved ' + name + '. On Windows or a Mac, double-click it to install it. Canva takes it under Brand fonts; a Chromebook cannot install fonts.', 'ok');
+  };
+  $('css').onclick = () => {
+    const f = current(); if (!f || !f.built.length) return;
+    const bytes = f.bytes;
+    let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const fam = (state.name.trim() || 'My Handwriting').replace(/["\\]/g, '');
+    const text = '@font-face {\n  font-family: "' + fam + '";\n  src: url(data:font/ttf;base64,' + btoa(bin) + ') format("truetype");\n  font-display: swap;\n}';
+    const done = () => note('Copied. Paste it into a page\'s <style>, then use font-family: "' + fam + '".', 'ok');
+    const manual = () => {          // no clipboard here: show the text, selected, to copy by hand
+      note('Press Ctrl+C to copy, then paste it into a page\'s <style> and use font-family: "' + fam + '".', 'ok');
+      const t = $('cssOut'); t.hidden = false; t.value = text; t.focus(); t.select();
+    };
+    try { navigator.clipboard.writeText(text).then(done, manual); } catch (e) { manual(); }
+  };
+  $('save').onclick = async () => {
+    if (await offer(fileName() + '.json', JSON.stringify(state), 'application/json')) note('Saved your handwriting. Open it here later to change any character.', 'ok');
+  };
+  $('open').onclick = () => $('file').click();
+  $('file').onchange = () => {
+    const f = $('file').files[0]; if (!f) return;
+    f.text().then(t => {
+      let d = null;
+      try { d = JSON.parse(t); } catch (e) { throw new Error('it is not a saved handwriting file'); }
+      const keep = JSON.stringify(state);
+      if (!adopt(d)) throw new Error('it is not a saved handwriting file');
+      if (!Object.keys(state.glyphs).length && Object.keys(d.glyphs).length) { adopt(JSON.parse(keep)); throw new Error('it holds no readable handwriting'); }
+      history.length = 0; cache.clear(); syncControls(); renderTabs(); renderGrid(); persist(); build();
+      note('Opened ' + f.name + '.', 'ok');
+    }).catch(e => note('That file could not be opened: ' + e.message, 'err'));
+    $('file').value = '';
+  };
+  // Nib, when this page carries it: every written character Nib knows is remembered as this writer's shape
+  const NIB_LABEL = { '×': '\\times', '÷': '\\div', '±': '\\pm', '≠': '\\ne', '≤': '\\le', '≥': '\\ge', 'π': '\\pi', 'θ': '\\theta', '∞': '\\infty', '√': '\\sqrt' };
+  // (not on a published page: its storage is its own, so no other tool could read what it learned)
+  if (window.Nib && window.Nib.memory && !window.REPLICATOR_PUBLISHED) {
+    $('teach').hidden = false;
+    $('teach').onclick = () => {
+      const known = new Set(window.Nib.classes()), g = R.GUIDE_FRAC, ref = g.base - g.cap;
+      let n = 0;
+      for (const [ch, st] of Object.entries(state.glyphs)) {
+        const label = NIB_LABEL[ch] || ch;
+        if (!st.length || !known.has(label)) continue;
+        // box coordinates with the box's real proportions, so shapes keep their aspect
+        window.Nib.memory.learn(st.map(s => s.map(p => [p[0] * R.BOX.w / R.BOX.h, p[1]])), label, ref);
+        n++;
+      }
+      note(n ? `Nib now knows your ${n} characters in this browser. Tools here that use Nib will read your writing better.` : 'Write some letters or numbers first.', n ? 'ok' : '');
+    };
+  }
+
+  // ---------------------------------------------------------------- settings
+  function syncControls() {
+    $('name').value = state.name; $('weight').value = state.weight; $('spacing').value = state.spacing; $('smooth').value = state.smoothing;
+    $('tidy').checked = state.tidy; $('big').checked = state.big;
+    $('weightV').textContent = state.weight; $('spacingV').textContent = state.spacing; $('smoothV').textContent = state.smoothing;
+  }
+  const bind = (id, key, num, redraw) => $(id).addEventListener('input', e => {
+    state[key] = e.target.type === 'checkbox' ? e.target.checked : num ? +e.target.value : e.target.value;
+    syncControls(); persist();
+    if (redraw) for (const b of boxes.values()) draw(b);
+    if (key === 'big') renderGrid(); else schedule();
+  });
+  bind('name', 'name'); bind('weight', 'weight', true, true); bind('spacing', 'spacing', true); bind('smooth', 'smoothing', true); bind('tidy', 'tidy'); bind('big', 'big');
+  $('undo').onclick = undo;
+  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); undo(); } });
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { for (const b of boxes.values()) draw(b); }); } catch (e) { /* old browser */ }
+
+  syncControls(); renderTabs(); renderGrid();
+  if (Object.values(state.glyphs).some(s => s && s.length)) build(); else showPreview();
+})();
+</script>

@@ -5,7 +5,7 @@ const NO_SCRIPT = new Set(['+', '-', '=', '<', '>', '\\le', '\\ge', '\\ne', '\\t
   '/', ',', '.', '\\rightarrow', ':', '\\in']);
 const CIRCLES = new Set(['o', '0', 'O']);
 const DOTTED = new Set(['i', 'j', '\\div', '!', '\\ldots', ':', ';', '?']);
-const DEFAULTS = { symbols: 'school', lines: true, degrees: true, wJunk: 2.0, wClass: 1.0, wJoin: 0.2, beta: 0.5, lm: 0.35, size: 0, maxGap: 1.6, prune: 0.03, barH: 1.1, barW: 0.15, prior: 0.5, dotPen: 3, parenPen: 3, lmSeg: 0 };
+const DEFAULTS = { symbols: 'school', lines: true, degrees: true, wJunk: 2.0, wClass: 1.0, wJoin: 0.2, beta: 0.5, lm: 0.35, size: 0, maxGap: 1.6, prune: 0.03, barH: 1.1, barW: 0.15, prior: 0.5, dotPen: 3, parenPen: 3, lmSeg: 0, delayed: true, delayGain: 0.3, lateTol: 0.08, deskew: 3, skewW: 2.5, skewAgree: 0.5, smooth: 0 };
 
 function normStrokes(input) {
   const out = [], src = [];
@@ -21,6 +21,87 @@ function normStrokes(input) {
     if (q.length) { out.push(q); src.push(i); }
   });
   return { strokes: out, src };
+}
+
+// Gaussian smoothing along the pen path (sigma in ink units); the ends stay put, and sparse points (a mouse)
+// are barely touched because the window only spans points within ~2.5 sigma of path length.
+function smoothPath(s, sigma) {
+  const n = s.length;
+  if (n < 3 || !(sigma > 0)) return s;
+  const L = [0];
+  for (let i = 1; i < n; i++) L.push(L[i - 1] + Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]));
+  const out = [s[0]], r = 2.5 * sigma, inv = 1 / (2 * sigma * sigma);
+  let lo = 0, hi = 0;
+  for (let i = 1; i < n - 1; i++) {
+    const rr = Math.min(r, L[i], L[n - 1] - L[i]);          // a symmetric window near the ends
+    while (L[i] - L[lo] > r) lo++;
+    if (hi < i) hi = i;
+    while (hi + 1 < n && L[hi + 1] - L[i] <= r) hi++;
+    let sw = 0, sx = 0, sy = 0;
+    for (let k = lo; k <= hi; k++) {
+      const d = L[k] - L[i]; if (d > rr || d < -rr) continue;
+      const w = Math.exp(-d * d * inv); sw += w; sx += w * s[k][0]; sy += w * s[k][1];
+    }
+    out.push([sx / sw, sy / sw]);
+  }
+  out.push(s[n - 1]);
+  return out;
+}
+
+// Late strokes: the segmentation reads strokes in the order they were written, so a stroke added to an earlier
+// symbol much later would be read on its own. A stroke that touches or crosses ink written two or more strokes
+// before it, but not the stroke just before it nor the one after it, is moved to just after the latest stroke it
+// touches. Returns the new order, or null when nothing moves.
+function lateOrder(strokes, ref, k) {
+  const n = strokes.length, boxes = strokes.map(sbox), tol = (k > 0 ? k : 0.08) * ref;
+  const size = b => Math.max(b[2] - b[0], b[3] - b[1]);
+  const touch = (i, j) => {
+    const a = boxes[i], b = boxes[j];
+    if (a[0] - tol > b[2] || b[0] - tol > a[2] || a[1] - tol > b[3] || b[1] - tol > a[3]) return false;
+    return inkDist(strokes[i], strokes[j], tol) <= tol;
+  };
+  const after = new Int32Array(n).fill(-1);
+  let moved = false;
+  for (let j = 2; j < n; j++) {
+    if (size(boxes[j]) < 0.15 * ref) continue;                     // dots are left to mergeDelayed
+    if (touch(j - 1, j)) continue;                                   // part of what was just written
+    if (j + 1 < n && boxGap(boxes[j], boxes[j + 1]) < 0.2 * ref) continue;   // the start of the next symbol
+    let target = -1;
+    for (let i = j - 2; i >= Math.max(0, j - 40) && target < 0; i--) if (touch(i, j)) target = i;
+    if (target < 0) continue;
+    while (after[target] >= 0) target = after[target];
+    after[j] = target; moved = true;
+  }
+  if (!moved) return null;
+  const late = new Map();
+  for (let j = 0; j < n; j++) if (after[j] >= 0) { if (!late.has(after[j])) late.set(after[j], []); late.get(after[j]).push(j); }
+  const order = [];
+  for (let i = 0; i < n; i++) if (after[i] < 0) { order.push(i); for (const j of late.get(i) || []) order.push(j); }
+  return order;
+}
+// the shortest distance between two strokes' ink, stopping early once it is under `stop`
+function inkDist(a, b, stop) {
+  let best = Infinity;
+  const segD = (p, q, r) => {
+    const dx = r[0] - q[0], dy = r[1] - q[1], L2 = dx * dx + dy * dy;
+    let t = L2 > 0 ? ((p[0] - q[0]) * dx + (p[1] - q[1]) * dy) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    return Math.hypot(p[0] - q[0] - t * dx, p[1] - q[1] - t * dy);
+  };
+  const one = (P, Q) => {
+    for (const p of P) {
+      if (Q.length === 1) best = Math.min(best, Math.hypot(p[0] - Q[0][0], p[1] - Q[0][1]));
+      for (let k = 0; k + 1 < Q.length; k++) { const d = segD(p, Q[k], Q[k + 1]); if (d < best) { best = d; if (best <= stop) return; } }
+    }
+  };
+  one(a, b); if (best > stop) one(b, a);
+  // two segments that cross without any point near the other stroke
+  if (best > stop) for (let i = 0; i + 1 < a.length; i++) for (let k = 0; k + 1 < b.length; k++) if (crosses(a[i], a[i + 1], b[k], b[k + 1])) return 0;
+  return best;
+}
+function crosses(p1, p2, q1, q2) {
+  const o = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const d1 = o(q1, q2, p1), d2 = o(q1, q2, p2), d3 = o(p1, p2, q1), d4 = o(p1, p2, q2);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
 }
 
 class Recognizer {
@@ -61,13 +142,27 @@ class Recognizer {
     return clip(p, 1e-4, 1 - 1e-4);
   }
 
+  // clean points, stable stroke ids for the caches, and (opts.smooth > 0) the wobble of a fingertip taken out
+  prepare(input, opts) {
+    const n = normStrokes(input);
+    let ids = n.strokes.map((s, i) => this.idOf(input[n.src[i]], s));
+    if (opts.smooth > 0 && n.strokes.length) {
+      const sigma = opts.smooth * refSize(n.strokes);
+      n.strokes = n.strokes.map(s => smoothPath(s, sigma));
+      ids = ids.map(id => id + '~' + opts.smooth);
+    }
+    // a stroke that goes back to touch ink written earlier (crossing the t at the end) is read where it belongs
+    const order = opts.delayed && n.strokes.length > 2 ? lateOrder(n.strokes, refSize(n.strokes), opts.lateTol) : null;
+    if (order) return { strokes: order.map(i => n.strokes[i]), src: order.map(i => n.src[i]), ids: order.map(i => ids[i]) };
+    return { strokes: n.strokes, src: n.src, ids };
+  }
+
   recognize(input, options) {
     const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
     const opts = Object.assign({}, DEFAULTS, options || {});
-    const { strokes, src } = normStrokes(input);
-    const ids = strokes.map((s, i) => this.idOf(input[src[i]], s));
+    const { strokes, src, ids } = this.prepare(input, opts);
     const empty = { latex: '', text: '', lines: [], symbols: [], tree: [], confidence: 0 };
-    if (!strokes.length) return Object.assign(empty, { ms: 0 });
+    if (!strokes.length) return Object.assign(empty, { skew: 0, ms: 0 });
     const ref = refSize(strokes);
     const mask = allowedMask(opts.symbols);
     // user corrections: [{strokes: [input indices], label}] -> contiguous internal ranges
@@ -80,9 +175,34 @@ class Recognizer {
     }
     this.prior = priorVector(opts);
     const cref = this.classRef(ref, ids);
-    const syms = opts.oracle ? opts.oracle(strokes, ref) : this.segment(strokes, ids, ref, mask, opts, fixOf, fixes, cref);
+    let syms = opts.oracle ? opts.oracle(strokes, ref) : this.segment(strokes, ids, ref, mask, opts, fixOf, fixes, cref);
+    if (!opts.oracle && opts.delayed) syms = this.mergeDelayed(syms, strokes, ids, ref, cref, mask, opts);
     for (const s of syms) s.strokes = s.strokes.map(i => src[i]);
-    const res = finish(syms, ref, opts);
+    const first = syms.map(s => Object.assign({}, s));               // the layout below relabels symbols in place
+    let res = finish(syms, ref, opts), skew = 0;
+    // Writing that runs uphill or downhill: measure the slope from the symbols just read and, when it is clear,
+    // lay the same symbols out again with the slope taken out (the symbols themselves are not re-read).
+    if (opts.deskew > 0) {
+      const t = skewOf(first, ref, opts);
+      if (Math.abs(t) >= Math.tan(opts.deskew * Math.PI / 180)) {
+        let sx = 0, n = 0;
+        for (const s of strokes) for (const p of s) { sx += p[0]; n++; }
+        const c0 = sx / n;
+        const level = first.map(s => {
+          const pts = s.pts.map(st => st.map(p => [p[0], p[1] - t * (p[0] - c0)]));
+          return Object.assign({}, s, { pts, box: pts.map(sbox).reduce(ubox) });
+        });
+        res = finish(level, ref, opts);
+        skew = Math.round(Math.atan(t) * 1800 / Math.PI) / 10;
+        // report every box around the ink as written
+        const at = new Map(src.map((v, i) => [v, i]));
+        for (const s of res.symbols) {
+          const b = s.strokes.map(k => sbox(strokes[at.get(k)])).reduce(ubox);
+          s.box = { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] };
+        }
+      }
+    }
+    res.skew = skew;
     res.ms = Math.round((typeof performance !== 'undefined' ? performance : Date).now() - t0);
     return res;
   }
@@ -91,9 +211,8 @@ class Recognizer {
   // caller can spread the work over several frames and keep the page responsive. recognize() then hits the cache.
   *warmup(input, options) {
     const opts = Object.assign({}, DEFAULTS, options || {});
-    const { strokes, src } = normStrokes(input);
+    const { strokes, ids } = this.prepare(input, opts);
     if (!strokes.length) return;
-    const ids = strokes.map((s, i) => this.idOf(input[src[i]], s));
     const ref = refSize(strokes), cref = this.classRef(ref, ids), n = strokes.length, boxes = strokes.map(sbox);
     const pj = [];
     for (let k = 0; k + 1 < n; k++) pj.push(this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1]));
@@ -109,6 +228,61 @@ class Recognizer {
         if (!this.cache.has(key + bucket)) { this.probs(strokes.slice(i, j + 1), cref, key, false); yield; }
       }
     }
+  }
+
+  // A stroke added later to a symbol written earlier (crossing the t at the end, finishing a 4 after the next
+  // number, the second stroke of an x): the segmentation keeps time order, so it reads two symbols. Merge two
+  // symbols that are not neighbours in time when their ink overlaps and the network reads the union as one
+  // confident symbol that scores better than the two apart.
+  mergeDelayed(syms, strokes, ids, ref, cref, mask, opts) {
+    const M = model();
+    const score = group => {
+      const key = group.map(i => ids[i]).join(',');
+      const p = withPrior(this.probs(group.map(i => strokes[i]), cref, key, opts.memory), this.prior);
+      let tot = 0; for (let c = 0; c < p.length; c++) if (mask[c]) tot += p[c];
+      const pjunk = p[M.junk] / tot, norm = tot * Math.max(1 - pjunk, 1e-6);
+      const list = [];
+      for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) list.push([M.cls[c], p[c] / norm]);
+      list.sort((x, y) => y[1] - x[1]);
+      return { s: opts.wJunk * Math.log(Math.max(1 - pjunk, 1e-4)) + opts.wClass * Math.log(Math.max(list[0][1], 1e-6)) - opts.beta, list, pjunk };
+    };
+    const grow = (b, k) => [b[0] - k, b[1] - k, b[2] + k, b[3] + k];
+    const area = b => Math.max(b[2] - b[0], 0.05 * ref) * Math.max(b[3] - b[1], 0.05 * ref);
+    for (let round = 0; round < 4; round++) {
+      let best = null;
+      for (let a = 0; a < syms.length; a++) for (let b = a + 1; b < syms.length; b++) {
+        const A = syms[a], B = syms[b];
+        if (A.fixed || B.fixed || A.strokes.length + B.strokes.length > MAXK) continue;
+        const lastA = Math.max(...A.strokes), firstB = Math.min(...B.strokes);
+        if (firstB === lastA + 1) continue;                               // neighbours in time: the DP already decided
+        const sb = Math.max(B.box[2] - B.box[0], B.box[3] - B.box[1]), sa = Math.max(A.box[2] - A.box[0], A.box[3] - A.box[1]);
+        const dot = Math.min(sa, sb) < 0.12 * ref;
+        if (dot) {
+          // a dot joins only the symbol it sits just above or below (the dot of an i or j, a dot of ÷), never one
+          // it sits beside (a decimal point stays a decimal point)
+          const D = sa < sb ? A : B, S = D === A ? B : A, c = cxy(D.box);
+          const gapY = Math.max(S.box[1] - D.box[3], D.box[1] - S.box[3]);
+          if (c[0] < S.box[0] - 0.25 * ref || c[0] > S.box[2] + 0.25 * ref || gapY > 0.6 * ref || (c[1] > S.box[1] && c[1] < S.box[3])) continue;
+        } else {
+          const ea = grow(A.box, 0.08 * ref), eb = grow(B.box, 0.08 * ref);
+          const ix = Math.min(ea[2], eb[2]) - Math.max(ea[0], eb[0]), iy = Math.min(ea[3], eb[3]) - Math.max(ea[1], eb[1]);
+          if (ix <= 0 || iy <= 0 || ix * iy < 0.3 * Math.min(area(ea), area(eb))) continue;
+        }
+        const group = A.strokes.concat(B.strokes).sort((x, y) => x - y);
+        const m = score(group), sepA = score(A.strokes), sepB = score(B.strokes);
+        const gain = m.s - (sepA.s + sepB.s);
+        if (dot && !DOTTED.has(m.list[0][0])) continue;
+        if (gain > opts.delayGain && m.list[0][1] > 0.5 && m.pjunk < 0.5 && (!best || gain > best.gain)) best = { a, b, group, m, gain };
+      }
+      if (!best) break;
+      const A = syms[best.a], B = syms[best.b];
+      const merged = { label: best.m.list[0][0], cands: best.m.list.slice(0, 6), strokes: best.group, box: ubox(A.box, B.box),
+        pts: best.group.map(i => strokes[i]), junk: best.m.pjunk };
+      syms = syms.filter((_, i) => i !== best.a && i !== best.b);
+      syms.push(merged);
+      syms.sort((x, y) => Math.min(...x.strokes) - Math.min(...y.strokes));
+    }
+    return syms;
   }
 
   // time-ordered dynamic programme over stroke groups of size <= MAXK
@@ -203,6 +377,40 @@ class Recognizer {
     }
     return syms.reverse();
   }
+}
+
+// The slope of the writing (dy/dx, y down) from symbols in writing order: neighbouring digits and letters of a
+// similar size for their kind (a lowercase x is shorter than a 7) sit on one line, at their bottoms; signs sit on
+// its middle. Pairs that disagree wildly (an exponent, the next line, a numerator over a denominator) are dropped;
+// the rest vote, the farther apart the more weight, and several must agree.
+const SKEW_SYM = /^[0-9A-Za-z]$|^\\(alpha|theta|pi|lambda|sigma|Delta)$/;
+const SKEW_AXIS = new Set(['+', '-', '=', '\\times', '\\div', '\\pm', '<', '>', '\\le', '\\ge', '\\ne']);
+function skewOf(syms, ref, opts) {
+  const pts = syms.map(s => {
+    const b = s.box, h = b[3] - b[1], t = symType(s.label);
+    if ((t === T_ASC || t === T_XH) && SKEW_SYM.test(s.label) && h > 0.3 * ref) return { x: (b[0] + b[2]) / 2, y: b[3], h: t === T_XH ? h / 0.62 : h, k: 0 };
+    if (SKEW_AXIS.has(s.label)) return { x: (b[0] + b[2]) / 2, y: (b[1] + b[3]) / 2, h: 0, k: 1 };
+    return null;
+  });
+  const vals = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]; if (!a) continue;
+    for (let j = i + 1; j < Math.min(pts.length, i + 4); j++) {
+      const b = pts[j]; if (!b || b.k !== a.k) continue;
+      if (a.k === 0 && Math.max(a.h, b.h) > 1.35 * Math.min(a.h, b.h)) continue;
+      const dx = b.x - a.x; if (Math.abs(dx) < 0.6 * ref) continue;
+      const sl = (b.y - a.y) / dx; if (Math.abs(sl) > 0.3) continue;
+      vals.push([sl, Math.min(Math.abs(dx) / ref, 3)]);
+    }
+  }
+  if (vals.length < 2) return 0;
+  let W = 0; for (const v of vals) W += v[1];
+  vals.sort((a, b) => a[0] - b[0]);
+  let acc = 0, m = 0;
+  for (const v of vals) { acc += v[1]; if (acc >= W / 2) { m = v[0]; break; } }
+  let sw = 0, st = 0, n = 0;
+  for (const [v, w] of vals) if (Math.abs(v - m) < 0.05) { sw += w; st += w * v; n++; }
+  return n >= 2 && sw >= Math.max(opts.skewW, opts.skewAgree * W) ? st / sw : 0;
 }
 
 // median height of the ordinary strokes written around strokes i..j (dots and long bars left out)
@@ -312,22 +520,44 @@ function fixBars(row, ref, opts) {
   const base = row.filter(u => u.k === 's' && /^[02-9ace-z]$/.test(u.sym.label)).map(u => u.box);
   const h0 = base.length ? median(base.map(b => b[3] - b[1])) : 0.8 * ref;
   const bot = base.length ? median(base.map(b => b[3])) : null;
-  const bar = u => {
-    if (u.k !== 's' || u.sym.fixed || !['1', '|', 'l', 'I', ')', '(', '/'].includes(u.sym.label)) return false;
-    const w = u.box[2] - u.box[0], h = u.box[3] - u.box[1];
-    if (w > opts.barW * h || h < opts.barH * h0) return false;
-    if (!(u.sym.cands || []).some(([l, q]) => l === '|' && q >= 0.05)) return false;   // the classifier must find a bar plausible
-    const below = bot === null ? 0 : (u.box[3] - bot) / h0;
-    return below > 0.1 || h > 1.35 * h0;
+  const ONE = new Set(['1', '|', 'l', 'I']);
+  const lab = u => (u && u.k === 's' ? u.sym.label : null);
+  const H = u => u.box[3] - u.box[1];
+  const shape = (u, wmax) => {                            // tall and thin: the geometry a bar needs
+    if (u.k !== 's' || u.sym.fixed || !(ONE.has(u.sym.label) || ['(', ')', '/'].includes(u.sym.label))) return false;
+    return u.box[2] - u.box[0] <= wmax * H(u) && H(u) >= opts.barH * h0;
   };
+  const strong = u => {                                   // ...and the classifier and the baseline agree
+    if (!(u.sym.cands || []).some(([l, q]) => l === '|' && q >= 0.05)) return false;
+    const below = bot === null ? 0 : (u.box[3] - bot) / h0;
+    return below > 0.1 || H(u) > 1.35 * h0;
+  };
+  // an operand starts after an operator, a relation or an open bracket, and ends before one (or a close bracket)
+  const opLike = u => u && u.k === 's' && (u.type === T_OP || RELATIONS.has(u.sym.label) || ['(', '[', ',', ':', '\\cdot'].includes(u.sym.label));
+  const startsOperand = i => i === 0 || opLike(row[i - 1]);
+  const endsOperand = j => j === row.length - 1 || opLike(row[j + 1]) || [')', ']', ','].includes(lab(row[j + 1]));
   let changed = false;
-  const idx = row.map((u, i) => bar(u) ? i : -1).filter(i => i >= 0);
-  for (let k = 0; k + 1 < idx.length; k += 2) {
-    const a = row[idx[k]], b = row[idx[k + 1]];
-    if (idx[k + 1] - idx[k] < 2) continue;
-    if (Math.abs((a.box[3] - a.box[1]) - (b.box[3] - b.box[1])) > 0.35 * Math.max(a.box[3] - a.box[1], b.box[3] - b.box[1])) continue;
-    for (const u of [a, b]) if (u.sym.label !== '|') { u.sym.label = '|'; u.type = symType('|'); changed = true; }
-    a.sym.fixed = b.sym.fixed = true;
+  // a slanted bar is up to ~0.3 as wide as it is tall; a 1 with a flag is wider (CROHME median 0.44)
+  const cand = row.map((u, i) => shape(u, Math.max(opts.barW, 0.3)) ? i : -1).filter(i => i >= 0);
+  const used = new Set();
+  for (const i of cand) {
+    if (used.has(i)) continue;
+    for (const j of cand) {
+      if (j <= i + 1 || used.has(j)) continue;
+      const a = row[i], b = row[j];
+      if (Math.abs(H(a) - H(b)) > 0.35 * Math.max(H(a), H(b))) continue;
+      const inner = row.slice(i + 1, j);
+      const plainInside = inner.some(u => u.k !== 's' || /^[0-9A-Za-z]$|^\\(pi|theta)$/.test(u.sym.label)) &&
+        !inner.some(u => u.k === 's' && RELATIONS.has(u.sym.label));
+      // two strong bars; or two "1"s standing exactly where an absolute value's bars would (|6 - 12| read as 16 - 121)
+      const thin = u => shape(u, opts.barW);
+      const ok = (thin(a) && thin(b) && strong(a) && strong(b)) || (ONE.has(lab(a)) && ONE.has(lab(b)) && plainInside && startsOperand(i) && endsOperand(j));
+      if (!ok) continue;
+      for (const u of [a, b]) if (u.sym.label !== '|') { u.sym.label = '|'; u.type = symType('|'); changed = true; }
+      a.sym.fixed = b.sym.fixed = true;
+      used.add(i); used.add(j);
+      break;
+    }
   }
   for (const u of row) for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) changed = fixBars(u[k], ref, opts) || changed;
   return changed;

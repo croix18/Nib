@@ -1,11 +1,11 @@
 """Assemble dist/nib.js: sources + quantised model data in one dependency-free file."""
-import base64, json, os, sys
+import base64, hashlib, json, os, sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.environ.get('NIB_WORK', os.path.join(HERE, 'training', 'scratch', 'work'))
-MODEL = sys.argv[1] if len(sys.argv) > 1 else os.path.join(WORK, 'model.npz')
-VERSION = '1.0.0'
+MODEL = sys.argv[1] if len(sys.argv) > 1 else os.path.join(WORK, 'model_v3.npz')
+VERSION = '1.1.0'
 
 classes = open(os.path.join(WORK, 'ep', 'classes.txt')).read().split('\n')
 C = len(classes)
@@ -52,7 +52,8 @@ def rnd(o):
 
 data = {
     'classes': classes,
-    'cnn': {'q': b64(np.concatenate(qs)), 's': b64(np.concatenate(ss)), 'b': b64(np.concatenate(bs)), 'layout': layout},
+    'cnn': {'q': b64(np.concatenate(qs)), 's': b64(np.concatenate(ss)), 'b': b64(np.concatenate(bs)), 'layout': layout,
+            'id': hashlib.sha1(np.concatenate(qs).tobytes() + np.concatenate(ss).tobytes()).hexdigest()[:12]},
     'join': {k: rnd(v) for k, v in geo['join'].items()},
     'rel': {k: rnd(v) for k, v in geo['rel'].items()},
     'lm': lm,

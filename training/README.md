@@ -28,6 +28,21 @@ python3 train_v2.py 14 6           # ~2 h on 2 cores -> scratch/work/model_v2.np
 `raster.py` and `online.py` must stay in step with `rasterize()` and `onlineFeatures()` in `src/core.js`
 (check with `test/np_forward_v2.py` against the built engine).
 
+## 2b. Fine-tune for messy writing (v3)
+
+```sh
+python3 make_epochs_v3.py 4 2      # v2's augmentation plus strokes drawn backwards, the strokes of a symbol in another
+                                   # order, mouse-like sparse points and finger-like wobble (aug3.py)
+                                   # -> scratch/work/ep3/valid_aug.npz and train_aug1..4.npz
+python3 train_v3.py                # 6 epochs from the v2 checkpoint, alternating ep3 and ep2 epochs, one of them clean
+                                   # -> scratch/work/model_v3.npz (checkpoints every epoch and resumes)
+```
+
+On the 2013 writers' held-out symbols v3 keeps v2's accuracy on clean ink (90.4%) and reads the same symbols
+rewritten messily much better (87.4% vs 82.0%); `python3 ../build.py` now builds from `model_v3.npz` by default.
+Check the int8 engine against the float model with `node ../test/parity.js scratch/work/model_v3.npz`
+(299/300 top-1 agreement, largest probability difference 0.011).
+
 ## 3. Geometry and context models
 
 ```sh
@@ -39,7 +54,7 @@ python3 prior.py                   # school-vs-CROHME symbol frequency ratios ->
 ## 4. Build and measure
 
 ```sh
-python3 ../build.py scratch/work/model_v2.npz   # -> dist/nib.js
+python3 ../build.py scratch/work/model_v3.npz   # -> dist/nib.js (the default)
 node ../test/eval.js test full school       # exact-match rate on the reported test set (real expressions)
 node ../test/eval_synth.js                  # the composed middle-school set (2019 test writers)
 POOL=scratch/data/t13.jsonl OUT=scratch/data/synth_t13.jsonl node ../test/compose.js   # tuning copy (2013 writers)
