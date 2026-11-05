@@ -181,6 +181,82 @@ function makeHandFile() {
   ok(await page.$eval('#fix', e => e.getAttribute('aria-pressed')) === 'false' && await page.$eval('#fixlayer', e => e.hidden), 'Escape leaves Fix');
   await page.evaluate(() => Nib.memory.clear());
 
+  console.log('answers after "="');
+  {
+    const { compose } = require('./compose.js');
+    const NibNode = require(path.join(__dirname, '..', 'dist', 'nib.js'));
+    let prob = null;                                   // a writer whose "12+30=" reads right
+    for (let k = 0; k < 20 && !prob; k++) { const e = compose('12+30='); if (new NibNode.Recognizer().recognize(e.strokes).latex === '12+30=') prob = e; }
+    const pad = () => page.evaluate(() => { const p = document.getElementById('pad'); return { answers: p.answers, solved: p.solved, latex: p.latex }; });
+    const sameRead = () => page.waitForFunction(() => { const p = document.getElementById('pad').pad; return p.result && !p.anim && p.resultStrokes.length === p.strokes.length && p.resultStrokes.every((s, i) => s === p.strokes[i]); }, { timeout: 30000 }).catch(() => {});
+    // pixels in the answers' gold (light or dark board)
+    const gold = () => page.evaluate(() => {
+      const c = document.querySelector('#pad canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 120 && d[i] > 120 && d[i + 1] > 85 && d[i + 2] < 95 && d[i] - d[i + 2] > 70) n++; return n;
+    });
+    const ansBoxes = () => page.evaluate(() => { const P = document.getElementById('pad').pad; return P.plan ? P.plan.items.filter(i => i.answer).map(i => i.box) : []; });
+    await page.click('#clear'); await wait(300);
+    await page.keyboard.press('2'); await wait(300);
+    ok(await page.$eval('#solve', e => e.getAttribute('aria-pressed')) === 'true', 'Solve is on from the start');
+    ok(!!prob, 'a handwritten 12 + 30 = to work with');
+    await write(prob, [0.3, 0.3, 0.3, 0.12]);
+    await wait(600); await sameRead();
+    let st = await pad();
+    ok(st.answers.length === 1 && st.answers[0].latex === '42', `12 + 30 = is answered 42 (${JSON.stringify(st.answers.map(a => a.latex))})`);
+    const g1 = await gold();
+    ok(g1 > 80, `the answer is written in gold (${g1} gold pixels)`);
+    const where = await page.evaluate(() => { const P = document.getElementById('pad').pad; const A = P.plan.items.filter(i => i.answer).map(i => i.box); const eq = P.plan.items.filter(i => !i.answer && i.label === '=').pop(); return { A, eq: eq && eq.box }; });
+    const mid = where.eq ? (where.eq[1] + where.eq[3]) / 2 : 0;
+    ok(where.eq && where.A.length && where.A.every(b => b[0] > where.eq[2] && b[0] - where.eq[2] < 200) && where.A.some(b => b[1] < mid && b[3] > mid - 6), 'just after the "=", on its line');
+    ok(st.solved === '12+30=42' && st.latex === '12+30=', `the reading stays the writing; "solved" has the answer in (${st.solved})`);
+    for (const [k, v] of [['1', 'ink'], ['3', 'my hand'], ['4', 'typeset'], ['2', 'tidy']]) {
+      await page.keyboard.press(k); await wait(800);
+      ok((await gold()) > 50, `answer shown in ${v}`);
+    }
+    await page.screenshot({ path: path.join(out, 'board-test-solve.png') });
+    await page.evaluate(() => { window.__clip = null; navigator.clipboard.writeText = t => { window.__clip = t; return Promise.resolve(); }; });
+    await page.click('#copy'); await wait(300);
+    ok(await page.evaluate(() => window.__clip) === '12+30=42', 'Copy LaTeX includes the answer');
+    await page.keyboard.press('s'); await wait(500);
+    st = await pad();
+    ok(await page.$eval('#solve', e => e.getAttribute('aria-pressed')) === 'false' && st.answers.length === 0 && (await gold()) < 10, 'key S hides the answers');
+    await page.click('#copy'); await wait(300);
+    ok(await page.evaluate(() => window.__clip) === '12+30=', 'and Copy LaTeX is just the writing again');
+    await page.keyboard.press('s'); await wait(700);
+    ok(await page.$eval('#solve', e => e.getAttribute('aria-pressed')) === 'true' && (await gold()) > 80, 'S again brings them back');
+    // writing over the answer: it steps aside the moment the pen comes down, and the line is read again
+    const A = await ansBoxes(), cb = await (await page.$('#pad canvas')).boundingBox();
+    const ab = A.reduce((b, x) => [Math.min(b[0], x[0]), Math.min(b[1], x[1]), Math.max(b[2], x[2]), Math.max(b[3], x[3])], [Infinity, Infinity, -Infinity, -Infinity]);
+    await page.mouse.move(cb.x + ab[0] + 2, cb.y + (ab[1] + ab[3]) / 2); await page.mouse.down();
+    const during = await gold();
+    await page.mouse.move(cb.x + ab[2] - 2, cb.y + (ab[1] + ab[3]) / 2 + 3, { steps: 5 });
+    await page.mouse.up();
+    ok(during < 10, `writing over the answer hides it at once (${during} gold pixels with the pen down)`);
+    await wait(600); await sameRead();
+    ok((await pad()).answers.every(a => a.latex !== '42'), 'once more is written after the "=", 42 is no longer offered');
+    await page.keyboard.down('Control'); await page.keyboard.press('z'); await page.keyboard.up('Control');
+    await wait(600); await sameRead();
+    ok(JSON.stringify((await pad()).answers.map(a => a.latex)) === '["42"]', 'undo: the answer is back');
+    // erasing the "=" takes the answer with it
+    const eqb = (await page.evaluate(() => { const P = document.getElementById('pad').pad; const e = P.plan.items.filter(i => !i.answer && i.label === '=').pop(); return e.box; }));
+    await page.keyboard.press('e');
+    await page.mouse.move(cb.x + (eqb[0] + eqb[2]) / 2 - 3, cb.y + (eqb[1] + eqb[3]) / 2); await page.mouse.down();
+    await page.mouse.move(cb.x + (eqb[0] + eqb[2]) / 2 + 3, cb.y + (eqb[1] + eqb[3]) / 2, { steps: 3 }); await page.mouse.up();
+    await page.keyboard.press('e');
+    ok((await gold()) < 10, 'erasing the "=" takes the answer away at once');
+    await wait(600); await sameRead();
+    ok((await pad()).answers.length === 0, 'and no answer comes back without it');
+    await page.keyboard.down('Control'); await page.keyboard.press('z'); await page.keyboard.up('Control');
+    await wait(600); await sameRead();
+    ok((await pad()).answers.length === 1 && (await gold()) > 80, 'undo brings the "=" and its answer back');
+    // Solve's state survives a reload
+    await page.keyboard.press('s'); await wait(800);
+    await page.reload({ waitUntil: 'load' }); await wait(1200);
+    ok(await page.$eval('#solve', e => e.getAttribute('aria-pressed')) === 'false', 'Solve off is remembered after a reload');
+    await page.keyboard.press('s'); await wait(800); await sameRead();
+    ok(JSON.stringify((await pad()).answers.map(a => a.latex)) === '["42"]', 'and back on, the board answers again');
+  }
+
   console.log('a crowded board on a slow computer');
   const many = rows.filter((r, i) => i % 37 === 5).slice(0, 12);
   await page.click('#clear'); await wait(400);

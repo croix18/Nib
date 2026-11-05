@@ -177,8 +177,8 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   </main>
 </div>
 
-<script>/*! Nib 1.2.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
- *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset — see README.md / docs/HANDOFF.md
+<script>/*! Nib 1.3.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+ *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
  *  Copyright (c) 2009-2010, Design Science, Inc. (<www.mathjax.org>); Copyright (c) 2014-2018 Khan Academy
@@ -1672,6 +1672,584 @@ function finish(syms, ref, opts) {
   };
 }
 
+// ================================================================== working out what is written before an "="
+// A line that ends with "=" is worked out. Numbers are exact (BigInt fractions): whole numbers, decimals, fractions,
+// mixed numbers and percents, with + − × ÷, brackets, powers, roots, absolute values and factorials; π and roots that
+// do not come out are approximated. Letters stay letters — like terms are combined and brackets multiplied out —
+// unless a line above, in the same piece of work, set them ("x = 5"). The answer takes the form the question was
+// asked in (decimals give decimals, fractions give fractions, mixed numbers give mixed numbers), and a lone number is
+// turned into its other form (3/4 → 0.75, 0.75 → 3/4, 5 1/3 → 16/3, 16/3 → 5 1/3, 75% → 0.75).
+// Each answer is LaTeX, plain text and reading-tree nodes, so it can be drawn like writing.
+
+class SolveError extends Error {}
+const sfail = why => { throw new SolveError(why); };
+
+// ------------------------------------------------------------------ numbers: exact {n, d} (BigInt, d > 0, lowest
+// terms) or approximate {f}
+const SOLVE_BITS = 4096;
+function bgcd(a, b) { if (a < 0n) a = -a; if (b < 0n) b = -b; while (b) { const t = a % b; a = b; b = t; } return a; }
+function bbits(a) { if (a < 0n) a = -a; return a === 0n ? 0 : a.toString(16).length * 4; }
+function Q(n, d) {
+  if (d === undefined) d = 1n;
+  if (d === 0n) sfail('division by zero');
+  if (d < 0n) { n = -n; d = -d; }
+  const g = bgcd(n, d);
+  if (g > 1n) { n /= g; d /= g; }
+  if (bbits(n) > SOLVE_BITS || bbits(d) > SOLVE_BITS) sfail('too big');
+  return { n, d };
+}
+const QZERO = { n: 0n, d: 1n }, QONE = { n: 1n, d: 1n };
+function qnum(q) {
+  let n = q.n, d = q.d;
+  const sh = Math.max(bbits(n), bbits(d)) - 1000;
+  if (sh > 0) { n >>= BigInt(sh); d >>= BigInt(sh); if (d === 0n) return n < 0n ? -Infinity : Infinity; }
+  return Number(n) / Number(d);
+}
+const Fl = v => (Number.isFinite(v) ? { f: v } : sfail('not a number'));
+const isFl = c => c.f !== undefined;
+const cval = c => (isFl(c) ? c.f : qnum(c));
+const czero = c => (isFl(c) ? Math.abs(c.f) < 1e-12 : c.n === 0n);
+const cneg = c => (isFl(c) ? { f: -c.f } : { n: -c.n, d: c.d });
+const cadd = (a, b) => (isFl(a) || isFl(b) ? Fl(cval(a) + cval(b)) : Q(a.n * b.d + b.n * a.d, a.d * b.d));
+const csub = (a, b) => cadd(a, cneg(b));
+const cmul = (a, b) => (isFl(a) || isFl(b) ? Fl(cval(a) * cval(b)) : Q(a.n * b.n, a.d * b.d));
+const cdiv = (a, b) => (czero(b) ? sfail('division by zero') : isFl(a) || isFl(b) ? Fl(cval(a) / cval(b)) : Q(a.n * b.d, a.d * b.n));
+const cabs = c => (isFl(c) ? { f: Math.abs(c.f) } : { n: c.n < 0n ? -c.n : c.n, d: c.d });
+// floor of the k-th root of n >= 0
+function iroot(n, k) {
+  if (n < 2n) return n;
+  const K = BigInt(k);
+  let x = 1n << BigInt(Math.ceil(bbits(n) / k) + 1);
+  for (;;) { const y = ((K - 1n) * x + n / x ** (K - 1n)) / K; if (y >= x) break; x = y; }
+  while (x ** K > n) x--;
+  while ((x + 1n) ** K <= n) x++;
+  return x;
+}
+function croot(c, k) {
+  if (!(k >= 2 && k <= 64)) sfail('root');
+  if (isFl(c)) { if (c.f < 0 && k % 2 === 0) sfail('a root of a negative number'); return Fl(Math.sign(c.f) * Math.pow(Math.abs(c.f), 1 / k)); }
+  if (c.n < 0n) { if (k % 2 === 0) sfail('a root of a negative number'); return cneg(croot(cneg(c), k)); }
+  const K = BigInt(k), rn = iroot(c.n, k), rd = iroot(c.d, k);
+  if (rn ** K === c.n && rd ** K === c.d) return Q(rn, rd);
+  return Fl(Math.pow(qnum(c), 1 / k));
+}
+function cpow(b, e) {
+  if (isFl(b) || isFl(e)) {
+    const x = cval(b), y = cval(e);
+    if (x === 0 && y <= 0) sfail('zero to that power');
+    if (x < 0 && !Number.isInteger(y)) sfail('a root of a negative number');
+    return Fl(Math.pow(x, y));
+  }
+  if (e.d === 1n) {
+    let k = e.n;
+    if (b.n === 0n) return k > 0n ? QZERO : sfail('zero to that power');
+    if (k < 0n) { b = Q(b.d, b.n); k = -k; }
+    if (k * BigInt(Math.max(bbits(b.n), bbits(b.d), 1)) > BigInt(SOLVE_BITS)) sfail('too big');
+    return Q(b.n ** k, b.d ** k);
+  }
+  if (e.d > 64n || e.n > 4096n || e.n < -4096n) return Fl(Math.pow(cval(b), cval(e)));
+  return cpow(croot(b, Number(e.d)), { n: e.n, d: 1n });
+}
+function cfact(c) {
+  if (isFl(c) || c.d !== 1n || c.n < 0n || c.n > 200n) sfail('factorial');
+  let r = 1n; for (let i = 2n; i <= c.n; i++) r *= i;
+  return Q(r);
+}
+// "12.50" -> 25/2
+function qOfText(t) {
+  const [a, b = ''] = t.split('.');
+  if (!/^\d*$/.test(a) || !/^\d*$/.test(b) || !(a + b).length) sfail('number');
+  return Q(BigInt((a || '0') + b), 10n ** BigInt(b.length));
+}
+
+// ------------------------------------------------------------------ polynomials: Map(monomial key -> coefficient)
+// A key lists letters with powers in order, "x^2*y"; "" is the number part.
+function mkey(m) {
+  return [...m.entries()].filter(([, e]) => e).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([v, e]) => (e === 1 ? v : v + '^' + e)).join('*');
+}
+function mparse(k) {
+  const m = new Map();
+  if (k) for (const f of k.split('*')) { const i = f.lastIndexOf('^'); if (i < 0) m.set(f, 1); else m.set(f.slice(0, i), +f.slice(i + 1)); }
+  return m;
+}
+const mdeg = k => { let t = 0; for (const e of mparse(k).values()) t += e; return t; };
+const pc = c => new Map(czero(c) ? [] : [['', c]]);
+const pv = name => new Map([[name, QONE]]);
+const pconst = p => (p.size === 0 ? QZERO : p.size === 1 && p.has('') ? p.get('') : null);
+function pput(m, k, c) { const prev = m.get(k), v = prev ? cadd(prev, c) : c; if (czero(v)) m.delete(k); else m.set(k, v); }
+function padd(a, b) { const out = new Map(a); for (const [k, c] of b) pput(out, k, c); return out; }
+function pneg(a) { const out = new Map(); for (const [k, c] of a) out.set(k, cneg(c)); return out; }
+function pscale(a, c) { const out = new Map(); if (czero(c)) return out; for (const [k, v] of a) out.set(k, cmul(v, c)); return out; }
+function pmul(a, b) {
+  const out = new Map();
+  for (const [ka, ca] of a) for (const [kb, cb] of b) {
+    const m = mparse(ka);
+    for (const [v, e] of mparse(kb)) m.set(v, (m.get(v) || 0) + e);
+    pput(out, mkey(m), cmul(ca, cb));
+  }
+  if (out.size > 64) sfail('too long');
+  for (const k of out.keys()) if (mdeg(k) > 24) sfail('too high a power');
+  return out;
+}
+function pdiv(a, b) {
+  const c = pconst(b);
+  if (!c) sfail('dividing by letters');
+  return pscale(a, cdiv(QONE, c));
+}
+function ppow(a, e) {
+  const k = pconst(e);
+  if (!k) sfail('a power with letters');
+  const b = pconst(a);
+  if (b) return pc(cpow(b, k));
+  if (isFl(k) || k.d !== 1n || k.n < 0n || k.n > 24n) sfail('that power of letters');
+  let out = pc(QONE);
+  for (let i = 0n; i < k.n; i++) out = pmul(out, a);
+  return out;
+}
+
+// ------------------------------------------------------------------ a reading row -> tokens
+// {t: 'num', v: '12.5'} {t: 'op', v: '+' | '-' | '*' | '/' | '÷'} {t: 'rel', v} {t: 'open' | 'close', v} {t: 'bar'}
+// {t: 'var', v} {t: 'pi'} {t: 'frac', num, den} {t: 'root', body, idx} {t: 'sup', v} {t: 'pct'} {t: 'fact'}
+const SOLVE_REL = new Set(['=', '<', '>', '\\le', '\\ge', '\\ne', '\\rightarrow', '\\in']);
+const SOLVE_OPEN = { '(': ')', '[': ']', '\\{': '\\}' };
+const SOLVE_CLOSE = new Set([')', ']', '\\}']);
+const SOLVE_VARS = /^[A-Za-z]$|^\\(alpha|beta|gamma|theta|lambda|mu|sigma|phi|Delta)$/;
+function tokensOf(row) {
+  const out = [];
+  const lastNum = () => { const t = out[out.length - 1]; return t && t.t === 'num' && !t.closed ? t : null; };
+  for (let i = 0; i < (row || []).length; i++) {
+    const u = row[i], nx = row[i + 1];
+    if (u.k === 'frac') out.push({ t: 'frac', num: tokensOf(u.num), den: tokensOf(u.den) });
+    else if (u.k === 'root') out.push({ t: 'root', body: tokensOf(u.body), idx: u.idx && u.idx.length ? tokensOf(u.idx) : null });
+    else if (u.k !== 's') sfail('unknown');
+    else {
+      const l = u.label, n = lastNum();
+      if (/^[0-9]$/.test(l)) { if (n) n.v += l; else out.push({ t: 'num', v: l }); }
+      else if (l === '.') {
+        if (n && !n.v.includes('.')) n.v += '.';
+        else if (!n && nx && nx.k === 's' && /^[0-9]$/.test(nx.label)) out.push({ t: 'num', v: '.' });
+        else sfail('a stray point');
+      } else if (l === ',') {
+        // 1,000: a thousands comma; anything else is not arithmetic
+        const d = row.slice(i + 1, i + 4);
+        if (n && !n.v.includes('.') && d.length === 3 && d.every(x => x.k === 's' && /^[0-9]$/.test(x.label) && !x.sup && !x.sub) &&
+          !(row[i + 4] && row[i + 4].k === 's' && /^[0-9]$/.test(row[i + 4].label))) { /* skip it */ } else sfail('a comma');
+      } else if (l === '+' || l === '-') out.push({ t: 'op', v: l });
+      else if (l === '\\times' || l === '\\cdot') out.push({ t: 'op', v: '*' });
+      else if (l === '\\div') out.push({ t: 'op', v: '÷' });
+      else if (l === '/') out.push({ t: 'op', v: '/' });
+      else if (SOLVE_REL.has(l)) out.push({ t: 'rel', v: l });
+      else if (SOLVE_OPEN[l]) out.push({ t: 'open', v: l });
+      else if (SOLVE_CLOSE.has(l)) out.push({ t: 'close', v: l });
+      else if (l === '|') out.push({ t: 'bar' });
+      else if (l === '!') out.push({ t: 'fact' });
+      else if (l === '%') out.push({ t: 'pct' });
+      else if (l === '\\pi') out.push({ t: 'pi' });
+      else if (SOLVE_VARS.test(l)) {
+        let v = l;
+        if (u.sub) {
+          const s = u.sub.map(x => (x.k === 's' && /^[0-9A-Za-z]$/.test(x.label) && !x.sup && !x.sub ? x.label : sfail('subscript'))).join('');
+          v += '_' + (s.length === 1 ? s : '{' + s + '}');
+        }
+        out.push({ t: 'var', v });
+      } else sfail('cannot work out ' + l);
+    }
+    if (u.sub && !(u.k === 's' && SOLVE_VARS.test(u.label))) sfail('subscript');
+    if (u.sup) { const t = out[out.length - 1]; if (t && t.t === 'num') t.closed = true; out.push({ t: 'sup', v: tokensOf(u.sup) }); }
+  }
+  // "3 x 4", "15% x 60", "(2+3) x 4": a lone x before a number, after a number, percent or bracket, is a times sign;
+  // "15% of 80": "of" is times
+  for (let i = 1; i + 1 < out.length; i++) {
+    const a = out[i - 1], b = out[i], c = out[i + 1];
+    if (b.t === 'var' && (b.v === 'x' || b.v === 'X') && (a.t === 'num' || a.t === 'pct' || a.t === 'close') && c.t === 'num') out[i] = { t: 'op', v: '*' };
+    if (b.t === 'var' && b.v === 'o' && c.t === 'var' && c.v === 'f' && (a.t === 'pct' || a.t === 'num')) { out.splice(i, 2, { t: 'op', v: '*' }); }
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ tokens -> expression tree
+function solveParse(tokens) {
+  let i = 0;
+  const peek = () => tokens[i], next = () => tokens[i++];
+  const intLit = l => l && l.length === 1 && l[0].t === 'num' && /^\d+$/.test(l[0].v);
+  const starts = (tk, inAbs) => tk && (tk.t === 'num' || tk.t === 'var' || tk.t === 'pi' || tk.t === 'open' || tk.t === 'frac' || tk.t === 'root' || (tk.t === 'bar' && !inAbs));
+  const sub = list => (list && list.length ? solveParse(list) : sfail('empty'));
+  function expr(inAbs) {
+    let a = term(inAbs);
+    for (let tk = peek(); tk && tk.t === 'op' && (tk.v === '+' || tk.v === '-'); tk = peek()) {
+      next(); a = { t: tk.v === '+' ? 'add' : 'sub', a, b: term(inAbs) };
+    }
+    return a;
+  }
+  function term(inAbs) {
+    let a = unary(inAbs);
+    for (;;) {
+      const tk = peek();
+      if (tk && tk.t === 'op' && (tk.v === '*' || tk.v === '/' || tk.v === '÷')) { next(); const b = unary(inAbs); a = tk.v === '*' ? { t: 'mul', a, b } : { t: 'div', a, b, sym: tk.v }; }
+      else if (starts(tk, inAbs)) a = { t: 'mul', a, b: power(inAbs), implicit: true };
+      else return a;
+    }
+  }
+  function unary(inAbs) {
+    const tk = peek();
+    if (tk && tk.t === 'op' && (tk.v === '-' || tk.v === '+')) { next(); const a = unary(inAbs); return tk.v === '-' ? { t: 'neg', a } : { t: 'pos', a }; }
+    return power(inAbs);
+  }
+  function power(inAbs) {
+    let a = atom(inAbs);
+    for (;;) {
+      const tk = peek();
+      if (tk && tk.t === 'sup') { next(); a = { t: 'pow', a, b: sub(tk.v) }; }
+      else if (tk && tk.t === 'fact') { next(); a = { t: 'fact', a }; }
+      else if (tk && tk.t === 'pct') { next(); a = { t: 'pct', a }; }
+      else return a;
+    }
+  }
+  function atom(inAbs) {
+    const tk = next();
+    if (!tk) sfail('incomplete');
+    if (tk.t === 'num') {
+      const f = peek();                               // 5 1/3: a whole number with a fraction of whole numbers after it
+      if (/^\d+$/.test(tk.v) && f && f.t === 'frac' && intLit(f.num) && intLit(f.den)) { next(); return { t: 'mixed', whole: tk.v, num: f.num[0].v, den: f.den[0].v }; }
+      return { t: 'num', text: tk.v };
+    }
+    if (tk.t === 'var') return { t: 'var', name: tk.v };
+    if (tk.t === 'pi') return { t: 'pi' };
+    if (tk.t === 'frac') return { t: 'frac', a: sub(tk.num), b: sub(tk.den) };
+    if (tk.t === 'root') return { t: 'root', a: sub(tk.body), idx: tk.idx ? sub(tk.idx) : null };
+    if (tk.t === 'open') {
+      const a = expr(false), c = next();
+      if (!c || c.t !== 'close' || SOLVE_OPEN[tk.v] !== c.v) sfail('brackets');
+      return { t: 'group', a };
+    }
+    if (tk.t === 'bar') { const a = expr(true), c = next(); if (!c || c.t !== 'bar') sfail('bars'); return { t: 'abs', a }; }
+    return sfail('unexpected ' + tk.t);
+  }
+  const ast = expr(false);
+  if (i !== tokens.length) sfail('left over');
+  return ast;
+}
+
+// ------------------------------------------------------------------ evaluation
+// info gathers how the question was asked: decimals, percents, fractions, mixed numbers, division, negative powers
+function solveEval(ast, env, info) {
+  const ev = a => solveEval(a, env, info);
+  switch (ast.t) {
+    case 'num': if (ast.text.includes('.')) info.dec = true; return pc(qOfText(ast.text));
+    case 'mixed': info.frac = info.mixed = true; return pc(cadd(Q(BigInt(ast.whole)), Q(BigInt(ast.num), BigInt(ast.den))));
+    case 'frac': info.frac = true; return pdiv(ev(ast.a), ev(ast.b));
+    case 'neg': return pneg(ev(ast.a));
+    case 'pos': case 'group': return ev(ast.a);
+    case 'add': return padd(ev(ast.a), ev(ast.b));
+    case 'sub': return padd(ev(ast.a), pneg(ev(ast.b)));
+    case 'mul': return pmul(ev(ast.a), ev(ast.b));
+    case 'div': info.div = true; return pdiv(ev(ast.a), ev(ast.b));
+    case 'pow': {
+      const e = ev(ast.b), k = pconst(e);
+      if (k && !isFl(k) && k.n < 0n) info.negpow = true;
+      return ppow(ev(ast.a), e);
+    }
+    case 'root': {
+      const c = pconst(ev(ast.a));
+      if (!c) sfail('a root of letters');
+      let k = 2;
+      if (ast.idx) { const ic = pconst(ev(ast.idx)); if (!ic || isFl(ic) || ic.d !== 1n || ic.n < 2n || ic.n > 64n) sfail('root'); k = Number(ic.n); }
+      return pc(croot(c, k));
+    }
+    case 'abs': { const c = pconst(ev(ast.a)); if (!c) sfail('letters inside bars'); return pc(cabs(c)); }
+    case 'fact': { const c = pconst(ev(ast.a)); if (!c) sfail('letters'); return pc(cfact(c)); }
+    case 'pct': info.pct = true; return pscale(ev(ast.a), Q(1n, 100n));
+    case 'pi': info.pi = true; return pc(Fl(Math.PI));
+    case 'var': {
+      const d = env && env.get(ast.name);
+      if (d) { for (const k of ['dec', 'pct', 'frac', 'mixed', 'div', 'negpow', 'pi']) if (d.info[k]) info[k] = true; return d.val; }
+      return pv(ast.name);
+    }
+  }
+  return sfail('unknown');
+}
+
+// ------------------------------------------------------------------ answers: LaTeX, text and reading-tree nodes
+function SolveOut() { this.tex = ''; this.text = ''; this.nodes = []; }
+SolveOut.prototype.sym = function (label, tex, text) {
+  this.nodes.push({ k: 's', label });
+  tex = tex === undefined ? label : tex;
+  if (/\\[A-Za-z]+$/.test(this.tex) && /^[A-Za-z0-9]/.test(tex)) this.tex += ' ';
+  this.tex += tex; this.text += text === undefined ? label : text;
+};
+SolveOut.prototype.digits = function (s) { for (const ch of s) this.sym(ch); };
+const digitNodes = s => [...s].map(ch => ({ k: 's', label: ch }));
+SolveOut.prototype.frac = function (n, d) {
+  this.nodes.push({ k: 'frac', num: digitNodes(n), den: digitNodes(d) });
+  this.tex += '\\frac{' + n + '}{' + d + '}'; this.text += (this.text && /[0-9]$/.test(this.text) ? ' ' : '') + n + '/' + d;
+};
+SolveOut.prototype.over = function (s) { this.nodes.push({ k: 'over', body: digitNodes(s) }); this.tex += '\\overline{' + s + '}'; this.text += '(' + s + ')'; };
+SolveOut.prototype.ellipsis = function () { for (let i = 0; i < 3; i++) this.nodes.push({ k: 's', label: '.' }); this.tex += '\\ldots'; this.text += '...'; };
+SolveOut.prototype.letter = function (name, power) {
+  const m = /^(.*?)_(?:\{(.*)\}|(.))$/.exec(name), label = m ? m[1] : name, sub = m ? m[2] || m[3] : null;
+  const n = { k: 's', label };
+  if (sub) n.sub = digitNodes(sub);
+  if (power > 1) n.sup = digitNodes(String(power));
+  this.nodes.push(n);
+  if (/\\[A-Za-z]+$/.test(this.tex) && /^[A-Za-z0-9]/.test(label)) this.tex += ' ';
+  this.tex += label + (sub ? '_{' + sub + '}' : '') + (power > 1 ? '^{' + power + '}' : '');
+  this.text += label.replace(/^\\/, '') + (sub ? '_' + sub : '') + (power > 1 ? '^' + power : '');
+};
+
+// a decimal's digits: whole part, the digits before any repeat, the repeating digits ('' when it ends; null when
+// the repeat is too long to find)
+function decimalParts(q) {
+  let n = q.n < 0n ? -q.n : q.n;
+  const d = q.d, whole = (n / d).toString();
+  let r = n % d;
+  const digits = [], seen = new Map();
+  while (r !== 0n && !seen.has(r) && digits.length < 40) { seen.set(r, digits.length); r *= 10n; digits.push(String(r / d)); r %= d; }
+  if (r === 0n) return { whole, pre: digits.join(''), rep: '' };
+  if (seen.has(r)) { const k = seen.get(r); return { whole, pre: digits.slice(0, k).join(''), rep: digits.slice(k).join('') }; }
+  return { whole, pre: digits.join(''), rep: null };
+}
+// k decimal places, rounded half up (exact)
+function roundedDigits(q, k) {
+  const n = q.n < 0n ? -q.n : q.n, s = 10n ** BigInt(k), v = (2n * n * s + q.d) / (2n * q.d);
+  const str = v.toString().padStart(k + 1, '0');
+  return { whole: str.slice(0, str.length - k), frac: str.slice(str.length - k), zero: v === 0n };
+}
+function putInteger(o, n) {
+  const s = (n < 0n ? -n : n).toString();
+  if (s.length > 24) sfail('too many digits');
+  if (n < 0n) o.sym('-');
+  o.digits(s);
+}
+// an exact number in a style: 'dec' (exact, repeating with a bar, or rounded with an ellipsis), 'frac', 'mixed'
+function putExact(o, q, style, kind) {
+  if (q.d === 1n) { putInteger(o, q.n); kind.v = 'integer'; return; }
+  const neg = q.n < 0n, an = neg ? -q.n : q.n;
+  if (style === 'dec') {
+    const D = decimalParts(q);
+    if (D.whole.length > 15) sfail('too many digits');
+    if (D.rep === '' && D.pre.length <= 12) { if (neg) o.sym('-'); o.digits(D.whole); o.sym('.'); o.digits(D.pre); kind.v = 'decimal'; return; }
+    if (D.rep && D.pre.length <= 6 && D.rep.length <= 6) { if (neg) o.sym('-'); o.digits(D.whole); o.sym('.'); if (D.pre) o.digits(D.pre); o.over(D.rep); kind.v = 'repeating'; return; }
+    // four places; a small number gets three significant digits (0.0000224…) instead of rounding to nothing
+    let R = roundedDigits(q, 4);
+    if (R.zero || /^0+$/.test(R.frac.slice(0, 2)) && R.whole === '0') {
+      const lead = ((D.pre + (D.rep || '')).match(/^0*/) || [''])[0].length;
+      if (lead > 8) sfail('too small');
+      R = roundedDigits(q, lead + 3);
+    }
+    if (R.whole.length > 15) sfail('too many digits');
+    if (neg) o.sym('-'); o.digits(R.whole); o.sym('.'); o.digits(R.frac); o.ellipsis(); kind.v = 'approx'; return;
+  }
+  if (an.toString().length > 24 || q.d.toString().length > 24) sfail('too many digits');
+  if (neg) o.sym('-');
+  if (style === 'mixed' && an > q.d) { o.digits((an / q.d).toString()); o.frac((an % q.d).toString(), q.d.toString()); kind.v = 'mixed'; return; }
+  o.frac(an.toString(), q.d.toString()); kind.v = 'fraction';
+}
+function putApprox(o, v, kind) {
+  if (!Number.isFinite(v) || Math.abs(v) >= 1e15) sfail('too big');
+  const r = Math.round(v);
+  if (Math.abs(v - r) < 1e-9 * Math.max(1, Math.abs(v))) { putInteger(o, BigInt(r)); kind.v = 'integer'; return; }
+  const s = Math.abs(v).toFixed(3);
+  if (/^0\.000$/.test(s)) sfail('too small');
+  if (v < 0) o.sym('-');
+  const [w, f] = s.split('.');
+  o.digits(w); o.sym('.'); o.digits(f); o.ellipsis(); kind.v = 'approx';
+}
+
+// what kind of lone number was written (through a minus sign and brackets), or null when it is a calculation
+function literalOf(ast) {
+  let a = ast, negs = 0;
+  while (a.t === 'neg' || a.t === 'pos' || a.t === 'group') { if (a.t === 'neg') negs++; a = a.a; }
+  if (negs > 1) return null;                                          // -(-4): the signs are the working
+  if (a.t === 'num') return a.text.includes('.') ? 'dec' : 'int';
+  if (a.t === 'mixed') return 'mixed';
+  if (a.t === 'frac' && a.a.t === 'num' && a.b.t === 'num' && /^\d+$/.test(a.a.text) && /^\d+$/.test(a.b.text)) {
+    return bgcd(BigInt(a.a.text), BigInt(a.b.text)) > 1n ? 'frac-reduce' : 'frac';
+  }
+  if (a.t === 'pct' && a.a.t === 'num') return 'pct';
+  if (a.t === 'var') return 'var';
+  if (a.t === 'pi') return 'pi';
+  return null;
+}
+// already as simple as it gets: a sum of terms like 3x^2, -x, 5, no two alike
+function simplified(ast) {
+  const terms = [];
+  const flat = (a, sign) => {
+    if (a.t === 'add') { flat(a.a, sign); flat(a.b, sign); }
+    else if (a.t === 'sub') { flat(a.a, sign); flat(a.b, -sign); }
+    else terms.push(a);
+  };
+  flat(ast, 1);
+  const keys = new Set();
+  for (let t of terms) {
+    if (t.t === 'neg') t = t.a;
+    const factors = [];
+    const unmul = a => { if (a.t === 'mul' && a.implicit) { unmul(a.a); unmul(a.b); } else factors.push(a); };
+    unmul(t);
+    if (factors[0].t === 'neg') factors[0] = factors[0].a;              // -5a: the sign is on the 5
+    let k = 0;
+    if (factors[0].t === 'num' || (factors[0].t === 'frac' && literalOf(factors[0]) === 'frac')) {
+      const z = factors[0].t === 'num' && /^0*\.?0*$/.test(factors[0].text), u = factors[0].t === 'num' && /^0*1(\.0*)?$/.test(factors[0].text);
+      if (factors.length > 1 && (z || u)) return false;                // 1x, 0x
+      if (factors.length === 1 && z && terms.length > 1) return false;  // x + 0
+      k = 1;
+    }
+    const vars = new Map();
+    for (const f of factors.slice(k)) {
+      let name, e = 1;
+      if (f.t === 'var') name = f.name;
+      else if (f.t === 'pow' && f.a.t === 'var' && f.b.t === 'num' && /^\d+$/.test(f.b.text) && +f.b.text >= 2) { name = f.a.name; e = +f.b.text; }
+      else return false;
+      if (vars.has(name)) return false;
+      vars.set(name, e);
+    }
+    if (k === 0 && !vars.size) return false;
+    const key = mkey(vars);
+    if (keys.has(key)) return false;
+    keys.add(key);
+  }
+  return true;
+}
+function putPoly(o, p, info, kind) {
+  const keys = [...p.keys()].sort((a, b) => mdeg(b) - mdeg(a) || (a < b ? -1 : a > b ? 1 : 0));
+  const style = info.dec || info.pct ? 'dec' : 'frac';
+  keys.forEach((k, i) => {
+    let c = p.get(k);
+    if (isFl(c)) sfail('approximate letters');
+    const neg = c.n < 0n;
+    if (neg) c = cneg(c);
+    if (i) o.sym(neg ? '-' : '+'); else if (neg) o.sym('-');
+    const one = c.n === 1n && c.d === 1n;
+    if (!k || !one) {
+      const sub = { v: '' };
+      if (style === 'dec' && c.d !== 1n) {
+        const D = decimalParts(c);
+        if (!(D.rep === '' && D.pre.length <= 12) && !(D.rep && D.pre.length <= 6 && D.rep.length <= 6)) putExact(o, c, 'frac', sub);
+        else putExact(o, c, 'dec', sub);
+      } else putExact(o, c, 'frac', sub);
+    }
+    for (const [v, e] of mparse(k)) o.letter(v, e);
+  });
+  kind.v = 'expression';
+}
+// the answer to one expression (the tokens before a trailing "="), or null
+function answerOf(tokens, env) {
+  const ast = solveParse(tokens);
+  const info = {};
+  const val = solveEval(ast, env, info);
+  const o = new SolveOut(), kind = { v: '' };
+  const c = pconst(val);
+  if (c) {
+    const lit = literalOf(ast);
+    if (lit === 'int') return null;
+    if (isFl(c)) putApprox(o, c.f, kind);
+    else if (lit === 'dec') putExact(o, c, 'mixed', kind);
+    else if (lit === 'pct') putExact(o, c, 'dec', kind);
+    else if (lit === 'mixed' || lit === 'frac-reduce') putExact(o, c, 'frac', kind);
+    else if (lit === 'frac') putExact(o, c, (c.n < 0n ? -c.n : c.n) > c.d ? 'mixed' : 'dec', kind);
+    else {
+      let style = 'frac';
+      if (info.dec || info.pct) style = 'dec';
+      else if (info.frac) style = info.mixed ? 'mixed' : 'frac';
+      else if (info.div && !info.negpow) style = 'dec';
+      putExact(o, c, style, kind);
+    }
+  } else {
+    if (simplified(ast)) return null;
+    putPoly(o, val, info, kind);
+  }
+  return { latex: o.tex, text: o.text, nodes: o.nodes, kind: kind.v, exact: !(c && isFl(c)) && kind.v !== 'approx', value: c ? cval(c) : null };
+}
+
+// Every line of a reading (rows of its tree): an answer for each line that ends with "=", null for the others.
+// "x = 5" on a line sets x for the lines below it.
+function solveRows(rows) {
+  const env = new Map();
+  return (rows || []).map(row => {
+    try {
+      const toks = tokensOf(row);
+      const rel = [];
+      toks.forEach((t, i) => { if (t.t === 'rel') rel.push(i); });
+      if (!rel.length) return null;
+      const last = toks.length - 1;
+      if (toks[last].t === 'rel') {
+        if (toks[last].v !== '=' || rel.some(i => toks[i].v !== '=')) return null;
+        const from = rel.length > 1 ? rel[rel.length - 2] + 1 : 0;
+        return from < last ? answerOf(toks.slice(from, last), env) : null;
+      }
+      if (rel.length === 1 && rel[0] === 1 && toks[0].t === 'var' && toks[1].v === '=') {
+        const info = {}, val = solveEval(solveParse(toks.slice(2)), env, info);
+        if (pconst(val)) env.set(toks[0].v, { val, info });
+      }
+      return null;
+    } catch (e) {
+      if (e instanceof SolveError || e instanceof RangeError) return null;
+      throw e;
+    }
+  });
+}
+
+// ------------------------------------------------------------------ LaTeX -> reading-tree rows (for Nib.solve)
+const LATEX_CMD = { times: '\\times', cdot: '\\cdot', div: '\\div', pm: '\\pm', le: '\\le', leq: '\\le', ge: '\\ge', geq: '\\ge',
+  ne: '\\ne', neq: '\\ne', pi: '\\pi', theta: '\\theta', alpha: '\\alpha', beta: '\\beta', gamma: '\\gamma', lambda: '\\lambda',
+  mu: '\\mu', sigma: '\\sigma', phi: '\\phi', Delta: '\\Delta', '%': '%', '{': '\\{', '}': '\\}', lbrace: '\\{', rbrace: '\\}',
+  ast: '\\times', infty: '\\infty', ldots: '\\ldots', rightarrow: '\\rightarrow', to: '\\rightarrow', in: '\\in', circ: '\\circ', prime: '\\prime' };
+function latexRows(src) {
+  let s = String(src || '').replace(/\\begin\{(gathered|aligned|array)\}(\{[^}]*\})?|\\end\{(gathered|aligned|array)\}/g, '').replace(/&/g, '');
+  let i = 0;
+  const ws = () => { while (i < s.length && /\s/.test(s[i])) i++; };
+  function group() {
+    ws();
+    if (s[i] === '{') { i++; const r = row('}'); if (s[i] !== '}') sfail('braces'); i++; return r; }
+    return row(null, true);
+  }
+  function row(end, one) {
+    const out = [];
+    for (;;) {
+      ws();
+      if (i >= s.length || (end && s[i] === end) || (s[i] === ']' && end === ']')) break;
+      if (s[i] === '\\' && s[i + 1] === '\\') break;
+      let node;
+      const c = s[i];
+      if (c === '^' || c === '_') {
+        i++;
+        const g = group(), t = out[out.length - 1];
+        if (!t) sfail('script');
+        t[c === '^' ? 'sup' : 'sub'] = g;
+        if (one) break;
+        continue;
+      }
+      if (c === '\\') {
+        const m = /^\\([A-Za-z]+|.)/.exec(s.slice(i));
+        i += m[0].length;
+        const name = m[1];
+        if (name === 'frac' || name === 'dfrac' || name === 'tfrac') node = { k: 'frac', num: group(), den: group() };
+        else if (name === 'sqrt') {
+          ws();
+          let idx;
+          if (s[i] === '[') { i++; idx = row(']'); if (s[i] !== ']') sfail('root'); i++; }
+          node = { k: 'root', body: group(), idx };
+        } else if (name === 'left' || name === 'right') continue;
+        else if (name === ',' || name === ';' || name === ' ' || name === '!' || name === 'quad' || name === 'qquad') continue;
+        else if (name === 'overline') { node = { k: 'over', body: group() }; }
+        else node = { k: 's', label: LATEX_CMD[name] || '\\' + name };
+      } else if (c === '{') { i++; const r = row('}'); if (s[i] !== '}') sfail('braces'); i++; out.push(...r); if (one) break; continue; }
+      else { i++; node = { k: 's', label: c === '*' ? '\\times' : c }; }
+      out.push(node);
+      if (one) break;
+    }
+    return out;
+  }
+  const rows = [];
+  for (;;) {
+    rows.push(row(null));
+    if (i >= s.length) break;
+    if (s[i] === '\\' && s[i + 1] === '\\') { i += 2; continue; }
+    sfail('unexpected ' + s[i]);
+  }
+  return rows;
+}
+
 // ================================================================== in place: tidy, my handwriting, typeset
 // Lays a reading out again where it was written. Every symbol becomes a glyph — the writer's own strokes cleaned
 // up ('tidy'), the writer's Replicator handwriting ('hand'), or typeset maths ('typeset') — placed by TeX-like rules
@@ -1729,7 +2307,7 @@ function inkOf(input) {
 // res.tree rows -> units {k, label, src, pts (level coordinates), box, full, sup, sub, num, den, body, idx}
 function unitsOf(row, ink, lev) {
   return row.map(n => {
-    const u = { k: n.k === 's' ? 's' : n.k, label: n.k === 's' ? n.label : n.k === 'frac' ? '-' : '\\sqrt', src: (n.strokes || []).slice() };
+    const u = { k: n.k === 's' ? 's' : n.k, label: n.k === 's' ? n.label : n.k === 'frac' || n.k === 'over' ? '-' : '\\sqrt', src: (n.strokes || []).slice() };
     u.pts = u.src.map(i => (ink[i] || []).map(lev)).filter(s => s.length);
     u.box = bboxOf(u.pts);
     for (const key of ['num', 'den', 'body', 'idx', 'sup', 'sub']) if (n[key]) u[key] = unitsOf(n[key], ink, lev);
@@ -1895,6 +2473,10 @@ function unitBox(u, s, P, ctx) {
     }
     const items = [{ u, g: P.radical(u, cw, top, low, total, s), x: shift, y: 0 }].concat(shiftItems(body.items, shift + cw + gap, 0), idxItems);
     B = { w: total + shift, h: top + 0.03 * s, d: -low, items, atom: 'ord' };
+  } else if (u.k === 'over') {
+    // a bar over digits (a repeating decimal), as long as they are
+    const body = rowBox(u.body || [], s, P, ctx), y = Math.max(body.h, NEAT.cap * s) + 0.11 * s;
+    B = { w: body.w, h: y + 0.03 * s, d: body.d, items: [{ u, g: P.bar(u, body.w, s), x: 0, y }].concat(body.items), atom: 'ord' };
   } else {
     B = glyphBox(u, P.glyph(u, s));
   }
@@ -1933,6 +2515,7 @@ function planOf(res, input, P, opts) {
   const c0 = n ? sx / n : 0, t = Math.tan((out.skew || 0) * Math.PI / 180);
   const lev = p => [p[0], p[1] - t * (p[0] - c0)];
   const lines = res.tree.map(row => unitsOf(row, ink, lev));
+  out.c0 = c0; out.t = t;
   let em = opts.em > 0 ? opts.em : emOf(lines);
   if (!(em > 0)) {
     const sz = []; for (const s of ink) if (s.length) { const b = bboxOf([s]); sz.push(Math.max(b[2] - b[0], b[3] - b[1])); }
@@ -1940,25 +2523,26 @@ function planOf(res, input, P, opts) {
   }
   out.em = em;
   const ctx = { gaps: gapsOf(lines, em) };
-  for (const row of lines) {
-    if (!row.length) continue;
+  lines.forEach((row, li) => {
+    if (!row.length) return;
     const base = baselineOf(row, em);
+    if (opts.answersOnly) { out.lines.push({ li, baseline: base, segments: [] }); return; }
     // a wide gap splits the line: each part starts where it was written
     const parts = [[row[0]]];
     for (let i = 1; i < row.length; i++) {
       const gap = row[i].full[0] - row[i - 1].full[2];
       if (gap > NEAT.wide * em) parts.push([row[i]]); else parts[parts.length - 1].push(row[i]);
     }
-    const line = { baseline: base, segments: [] };
+    const line = { li, baseline: base, segments: [] };
     for (const part of parts) {
       const box = rowBox(part, 1, P, ctx);
       const k = opts.fit === false ? 1 : fitRow(box, (part[part.length - 1].full[2] - part[0].full[0]) / em, P);
       line.segments.push({ x: part[0].full[0], box, units: part, k });
     }
     out.lines.push(line);
-  }
+  });
   // equals signs written one under another stay one under another
-  if (opts.align !== false) {
+  if (opts.align !== false && !opts.answersOnly) {
     const rel = [];
     for (const line of out.lines) {
       const hits = [];
@@ -1978,6 +2562,41 @@ function planOf(res, input, P, opts) {
     const e = em * seg.k;
     out.items.push({ key: it.u.src.join(',') + '|' + it.u.label, src: it.u.src, label: it.u.label, k: it.u.k,
       x: seg.x + it.x * e, y: line.baseline - it.y * e, scale: e, g: it.g });
+  }
+  if (opts.answers) placeAnswers(out, lines, em, ctx, P, opts);
+  return out;
+}
+// Answers (reading-tree nodes for each line that ends with "=") go just after that "=", on the line's baseline at the
+// writer's size: after the "=" as the view shows it, or after the "=" as written (answersOnly, for ink as written).
+function placeAnswers(out, lines, em, ctx, P, opts) {
+  const sample = opts.sample || (l => DEFAULT_GLYPHS[l] || null);
+  for (const line of out.lines) {
+    const nodes = opts.answers[line.li], row = lines[line.li], eq = row[row.length - 1];
+    if (!nodes || !nodes.length || !eq || eq.k !== 's' || eq.label !== '=' || eq.sup || eq.sub) continue;
+    const units = answerUnitsOf(nodes, sample, P.ink);
+    if (!units) continue;
+    const box = rowBox(units, 1, P, ctx), gap = spaceBetween('rel', 'ord') + (P.ink ? (ctx.gaps || { oo: 0.13 }).oo : 0);
+    let x0, e;
+    if (opts.answersOnly) { e = em; x0 = eq.box[2] + gap * e; }
+    else {
+      const seg = line.segments.find(sg => sg.units.includes(eq)), it = seg && seg.box.items.find(q => q.u === eq);
+      if (!it) continue;
+      e = em * seg.k; x0 = seg.x + (it.x + it.g.w) * e + gap * e;
+    }
+    box.items.forEach((it, n) => out.items.push({ key: 'ans' + line.li + '|' + n + '|' + it.u.label, src: [], label: it.u.label, k: it.u.k,
+      x: x0 + it.x * e, y: line.baseline - it.y * e, scale: e, g: it.g, answer: true, eq: eq.src }));
+  }
+}
+// answer nodes as units: no strokes of their own, a glyph's worth of ink from the sample book for the tidy and hand views
+function answerUnitsOf(row, sample, needInk) {
+  const out = [];
+  for (const n of row) {
+    const u = { k: n.k === 's' ? 's' : n.k, label: n.k === 's' ? n.label : n.k === 'frac' || n.k === 'over' ? '-' : '\\sqrt', src: [], answer: true };
+    u.pts = u.k === 's' ? sample(u.label) || [] : [];
+    if (u.k === 's' && needInk && !u.pts.length) return null;
+    u.box = bboxOf(u.pts); u.full = u.box.slice();
+    for (const key of ['num', 'den', 'body', 'idx', 'sup', 'sub']) if (n[key]) { u[key] = answerUnitsOf(n[key], sample, needInk); if (!u[key]) return null; }
+    out.push(u);
   }
   return out;
 }
@@ -2058,14 +2677,14 @@ function squareSign(l, paths) {
   const flat = p => { const b = bboxOf([p]); return (b[2] - b[0]) > 2.5 * (b[3] - b[1]); };
   const upright = p => { const b = bboxOf([p]); return (b[3] - b[1]) > 2.5 * (b[2] - b[0]); };
   const spread = (p, x0, x1) => { const b = bboxOf([p]), w = b[2] - b[0] || 1, y = (b[1] + b[3]) / 2; return p.map(q => [x0 + (q[0] - b[0]) / w * (x1 - x0), y]); };
-  if ((l === '=' || l === '\ne') && paths.length >= 2) {
+  if ((l === '=' || l === '\\ne') && paths.length >= 2) {
     const bars = paths.filter(p => p.length >= 2 && flat(p));
     if (bars.length === 2) {
       const b = bboxOf(bars), x0 = b[0], x1 = b[2];
       return paths.map(p => (bars.includes(p) ? spread(p, x0, x1) : p));
     }
   }
-  if ((l === '+' || l === '\pm') && paths.length >= 2) {
+  if ((l === '+' || l === '\\pm') && paths.length >= 2) {
     const h = paths.filter(p => p.length >= 2 && flat(p)), v = paths.filter(p => p.length >= 2 && upright(p));
     if (h.length >= 1 && v.length === 1) {
       const hb = bboxOf([h[0]]), vb = bboxOf(v), cx = (hb[0] + hb[2]) / 2, dx = cx - (vb[0] + vb[2]) / 2;
@@ -2075,7 +2694,7 @@ function squareSign(l, paths) {
       return out;
     }
   }
-  if (l === '\div' && paths.length === 3) {
+  if (l === '\\div' && paths.length === 3) {
     const bar = paths.find(p => p.length >= 2 && flat(p));
     if (bar) { const bb = bboxOf([bar]), cx = (bb[0] + bb[2]) / 2; return paths.map(p => { if (p === bar) return p; const b = bboxOf([p]), dx = cx - (b[0] + b[2]) / 2; return p.map(q => [q[0] + dx, q[1]]); }); }
   }
@@ -2128,9 +2747,9 @@ function tidyProvider(ink) {
     glyph(u, s) {
       const f = fitInk(u.pts, sizeSpec(u.label), s);
       // a dot is a dot: one point, drawn as round as the pen
-      if (u.label === '.' || u.label === '\cdot') {
+      if (u.label === '.' || u.label === '\\cdot') {
         const b = bboxOf(f.paths), c = [(b[0] + b[2]) / 2 - b[0], u.label === '.' ? 0.035 * s : NEAT.axis * s];
-        return { w: 0.07 * s, h: c[1] + 0.035 * s, d: 0, draw: [{ t: 'ink', paths: [[[0.035 * s, c[1]]]] }] };
+        return { w: 0.07 * s, h: c[1] + 0.035 * s, d: 0, draw: [{ t: 'ink', paths: [[[0.035 * s, c[1]]]], dot: 0.042 * s }] };
       }
       const paths = squareSign(u.label, tidyPaths(f.paths, s, NEAT_OPS.has(u.label) || u.label === '/'));
       return { w: f.w, h: f.h, d: f.d, draw: [{ t: 'ink', paths }] };
@@ -2153,6 +2772,74 @@ function tidyProvider(ink) {
     },
   };
   return P;
+}
+
+// ------------------------------------------------------------------ glyphs for answers: whose handwriting to borrow
+// An answer has no strokes of its own. Its symbols are drawn with the writer's own: the clearest of each symbol
+// already on the board, else the same character from their Replicator handwriting, else a plain built-in hand.
+// Built-in hand: control points in a box one unit tall (y down, baseline at 1), joined smoothly; '|' starts a
+// sharp corner, ';' a new stroke.
+const DEFAULT_HAND = {
+  '0': 'o', '1': '0.1 0.2 0.22 0.1 0.34 0|0.34 0 0.34 0.5 0.34 1',
+  '2': '0.04 0.24 0.14 0.06 0.32 0 0.5 0.08 0.55 0.26 0.45 0.48 0.24 0.72 0.02 0.99|0.02 0.99 0.3 0.99 0.58 0.99',
+  '3': '0.06 0.1 0.26 0 0.46 0.06 0.52 0.22 0.42 0.38 0.24 0.46|0.24 0.46 0.46 0.54 0.56 0.72 0.5 0.9 0.3 1 0.08 0.94 0.02 0.86',
+  '4': '0.4 0 0.21 0.33 0.02 0.66|0.02 0.66 0.31 0.66 0.6 0.66;0.46 0.28 0.46 0.64 0.46 1',
+  '5': '0.52 0.02 0.32 0.02 0.12 0.02|0.12 0.02 0.1 0.23 0.08 0.44|0.08 0.44 0.3 0.36 0.5 0.44 0.56 0.66 0.48 0.88 0.28 1 0.04 0.92',
+  '6': '0.48 0.02 0.28 0.16 0.1 0.42 0.04 0.7 0.12 0.92 0.3 1 0.5 0.9 0.54 0.7 0.44 0.54 0.26 0.52 0.08 0.64',
+  '7': '0.02 0.02 0.3 0.02 0.58 0.02|0.58 0.02 0.46 0.3 0.34 0.62 0.24 1',
+  '8': '0.48 0.14 0.3 0 0.1 0.1 0.1 0.3 0.3 0.46 0.5 0.6 0.54 0.82 0.32 1 0.08 0.88 0.08 0.66 0.28 0.48 0.46 0.32 0.48 0.14',
+  '9': '0.52 0.12 0.36 0 0.14 0.06 0.06 0.24 0.18 0.42 0.4 0.42 0.54 0.26|0.54 0.26 0.54 0.62 0.54 1',
+  '.': '0.05 0.98', '-': '0 0.5 0.25 0.5 0.5 0.5', '+': '0 0.5 0.25 0.5 0.5 0.5;0.25 0.25 0.25 0.5 0.25 0.75',
+};
+// Catmull-Rom through the points, 7 samples per span
+function crPath(pts) {
+  if (pts.length < 3) return pts.map(p => p.slice());
+  const out = [pts[0].slice()];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    for (let k = 1; k <= 7; k++) {
+      const t = k / 7, t2 = t * t, t3 = t2 * t;
+      out.push([0, 1].map(j => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3)));
+    }
+  }
+  return out;
+}
+const DEFAULT_GLYPHS = {};
+for (const ch of Object.keys(DEFAULT_HAND)) {
+  if (DEFAULT_HAND[ch] === 'o') {                           // an oval from the top, round to the left and back
+    const p = []; for (let i = 0; i <= 26; i++) { const a = i / 26 * (2 * Math.PI + 0.2); p.push([0.3 - 0.27 * Math.sin(a), 0.5 - 0.5 * Math.cos(a)]); }
+    DEFAULT_GLYPHS[ch] = [p]; continue;
+  }
+  DEFAULT_GLYPHS[ch] = DEFAULT_HAND[ch].split(';').map(stroke => {
+    const out = [];
+    for (const piece of stroke.split('|')) {
+      const v = piece.trim().split(/\s+/).map(Number), pts = [];
+      for (let i = 0; i + 1 < v.length; i += 2) pts.push([v[i], v[i + 1]]);
+      const q = crPath(pts);
+      if (out.length) q.shift();                              // the corner point is already there
+      out.push(...q);
+    }
+    return out;
+  });
+}
+// label -> strokes (y down, any units) to draw an answer's symbol with
+function sampleBook(res, input, hand) {
+  const ink = inkOf(input), best = new Map();
+  for (const sy of (res && res.symbols) || []) {
+    const c = sy.candidates && sy.candidates[0], p = sy.fixed ? 1 : c && c[0] === sy.label ? c[1] : 0;
+    const pts = sy.strokes.map(i => ink[i] || []).filter(q => q.length);
+    if (!pts.length) continue;
+    const b = best.get(sy.label);
+    if (!b || p > b.p) best.set(sy.label, { p, pts });
+  }
+  return label => {
+    const b = best.get(label);
+    if (b && b.p >= 0.6) return b.pts;
+    const ch = HAND_CHAR[label] || label;
+    if (hand && hand[ch] && hand[ch].length) return hand[ch];
+    if (DEFAULT_GLYPHS[label]) return DEFAULT_GLYPHS[label];
+    return b ? b.pts : null;                      // a letter of the question, however it was written
+  };
 }
 
 // ------------------------------------------------------------------ glyphs: the writer's Replicator handwriting
@@ -2316,12 +3003,14 @@ function drawablesOf(plan) {
   return plan.items.map(it => {
     const e = it.scale, X = v => it.x + v * e, Y = v => it.y - v * e;
     const parts = it.g.draw.map(p => {
-      if (p.t === 'ink' || p.t === 'line') return Object.assign({ t: p.t, paths: p.paths.map(s => s.map(q => [X(q[0]), Y(q[1])])) }, p.width ? { width: p.width * e } : {});
+      if (p.t === 'ink' || p.t === 'line') return Object.assign({ t: p.t, paths: p.paths.map(s => s.map(q => [X(q[0]), Y(q[1])])) }, p.width ? { width: p.width * e } : {}, p.dot ? { dot: p.dot * e } : {});
       if (p.t === 'text') return { t: 'text', text: p.text, font: p.font, x: X(p.x), y: Y(p.y), size: p.size * e, sx: p.sx || 1, sy: p.sy || 1 };
       return { t: 'rule', x: X(p.x), y: Y(p.y + p.h), w: p.w * e, h: p.h * e };
     });
     const g = it.g;
-    return { key: it.key, src: it.src, label: it.label, parts, box: [X(0), Y(g.h), X(g.w), Y(-g.d)] };
+    const d = { key: it.key, src: it.src, label: it.label, parts, box: [X(0), Y(g.h), X(g.w), Y(-g.d)] };
+    if (it.answer) { d.answer = true; d.eq = it.eq; }
+    return d;
   });
 }
 // all the ink paths of a plan in one list (tidy and hand plans), for a page or a test to use as strokes
@@ -2333,15 +3022,36 @@ function pathsOf(items) {
 
 // Nib.neaten / Nib.typeset: recognise (or take options.result), then lay out in place
 function inPlace(strokes, style, options) {
-  const o = options || {};
+  const o = Object.assign({}, options || {});
   const res = o.result || defaultRecognizer().recognize(strokes, o);
+  const g = style === 'hand' || o.solve || o.answers ? (o.hand ? handClean(o.hand.glyphs || o.hand) : handLoad()) : null;
   let P;
   if (style === 'typeset') P = typeProvider();
-  else if (style === 'hand') { const g = o.hand ? handClean(o.hand.glyphs || o.hand) : handLoad(); P = handProvider(g && Object.keys(g).length ? g : null); }
+  else if (style === 'hand') P = handProvider(g && Object.keys(g).length ? g : null);
   else P = tidyProvider();
+  let answers = null;
+  if (o.solve && !o.answers && res && res.tree) answers = solveRows(res.tree);
+  if (answers) o.answers = answers.map(a => a && a.nodes);
+  if (o.answers && !o.sample) o.sample = sampleBook(res, strokes, g);
+  if (style === 'ink') o.answersOnly = true;
   const plan = planOf(res, strokes, P, o);
-  const items = drawablesOf(plan);
-  return { style, latex: res ? res.latex : '', result: res, em: plan.em, skew: plan.skew, items, strokes: style === 'typeset' ? [] : pathsOf(items) };
+  let items = drawablesOf(plan);
+  if (o.answersOnly) items = items.map(it => unlevel(it, plan.t || 0, plan.c0 || 0));
+  const out = { style, latex: res ? res.latex : '', result: res, em: plan.em, skew: plan.skew, items, strokes: style === 'typeset' ? [] : pathsOf(items.filter(it => !it.answer)) };
+  if (answers) out.answers = answers;
+  return out;
+}
+// an item laid out on the levelled line, put back on the line as written (the slope sheared back in)
+function unlevel(it, t, c0) {
+  if (!t) return it;
+  const Y = (x, y) => y + t * (x - c0);
+  const parts = it.parts.map(p => {
+    if (p.t === 'ink' || p.t === 'line') return Object.assign({}, p, { paths: p.paths.map(s => s.map(q => [q[0], Y(q[0], q[1])])) });
+    if (p.t === 'text') return Object.assign({}, p, { y: Y(p.x, p.y) });
+    return Object.assign({}, p, { y: Y(p.x + p.w / 2, p.y) });
+  });
+  const b = it.box, y0 = Math.min(Y(b[0], b[1]), Y(b[2], b[1])), y1 = Math.max(Y(b[0], b[3]), Y(b[2], b[3]));
+  return Object.assign({}, it, { parts, box: [b[0], y0, b[2], y1] });
 }
 
 // ------------------------------------------------------------------ drawing (browser)
@@ -2365,7 +3075,7 @@ function drawItems(ctx, items, o) {
   for (const it of items) for (const p of it.parts) {
     if (p.t === 'ink') {
       ctx.lineWidth = o.width;
-      for (const s of p.paths) strokePath(ctx, s, ctx.lineWidth);
+      for (const s of p.paths) strokePath(ctx, s, s.length === 1 && p.dot ? Math.max(ctx.lineWidth, 2 * p.dot) : ctx.lineWidth);
     } else if (p.t === 'line') {                  // typeset rules: straight, crisp corners
       ctx.save(); ctx.lineWidth = p.width; ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
       for (const s of p.paths) { ctx.beginPath(); s.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); }
@@ -2463,6 +3173,7 @@ const PAD_DEFAULTS = {
   motion: true,         // animate ink into its tidy / handwritten / typeset form (off when the reader asks for less motion)
   hand: null,           // handwriting for view 'hand' (the Replicator's saved data); default: whatever Nib.hand holds
   separate: false,      // a board: writing in different places is read as separate expressions
+  solve: false,         // work out lines that end with "=" and write the answer after the "=" (in --nib-answer)
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
@@ -2536,7 +3247,8 @@ class Pad {
     this.active = null; this.sawPen = false; this.timer = null; this.gen = 0;
     this.plan = null; this.anim = null; this.sid = new WeakMap(); this.nsid = 1;
     this.parts = new Map(); this.recs = new WeakMap(); this.optsVersion = 0;
-    this._handChanged = () => { if (this.o.view === 'hand') this._replan(true); };
+    this._handChanged = () => { if (this.o.view === 'hand' || this.o.solve) this._replan(true); };
+    this.answers = [];
     if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
     c.addEventListener('pointerdown', this._down);
@@ -2555,17 +3267,17 @@ class Pad {
   }
 
   setOptions(o) {
-    const before = this.o.view, hb = this.o.hand, rk = this._readKey();
+    const before = this.o.view, hb = this.o.hand, sb = !!this.o.solve, rk = this._readKey();
     Object.assign(this.o, o || {});
     if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
     // only options that change the reading read the ink again; a view, colour or pen width just redraws
     const reread = this._readKey() !== rk;
     if (reread) { this.optsVersion++; this.parts.clear(); }
-    if (this.o.view !== before || this.o.hand !== hb) this._replan(true); else this.redraw();
+    if (this.o.view !== before || this.o.hand !== hb || !!this.o.solve !== sb) this._replan(true); else this.redraw();
     if (this.strokes.length && this.o.auto && (reread || (this.resultStrokes || []).length !== this.strokes.length)) this._schedule(0);
   }
   _readKey() {
-    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'auto', 'onResult', 'onChange']);
+    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'auto', 'solve', 'onResult', 'onChange']);
     return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
   }
 
@@ -2582,6 +3294,7 @@ class Pad {
     clearTimeout(this.timer); this.gen++;
     if (this.mode === 'erase') { this.erased = []; this._eraseAt(this._pt(e)); return; }
     this.cur = [this._pt(e)];
+    if (this.plan && this.plan.items.some(it => it.answer)) { this.redraw(); return; }   // writing over an answer hides it
     this._ink();
     const p = this.cur[0];
     this.ctx.beginPath(); this.ctx.arc(p[0], p[1], this.o.width / 2, 0, Math.PI * 2); this.ctx.fill();
@@ -2659,14 +3372,40 @@ class Pad {
     ctx.lineTo(s[s.length - 1][0], s[s.length - 1][1]);
     ctx.stroke();
   }
+  _answerInk() {
+    const cs = getComputedStyle(this.el);
+    return cs.getPropertyValue('--nib-answer').trim() || '#b08a1e';
+  }
+  // an answer is hidden while its "=" is gone, or while new writing (not read yet) reaches into it
+  _answerShown(it, live, fresh) {
+    if (!it.eqFrom.every(s => live.has(s))) return false;
+    if (!fresh.length) return true;
+    const b = it.group, m = 0.25 * (b[3] - b[1]) + 6;
+    return !fresh.some(f => f[0] < b[2] + m && f[2] > b[0] - m && f[1] < b[3] + m && f[3] > b[1] - m);
+  }
   redraw() {
     const c = this.canvas, ctx = this.ctx, d = this.dpr || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.setTransform(d, 0, 0, d, 0, 0);
     this._ink();
     const ink = ctx.strokeStyle, live = new Set(this.strokes), shown = new Set();
     const A = this.anim, e = A ? A.e : 1;
+    let ans = null, fresh = null;
+    const answerSetup = () => {
+      if (ans) return;
+      ans = this._answerInk();
+      const read = new Set(this.resultStrokes || []);
+      fresh = this.strokes.filter(s => !read.has(s)).concat(this.cur ? [this.cur] : []).map(s => sbox(s.map(q => [q[0], q[1]])));
+    };
     // the read ink in its view; strokes still moving into it are drawn by the animation
     if (this.plan) for (const it of this.plan.items) {
+      if (it.answer) {
+        answerSetup();
+        if (!this._answerShown(it, live, fresh)) continue;
+        const was = A && A.from.get(it);
+        if (was && e < 1) morphDraw(ctx, was, it, e, ans, this.o.width);
+        else drawItems(ctx, [it], { ink: ans, width: this.o.width });
+        continue;
+      }
       if (!it.from.every(s => live.has(s))) continue;
       for (const s of it.from) shown.add(s);
       const was = A && A.from.get(it);
@@ -2674,7 +3413,9 @@ class Pad {
       else drawItems(ctx, [it], { ink, width: this.o.width });
     }
     // views being left behind (back to ink, or symbols that no longer exist) fade out
-    if (A && e < 1) for (const g of A.leaving) if (g.from.every(s => live.has(s))) {
+    if (A && e < 1) for (const g of A.leaving) {
+      if (g.answer) { answerSetup(); if (this._answerShown(g, live, fresh)) drawItems(ctx, [g], { ink: ans, width: this.o.width, alpha: 1 - e }); continue; }
+      if (!g.from.every(s => live.has(s))) continue;
       const raw = rawVisual(g.from.filter(s => !shown.has(s)));
       if (raw.parts[0].paths.length) { morphDraw(ctx, g, raw, e, ink, this.o.width); for (const s of g.from) shown.add(s); }
     }
@@ -2688,26 +3429,62 @@ class Pad {
     const old = this.plan, style = this.o.view;
     const res = this.result, at = this.resultStrokes || [];
     let plan = null;
-    if (style !== 'ink' && res && res.tree && res.tree.length && at.length) {
-      const hand = style === 'hand' && this.o.hand ? this.o.hand : undefined, items = [];
-      for (const part of res.parts || [{ strokes: at, result: res }]) {
-        let out = null;
-        try { out = inPlace(part.strokes, style, { result: part.result, hand }); } catch (err) { out = null; }
-        if (!out) continue;
-        for (const it of out.items) { it.from = it.src.map(i => part.strokes[i]).filter(Boolean); if (it.from.length) items.push(it); }
+    this.answers = [];
+    if (res && res.tree && res.tree.length && at.length && (style !== 'ink' || this.o.solve)) {
+      const items = [];
+      let li = 0, sample = null;
+      if (this.o.solve) {
+        // an answer is written with the clearest of each symbol anywhere on the board, then the Replicator hand
+        let hand = null;
+        try { hand = this.o.hand ? handClean(this.o.hand.glyphs || this.o.hand) : handLoad(); } catch (err) { hand = null; }
+        sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
-      for (const it of items) it.id = it.from.map(s => this._sid(s)).join(',') + '|' + it.label;
+      for (const part of res.parts || [{ strokes: at, result: res }]) {
+        const pr = part.result;
+        if (!pr || !pr.lines || !pr.lines.length) continue;
+        // answers belong to the expression they are in: "x = 5" sets x for the lines below it, here only
+        let answers = null;
+        if (this.o.solve) { try { answers = solveRows(pr.tree); } catch (err) { answers = null; } }
+        if (answers) answers.forEach((a, k) => { if (a) this.answers.push({ line: li + k, latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value }); });
+        li += pr.tree.length;
+        if (style === 'ink' && !(answers && answers.some(Boolean))) continue;
+        let out = null;
+        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample }); } catch (err) { out = null; }
+        if (!out) continue;
+        const groups = new Map();
+        for (const it of out.items) {
+          if (it.answer) {
+            it.from = []; it.eqFrom = (it.eq || []).map(i => part.strokes[i]).filter(Boolean);
+            if (!it.eqFrom.length) continue;
+            it.id = 'ans:' + it.eqFrom.map(s => this._sid(s)).join(',') + ':' + it.key;
+            const g = it.eqFrom.map(s => this._sid(s)).join(','), b = groups.get(g);
+            groups.set(g, b ? [Math.min(b[0], it.box[0]), Math.min(b[1], it.box[1]), Math.max(b[2], it.box[2]), Math.max(b[3], it.box[3])] : it.box.slice());
+            it.groupKey = g; items.push(it);
+          } else {
+            it.from = it.src.map(i => part.strokes[i]).filter(Boolean);
+            if (!it.from.length) continue;
+            it.id = it.from.map(s => this._sid(s)).join(',') + '|' + it.label;
+            items.push(it);
+          }
+        }
+        for (const it of items) if (it.answer && groups.has(it.groupKey)) it.group = groups.get(it.groupKey);
+      }
       plan = { style, items };
       if (style === 'typeset') typeFontsReady().then(ok => { if (ok && this.plan === plan) this.redraw(); });
     }
-    this.plan = plan;
+    this.plan = plan && plan.items.length ? plan : style === 'ink' ? null : plan;
     const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (!animate || !this.o.motion || reduce) { this.anim = null; this.redraw(); return; }
     // where each item comes from: the same symbol in the old view, or the ink as written
     const before = new Map(old ? old.items.map(it => [it.id, it]) : []);
     const from = new Map(), used = new Set();
-    if (plan) for (const it of plan.items) {
-      const was = before.get(it.id) || (old && old.items.find(o => o.from.length === it.from.length && o.from.every(s => it.from.includes(s))));
+    if (this.plan) for (const it of this.plan.items) {
+      if (it.answer) {                                    // an answer glides from where it was, or fades in
+        const was = before.get(it.id);
+        if (was) { from.set(it, was); used.add(was); } else from.set(it, { parts: [], box: it.box });
+        continue;
+      }
+      const was = before.get(it.id) || (old && old.items.find(o => !o.answer && o.from.length === it.from.length && o.from.every(s => it.from.includes(s))));
       if (was) { from.set(it, was); used.add(was); }
       else from.set(it, rawVisual(it.from));
     }
@@ -2729,10 +3506,10 @@ class Pad {
     const col = cs.getPropertyValue('--nib-box').trim() || 'rgba(201,162,39,.85)';
     ctx.save(); ctx.lineWidth = 1; ctx.strokeStyle = col; ctx.fillStyle = col;
     ctx.font = '11px system-ui, sans-serif'; ctx.textBaseline = 'bottom';
-    if (this.plan) {
+    if (this.plan && this.plan.style !== 'ink') {
       const live = new Set(this.strokes);
       for (const it of this.plan.items) {
-        if (!it.from.every(st => live.has(st))) continue;
+        if (it.answer || !it.from.every(st => live.has(st))) continue;
         const b = it.box; ctx.strokeRect(b[0] - 3, b[1] - 3, b[2] - b[0] + 6, b[3] - b[1] + 6); ctx.fillText(it.label, b[0] - 3, b[1] - 4);
       }
     } else for (const s of this.result.symbols) {
@@ -2827,6 +3604,15 @@ class Pad {
   _partCached(st, ro) { return this.parts.has(this._partKey(st, ro)); }
   _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
   // re-label one recognised symbol (from result.symbols[i].candidates) and re-run
+  // the reading's LaTeX with the answers written in after their "="
+  solvedLatex() {
+    const res = this.result;
+    if (!res) return '';
+    if (!this.answers.length) return res.latex;
+    const by = new Map(this.answers.map(a => [a.line, a.latex]));
+    const lines = res.lines.map((l, i) => l.latex + (by.get(i) || ''));
+    return lines.length > 1 ? '\\begin{gathered}' + lines.join(' \\\\ ') + '\\end{gathered}' : lines[0] || '';
+  }
   relabel(symbol, label) {
     // the symbol's strokes as they were read (its indices are into the ink of that reading), still on the pad
     const at = this.resultStrokes && this.resultStrokes.length ? this.resultStrokes : this.strokes;
@@ -2888,7 +3674,7 @@ class Pad {
 // <nib-pad symbols="school" delay="450" ink="#1b2a4a" stroke-width="3" boxes></nib-pad>
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
-    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate']; }
+    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -2906,6 +3692,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         view: ['tidy', 'hand', 'typeset'].includes(a('view')) ? a('view') : 'ink',
         motion: a('motion') !== 'false',
         separate: has('separate') && a('separate') !== 'false',
+        solve: has('solve') && a('solve') !== 'false',
       };
     }
     connectedCallback() {
@@ -2936,7 +3723,12 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     get view() { return this.pad ? this.pad.o.view : (this.getAttribute('view') || 'ink'); }
     set view(v) { this.setAttribute('view', ['tidy', 'hand', 'typeset'].includes(v) ? v : 'ink'); }
     // what the view shows: [{label, box, parts}] in the pad's coordinates (parts as drawn: ink paths, text, rules)
-    get shown() { return this.pad && this.pad.plan ? this.pad.plan.items.map(it => ({ label: it.label, box: it.box.slice(), parts: it.parts })) : []; }
+    get shown() { return this.pad && this.pad.plan ? this.pad.plan.items.map(it => Object.assign({ label: it.label, box: it.box.slice(), parts: it.parts }, it.answer ? { answer: true } : {})) : []; }
+    // with solve on: [{line, latex, text, kind, exact, value}] for each line that ends with "=", and the LaTeX with them in
+    get solve() { return this.pad ? !!this.pad.o.solve : this.hasAttribute('solve') && this.getAttribute('solve') !== 'false'; }
+    set solve(v) { if (v) this.setAttribute('solve', ''); else this.removeAttribute('solve'); }
+    get answers() { return this.pad ? this.pad.answers.map(a => Object.assign({}, a)) : []; }
+    get solved() { return this.pad ? this.pad.solvedLatex() : ''; }
     toImage(type) { return this.pad ? this.pad.canvas.toDataURL(type || 'image/png') : ''; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
     set mode(v) { if (this.pad) this.pad.mode = v === 'erase' ? 'erase' : 'draw'; }
@@ -2979,7 +3771,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.2.0',
+  version: '1.3.0',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -2996,6 +3788,15 @@ const Nib = {
   // in the writer's Replicator handwriting ('hand') or typeset ('typeset'). Returns {items, strokes, latex, ...}.
   neaten(strokes, options) { const o = options || {}; return inPlace(strokes, o.style === 'hand' ? 'hand' : 'tidy', o); },
   typeset(strokes, options) { return inPlace(strokes, 'typeset', options); },
+  // the answer to each line that ends with "=" (null for the other lines): from LaTeX, strokes or a reading
+  solve(input, options) {
+    let rows;
+    if (typeof input === 'string') {
+      try { rows = latexRows(input); } catch (e) { if (e instanceof SolveError) return [null]; throw e; }
+    } else if (input && input.tree) rows = input.tree;
+    else { const r = defaultRecognizer().recognize(input || [], options); rows = r ? r.tree : []; }
+    return solveRows(rows).map(a => a && { latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value });
+  },
   hand: {
     // data: the Replicator's saved handwriting ({glyphs: {char: strokes}}), as an object or its JSON text
     load(data) { const n = handSet(typeof data === 'string' ? JSON.parse(data) : data); handNotify(); return n; },
@@ -3004,7 +3805,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;

@@ -635,6 +635,8 @@ const T = {
 const QUOTA = { arith: 80, linear: 90, ineq: 60, frac: 80, power: 80, root: 55, pct: 55, abs: 35, formula: 60, ratio: 30, multi: 75 };
 
 // ------------------------------------------------------------------ main
+module.exports = { compose };
+if (require.main === module) {
 const sum = Object.values(QUOTA).reduce((a, b) => a + b, 0);
 const out = [], counts = {};
 for (const [cat, n0] of Object.entries(QUOTA)) {
@@ -651,3 +653,4 @@ for (const [cat, n0] of Object.entries(QUOTA)) {
 fs.writeFileSync(OUT, out.join('\n') + '\n');
 console.log(`wrote ${out.length} expressions to ${OUT} (seed ${SEED}, ${WRITERS.length} writers)`);
 console.log(Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(', '));
+}

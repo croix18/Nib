@@ -5,7 +5,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.environ.get('NIB_WORK', os.path.join(HERE, 'training', 'scratch', 'work'))
 MODEL = sys.argv[1] if len(sys.argv) > 1 else os.path.join(WORK, 'model_v3.npz')
-VERSION = '1.2.0'
+VERSION = '1.3.0'
 
 classes = open(os.path.join(WORK, 'ep', 'classes.txt')).read().split('\n')
 C = len(classes)
@@ -79,7 +79,7 @@ for k, name in TS_FONTS.items():
 data['tsfm'] = tsfm
 data['tsfont'] = {k: b64(np.frombuffer(open(os.path.join(KATEX, 'dist', 'fonts', f'KaTeX_{name}.woff2'), 'rb').read(), np.uint8))
                   for k, name in TS_FONTS.items()}
-src = ''.join(open(os.path.join(HERE, 'src', f)).read() + '\n' for f in ('core.js', 'recognize.js', 'neat.js', 'pad.js', 'api.js')
+src = ''.join(open(os.path.join(HERE, 'src', f)).read() + '\n' for f in ('core.js', 'recognize.js', 'solve.js', 'neat.js', 'pad.js', 'api.js')
               if os.path.exists(os.path.join(HERE, 'src', f)))
 src = src.replace("'use strict';\n", '')
 src = src.replace('/*__DATA__*/ null', json.dumps(data, separators=(',', ':')))

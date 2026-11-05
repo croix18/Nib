@@ -45,6 +45,15 @@ const Nib = {
   // in the writer's Replicator handwriting ('hand') or typeset ('typeset'). Returns {items, strokes, latex, ...}.
   neaten(strokes, options) { const o = options || {}; return inPlace(strokes, o.style === 'hand' ? 'hand' : 'tidy', o); },
   typeset(strokes, options) { return inPlace(strokes, 'typeset', options); },
+  // the answer to each line that ends with "=" (null for the other lines): from LaTeX, strokes or a reading
+  solve(input, options) {
+    let rows;
+    if (typeof input === 'string') {
+      try { rows = latexRows(input); } catch (e) { if (e instanceof SolveError) return [null]; throw e; }
+    } else if (input && input.tree) rows = input.tree;
+    else { const r = defaultRecognizer().recognize(input || [], options); rows = r ? r.tree : []; }
+    return solveRows(rows).map(a => a && { latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value });
+  },
   hand: {
     // data: the Replicator's saved handwriting ({glyphs: {char: strokes}}), as an object or its JSON text
     load(data) { const n = handSet(typeof data === 'string' ? JSON.parse(data) : data); handNotify(); return n; },
@@ -53,7 +62,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;

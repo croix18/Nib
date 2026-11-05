@@ -73,7 +73,7 @@ h1 .dot { color: var(--gold); }
 
 .sheet { background: var(--sheet); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
 .pad {
-  position: relative; height: min(62vh, 560px); min-height: 280px; cursor: crosshair; --nib-ink: var(--ink); --nib-box: var(--gold);
+  position: relative; height: min(62vh, 560px); min-height: 280px; cursor: crosshair; --nib-ink: var(--ink); --nib-box: var(--gold); --nib-answer: var(--gold-ink);
   background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 71px, var(--rule) 71px, var(--rule) 72px);
   background-position: 0 30px;
 }
@@ -170,6 +170,7 @@ details.dev[open] summary::before { content: "\2212"; }
           <button type="button" role="radio" data-view="hand" aria-checked="false">My hand</button>
           <button type="button" role="radio" data-view="typeset" aria-checked="false">Typeset</button>
         </div>
+        <button type="button" class="tool" id="solve" aria-pressed="false" title="Work out what is written before an equals sign" aria-label="Solve"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h10"/><path d="M4 15h10"/><path d="M19 4v5"/><path d="M16.5 6.5h5"/><path d="M18 14.5v3"/><path d="M16.5 16h3"/></svg><span class="t">Solve</span></button>
         <button type="button" class="tool" id="handfile" title="Open the handwriting you saved from Replicator" aria-label="Open my handwriting" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="t">Open handwriting</span></button>
         <input type="file" id="file" accept=".json,application/json" hidden>
         <button type="button" class="tool" id="boxes" aria-pressed="false" title="Show how the ink was read" aria-label="Boxes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="3 2.5"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/></svg><span class="t">Boxes</span></button>
@@ -247,8 +248,10 @@ r.symbols // each symbol: label, box, candidates</pre>
       $('latex').textContent = ''; $('text').textContent = ''; $('chips').textContent = ''; $('alts').hidden = true; $('timing').textContent = '';
       return;
     }
-    for (const l of r.lines) { const d = document.createElement('div'); math.appendChild(d); tex(l.latex, d, true); }
-    $('latex').textContent = r.latex;
+    // with Solve on, each line that ends with "=" carries its answer
+    const answerOf = new Map(pad && pad.o.solve ? pad.answers.map(a => [a.line, a.latex]) : []);
+    r.lines.forEach((l, i) => { const d = document.createElement('div'); math.appendChild(d); tex(l.latex + (answerOf.get(i) || ''), d, true); });
+    $('latex').textContent = pad && pad.o.solve ? pad.solvedLatex() : r.latex;
     $('text').textContent = r.text;
     $('timing').textContent = 'last read: ' + r.symbols.length + ' symbols in ' + r.ms + ' ms';
     const chips = $('chips'); chips.textContent = '';
@@ -302,6 +305,7 @@ r.symbols // each symbol: label, box, candidates</pre>
   $('clear').onclick = () => { pad.clear(); sample = false; $('badge').hidden = true; };
   $('erase').onclick = e => { const on = pad.mode !== 'erase'; pad.mode = on ? 'erase' : 'draw'; e.currentTarget.setAttribute('aria-pressed', on); };
   $('boxes').onclick = e => { const on = !pad.o.boxes; pad.setOptions({ boxes: on }); e.currentTarget.setAttribute('aria-pressed', on); };
+  $('solve').onclick = e => { const on = !pad.o.solve; pad.setOptions({ solve: on }); e.currentTarget.setAttribute('aria-pressed', on); show(pad.result); };
   document.querySelectorAll('.top .seg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('.top .seg button').forEach(x => x.setAttribute('aria-checked', x === b));
     pad.setOptions({ symbols: b.dataset.set });

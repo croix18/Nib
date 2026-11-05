@@ -72,6 +72,11 @@ const D = (process.env.NIB_DATA || require('path').join(__dirname, '..', 'traini
     if (v === 'typeset') await page.screenshot({ path: out + '/desktop-typeset.png' });
   }
   const viewFails = [];
+  // Solve on: a reading without a trailing "=" is left as it is, and nothing breaks
+  await page.click('#solve'); await new Promise(r => setTimeout(r, 600));
+  const sv = await page.evaluate(() => ({ pressed: document.getElementById('solve').getAttribute('aria-pressed'), latex: document.querySelector('#latex').textContent }));
+  if (sv.pressed !== 'true' || sv.latex !== drawn) viewFails.push('Solve toggle changed the reading: ' + sv.latex);
+  await page.click('#solve'); await new Promise(r => setTimeout(r, 300));
   if (Object.values(views).some(x => x.latex !== drawn)) viewFails.push('a view changed the reading');
   if (views.typeset.img === views.ink.img || views.tidy.img === views.ink.img) viewFails.push('a view did not change what is drawn');
   if (views.ink2.img !== views.ink.img) viewFails.push('back to ink does not show the ink as written');

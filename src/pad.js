@@ -11,6 +11,7 @@ const PAD_DEFAULTS = {
   motion: true,         // animate ink into its tidy / handwritten / typeset form (off when the reader asks for less motion)
   hand: null,           // handwriting for view 'hand' (the Replicator's saved data); default: whatever Nib.hand holds
   separate: false,      // a board: writing in different places is read as separate expressions
+  solve: false,         // work out lines that end with "=" and write the answer after the "=" (in --nib-answer)
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
@@ -84,7 +85,8 @@ class Pad {
     this.active = null; this.sawPen = false; this.timer = null; this.gen = 0;
     this.plan = null; this.anim = null; this.sid = new WeakMap(); this.nsid = 1;
     this.parts = new Map(); this.recs = new WeakMap(); this.optsVersion = 0;
-    this._handChanged = () => { if (this.o.view === 'hand') this._replan(true); };
+    this._handChanged = () => { if (this.o.view === 'hand' || this.o.solve) this._replan(true); };
+    this.answers = [];
     if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
     c.addEventListener('pointerdown', this._down);
@@ -103,17 +105,17 @@ class Pad {
   }
 
   setOptions(o) {
-    const before = this.o.view, hb = this.o.hand, rk = this._readKey();
+    const before = this.o.view, hb = this.o.hand, sb = !!this.o.solve, rk = this._readKey();
     Object.assign(this.o, o || {});
     if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
     // only options that change the reading read the ink again; a view, colour or pen width just redraws
     const reread = this._readKey() !== rk;
     if (reread) { this.optsVersion++; this.parts.clear(); }
-    if (this.o.view !== before || this.o.hand !== hb) this._replan(true); else this.redraw();
+    if (this.o.view !== before || this.o.hand !== hb || !!this.o.solve !== sb) this._replan(true); else this.redraw();
     if (this.strokes.length && this.o.auto && (reread || (this.resultStrokes || []).length !== this.strokes.length)) this._schedule(0);
   }
   _readKey() {
-    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'auto', 'onResult', 'onChange']);
+    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'auto', 'solve', 'onResult', 'onChange']);
     return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
   }
 
@@ -130,6 +132,7 @@ class Pad {
     clearTimeout(this.timer); this.gen++;
     if (this.mode === 'erase') { this.erased = []; this._eraseAt(this._pt(e)); return; }
     this.cur = [this._pt(e)];
+    if (this.plan && this.plan.items.some(it => it.answer)) { this.redraw(); return; }   // writing over an answer hides it
     this._ink();
     const p = this.cur[0];
     this.ctx.beginPath(); this.ctx.arc(p[0], p[1], this.o.width / 2, 0, Math.PI * 2); this.ctx.fill();
@@ -207,14 +210,40 @@ class Pad {
     ctx.lineTo(s[s.length - 1][0], s[s.length - 1][1]);
     ctx.stroke();
   }
+  _answerInk() {
+    const cs = getComputedStyle(this.el);
+    return cs.getPropertyValue('--nib-answer').trim() || '#b08a1e';
+  }
+  // an answer is hidden while its "=" is gone, or while new writing (not read yet) reaches into it
+  _answerShown(it, live, fresh) {
+    if (!it.eqFrom.every(s => live.has(s))) return false;
+    if (!fresh.length) return true;
+    const b = it.group, m = 0.25 * (b[3] - b[1]) + 6;
+    return !fresh.some(f => f[0] < b[2] + m && f[2] > b[0] - m && f[1] < b[3] + m && f[3] > b[1] - m);
+  }
   redraw() {
     const c = this.canvas, ctx = this.ctx, d = this.dpr || 1;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.setTransform(d, 0, 0, d, 0, 0);
     this._ink();
     const ink = ctx.strokeStyle, live = new Set(this.strokes), shown = new Set();
     const A = this.anim, e = A ? A.e : 1;
+    let ans = null, fresh = null;
+    const answerSetup = () => {
+      if (ans) return;
+      ans = this._answerInk();
+      const read = new Set(this.resultStrokes || []);
+      fresh = this.strokes.filter(s => !read.has(s)).concat(this.cur ? [this.cur] : []).map(s => sbox(s.map(q => [q[0], q[1]])));
+    };
     // the read ink in its view; strokes still moving into it are drawn by the animation
     if (this.plan) for (const it of this.plan.items) {
+      if (it.answer) {
+        answerSetup();
+        if (!this._answerShown(it, live, fresh)) continue;
+        const was = A && A.from.get(it);
+        if (was && e < 1) morphDraw(ctx, was, it, e, ans, this.o.width);
+        else drawItems(ctx, [it], { ink: ans, width: this.o.width });
+        continue;
+      }
       if (!it.from.every(s => live.has(s))) continue;
       for (const s of it.from) shown.add(s);
       const was = A && A.from.get(it);
@@ -222,7 +251,9 @@ class Pad {
       else drawItems(ctx, [it], { ink, width: this.o.width });
     }
     // views being left behind (back to ink, or symbols that no longer exist) fade out
-    if (A && e < 1) for (const g of A.leaving) if (g.from.every(s => live.has(s))) {
+    if (A && e < 1) for (const g of A.leaving) {
+      if (g.answer) { answerSetup(); if (this._answerShown(g, live, fresh)) drawItems(ctx, [g], { ink: ans, width: this.o.width, alpha: 1 - e }); continue; }
+      if (!g.from.every(s => live.has(s))) continue;
       const raw = rawVisual(g.from.filter(s => !shown.has(s)));
       if (raw.parts[0].paths.length) { morphDraw(ctx, g, raw, e, ink, this.o.width); for (const s of g.from) shown.add(s); }
     }
@@ -236,26 +267,62 @@ class Pad {
     const old = this.plan, style = this.o.view;
     const res = this.result, at = this.resultStrokes || [];
     let plan = null;
-    if (style !== 'ink' && res && res.tree && res.tree.length && at.length) {
-      const hand = style === 'hand' && this.o.hand ? this.o.hand : undefined, items = [];
-      for (const part of res.parts || [{ strokes: at, result: res }]) {
-        let out = null;
-        try { out = inPlace(part.strokes, style, { result: part.result, hand }); } catch (err) { out = null; }
-        if (!out) continue;
-        for (const it of out.items) { it.from = it.src.map(i => part.strokes[i]).filter(Boolean); if (it.from.length) items.push(it); }
+    this.answers = [];
+    if (res && res.tree && res.tree.length && at.length && (style !== 'ink' || this.o.solve)) {
+      const items = [];
+      let li = 0, sample = null;
+      if (this.o.solve) {
+        // an answer is written with the clearest of each symbol anywhere on the board, then the Replicator hand
+        let hand = null;
+        try { hand = this.o.hand ? handClean(this.o.hand.glyphs || this.o.hand) : handLoad(); } catch (err) { hand = null; }
+        sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
-      for (const it of items) it.id = it.from.map(s => this._sid(s)).join(',') + '|' + it.label;
+      for (const part of res.parts || [{ strokes: at, result: res }]) {
+        const pr = part.result;
+        if (!pr || !pr.lines || !pr.lines.length) continue;
+        // answers belong to the expression they are in: "x = 5" sets x for the lines below it, here only
+        let answers = null;
+        if (this.o.solve) { try { answers = solveRows(pr.tree); } catch (err) { answers = null; } }
+        if (answers) answers.forEach((a, k) => { if (a) this.answers.push({ line: li + k, latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value }); });
+        li += pr.tree.length;
+        if (style === 'ink' && !(answers && answers.some(Boolean))) continue;
+        let out = null;
+        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample }); } catch (err) { out = null; }
+        if (!out) continue;
+        const groups = new Map();
+        for (const it of out.items) {
+          if (it.answer) {
+            it.from = []; it.eqFrom = (it.eq || []).map(i => part.strokes[i]).filter(Boolean);
+            if (!it.eqFrom.length) continue;
+            it.id = 'ans:' + it.eqFrom.map(s => this._sid(s)).join(',') + ':' + it.key;
+            const g = it.eqFrom.map(s => this._sid(s)).join(','), b = groups.get(g);
+            groups.set(g, b ? [Math.min(b[0], it.box[0]), Math.min(b[1], it.box[1]), Math.max(b[2], it.box[2]), Math.max(b[3], it.box[3])] : it.box.slice());
+            it.groupKey = g; items.push(it);
+          } else {
+            it.from = it.src.map(i => part.strokes[i]).filter(Boolean);
+            if (!it.from.length) continue;
+            it.id = it.from.map(s => this._sid(s)).join(',') + '|' + it.label;
+            items.push(it);
+          }
+        }
+        for (const it of items) if (it.answer && groups.has(it.groupKey)) it.group = groups.get(it.groupKey);
+      }
       plan = { style, items };
       if (style === 'typeset') typeFontsReady().then(ok => { if (ok && this.plan === plan) this.redraw(); });
     }
-    this.plan = plan;
+    this.plan = plan && plan.items.length ? plan : style === 'ink' ? null : plan;
     const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (!animate || !this.o.motion || reduce) { this.anim = null; this.redraw(); return; }
     // where each item comes from: the same symbol in the old view, or the ink as written
     const before = new Map(old ? old.items.map(it => [it.id, it]) : []);
     const from = new Map(), used = new Set();
-    if (plan) for (const it of plan.items) {
-      const was = before.get(it.id) || (old && old.items.find(o => o.from.length === it.from.length && o.from.every(s => it.from.includes(s))));
+    if (this.plan) for (const it of this.plan.items) {
+      if (it.answer) {                                    // an answer glides from where it was, or fades in
+        const was = before.get(it.id);
+        if (was) { from.set(it, was); used.add(was); } else from.set(it, { parts: [], box: it.box });
+        continue;
+      }
+      const was = before.get(it.id) || (old && old.items.find(o => !o.answer && o.from.length === it.from.length && o.from.every(s => it.from.includes(s))));
       if (was) { from.set(it, was); used.add(was); }
       else from.set(it, rawVisual(it.from));
     }
@@ -277,10 +344,10 @@ class Pad {
     const col = cs.getPropertyValue('--nib-box').trim() || 'rgba(201,162,39,.85)';
     ctx.save(); ctx.lineWidth = 1; ctx.strokeStyle = col; ctx.fillStyle = col;
     ctx.font = '11px system-ui, sans-serif'; ctx.textBaseline = 'bottom';
-    if (this.plan) {
+    if (this.plan && this.plan.style !== 'ink') {
       const live = new Set(this.strokes);
       for (const it of this.plan.items) {
-        if (!it.from.every(st => live.has(st))) continue;
+        if (it.answer || !it.from.every(st => live.has(st))) continue;
         const b = it.box; ctx.strokeRect(b[0] - 3, b[1] - 3, b[2] - b[0] + 6, b[3] - b[1] + 6); ctx.fillText(it.label, b[0] - 3, b[1] - 4);
       }
     } else for (const s of this.result.symbols) {
@@ -375,6 +442,15 @@ class Pad {
   _partCached(st, ro) { return this.parts.has(this._partKey(st, ro)); }
   _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
   // re-label one recognised symbol (from result.symbols[i].candidates) and re-run
+  // the reading's LaTeX with the answers written in after their "="
+  solvedLatex() {
+    const res = this.result;
+    if (!res) return '';
+    if (!this.answers.length) return res.latex;
+    const by = new Map(this.answers.map(a => [a.line, a.latex]));
+    const lines = res.lines.map((l, i) => l.latex + (by.get(i) || ''));
+    return lines.length > 1 ? '\\begin{gathered}' + lines.join(' \\\\ ') + '\\end{gathered}' : lines[0] || '';
+  }
   relabel(symbol, label) {
     // the symbol's strokes as they were read (its indices are into the ink of that reading), still on the pad
     const at = this.resultStrokes && this.resultStrokes.length ? this.resultStrokes : this.strokes;
@@ -436,7 +512,7 @@ class Pad {
 // <nib-pad symbols="school" delay="450" ink="#1b2a4a" stroke-width="3" boxes></nib-pad>
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
-    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate']; }
+    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -454,6 +530,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         view: ['tidy', 'hand', 'typeset'].includes(a('view')) ? a('view') : 'ink',
         motion: a('motion') !== 'false',
         separate: has('separate') && a('separate') !== 'false',
+        solve: has('solve') && a('solve') !== 'false',
       };
     }
     connectedCallback() {
@@ -484,7 +561,12 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     get view() { return this.pad ? this.pad.o.view : (this.getAttribute('view') || 'ink'); }
     set view(v) { this.setAttribute('view', ['tidy', 'hand', 'typeset'].includes(v) ? v : 'ink'); }
     // what the view shows: [{label, box, parts}] in the pad's coordinates (parts as drawn: ink paths, text, rules)
-    get shown() { return this.pad && this.pad.plan ? this.pad.plan.items.map(it => ({ label: it.label, box: it.box.slice(), parts: it.parts })) : []; }
+    get shown() { return this.pad && this.pad.plan ? this.pad.plan.items.map(it => Object.assign({ label: it.label, box: it.box.slice(), parts: it.parts }, it.answer ? { answer: true } : {})) : []; }
+    // with solve on: [{line, latex, text, kind, exact, value}] for each line that ends with "=", and the LaTeX with them in
+    get solve() { return this.pad ? !!this.pad.o.solve : this.hasAttribute('solve') && this.getAttribute('solve') !== 'false'; }
+    set solve(v) { if (v) this.setAttribute('solve', ''); else this.removeAttribute('solve'); }
+    get answers() { return this.pad ? this.pad.answers.map(a => Object.assign({}, a)) : []; }
+    get solved() { return this.pad ? this.pad.solvedLatex() : ''; }
     toImage(type) { return this.pad ? this.pad.canvas.toDataURL(type || 'image/png') : ''; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
     set mode(v) { if (this.pad) this.pad.mode = v === 'erase' ? 'erase' : 'draw'; }

@@ -55,9 +55,9 @@ Paste `nib.js` into the page once — as `<script src="nib.js"></script>` next t
 </script>
 ```
 
-Attributes: `symbols="school|all|numbers|0,1,2,x,+"`, `ink="#1b2a4a"`, `stroke-width="3"`, `delay="450"` (ms of rest before reading), `auto="false"` (only read when you call `recognize()`), `boxes` (draw what was read), `pen-only` (ignore fingers and palms), `lines="false"`, `degrees="false"`, `smooth="0.03"` (smooth very shaky ink before reading; off by default, as finger ink already reads as well as pen ink), `view="tidy|hand|typeset"` (show what was read in place — see below), `motion="false"` (change views without animating), `separate` (a board: writing in different places is read as separate expressions).
+Attributes: `symbols="school|all|numbers|0,1,2,x,+"`, `ink="#1b2a4a"`, `stroke-width="3"`, `delay="450"` (ms of rest before reading), `auto="false"` (only read when you call `recognize()`), `boxes` (draw what was read), `pen-only` (ignore fingers and palms), `lines="false"`, `degrees="false"`, `smooth="0.03"` (smooth very shaky ink before reading; off by default, as finger ink already reads as well as pen ink), `view="tidy|hand|typeset"` (show what was read in place — see below), `motion="false"` (change views without animating), `separate` (a board: writing in different places is read as separate expressions), `solve` (write the answer after any line that ends with "=" — see below).
 
-Properties and methods: `latex`, `text`, `result`, `strokes` (get or set), `view` (get or set), `shown` (what the view draws), `mode` (`'draw'` or `'erase'`), `undo()`, `redo()`, `clear()`, `recognize()`, `relabel(symbol, label)`, `toImage()`.
+Properties and methods: `latex`, `text`, `result`, `strokes` (get or set), `view` (get or set), `solve` (get or set), `answers` and `solved` (the answers, and the LaTeX with them written in), `shown` (what the view draws), `mode` (`'draw'` or `'erase'`), `undo()`, `redo()`, `clear()`, `recognize()`, `relabel(symbol, label)`, `toImage()`.
 
 The pad takes its ink colour from the CSS variable `--nib-ink` (or the element's text colour), so it follows each tool's theme. Reading happens a few milliseconds at a time between frames, so the page never freezes while a long expression is read (checked with the processor slowed four times). With a pen in use, a resting palm draws nothing. Two pads on one page work independently, and a pad moved or removed and put back keeps its ink.
 
@@ -112,14 +112,33 @@ Nib.hand.load(savedJsonText);                      // the file Replicator saves;
 Nib.hand.size; Nib.hand.name; Nib.hand.has('7'); Nib.hand.clear();
 ```
 
+## Answers after "="
+
+Turn on **Solve** (on the Board it starts on) and any line that ends with "=" gets its answer written just after the equals sign, in gold, at the size of your writing: in your own digits where you have written them on the board, in your Replicator handwriting where you haven't, and typeset in the Typeset view. Change the problem and the answer follows it. Start writing your own answer after the "=" and the gold one steps aside; erase the "=" and it goes.
+
+- Whole numbers, decimals, fractions, mixed numbers and percents are worked out exactly, with + − × ÷, brackets, powers, square and cube roots, absolute value and factorials, in the usual order of operations.
+- The answer comes in the form the question was asked in: decimals give decimals (repeating ones with a bar, 1 ÷ 3 = 0.3̄; ones whose repeat is too long to show are rounded and marked with "…", 1 ÷ 17 = 0.0588…), fractions give fractions, mixed numbers give mixed numbers, and dividing whole numbers gives a decimal.
+- A lone number becomes its other form: 3/4 = 0.75, 0.75 = 3/4, 6/8 = 3/4, 5 1/3 = 16/3, 16/3 = 5 1/3, 75% = 0.75.
+- π and roots that don't come out are rounded to three places and marked with "…" (√2 = 1.414…), so an approximation is never passed off as exact.
+- Letters stay letters: like terms are combined and brackets multiplied out, 3(x + 2) − x = 2x + 6. Something already as simple as it gets gets no answer. A line like x = 5 sets x for the lines below it in the same piece of work.
+- "15% of 80 =" and "3 x 4 =" (an x between two numbers) mean what you'd mean.
+- Nothing appears when there is nothing sound to say: dividing by zero, an unfinished line, an inequality, or something Nib doesn't work out (equations to solve for x, money, sin and log).
+
+```js
+Nib.solve('\\frac{1}{3}+\\frac{1}{6}=')   // [{ latex: '\\frac{1}{2}', text: '1/2', kind: 'fraction', exact: true, value: 0.5 }]
+Nib.solve(strokes)                         // one entry per line of the writing: an answer, or null
+Nib.neaten(strokes, { solve: true })       // the tidy view with the answers drawn in
+```
+
 ## Nib Board
 
 `dist/Board.html` is a whiteboard for the classroom display, in one file that works offline. Write anywhere: each expression is read on its own, and the board shows it **Tidy**, in **My hand** or **Typeset** — or as **Ink**, exactly as written (keys 1–4). Along the top:
 
+- **Solve** (S): answers after every "=", as above. It starts on; the board remembers if you turn it off.
 - **Fix** (X): tap a symbol that was read wrong and pick what it is. The board re-reads it, and Nib remembers your shape.
 - **Erase** (E), **Undo** (Ctrl+Z), **Redo** (Ctrl+Y or Ctrl+Shift+Z) and **Clear** (Undo brings it back).
 - **My handwriting** opens the file Replicator saves. When Replicator and the Board are opened from the same computer in Chrome, the Board also picks up what you last wrote in Replicator by itself; whichever is newer, your file or your Replicator work, wins.
-- **Copy LaTeX** copies the whole board, one line per expression. **Full screen** (F).
+- **Copy LaTeX** copies the whole board, one line per expression, with the answers in when Solve is on. **Full screen** (F).
 
 The board keeps its writing and view in the browser, so a reload loses nothing.
 

@@ -32,7 +32,7 @@ const HELPERS = () => {
     const p = document.getElementById(id).pad;
     if (!p.plan) return true;
     const live = new Set(p.strokes), fin = Number.isFinite;
-    return p.plan.items.every(it => it.from.length && it.from.every(s => live.has(s)) && it.box.every(fin) &&
+    return p.plan.items.every(it => (it.answer ? it.eqFrom.length && it.eqFrom.every(s => live.has(s)) : it.from.length && it.from.every(s => live.has(s))) && it.box.every(fin) &&
       it.parts.every(q => (q.paths || []).every(s => s.every(pt => fin(pt[0]) && fin(pt[1]))) &&
         (q.t !== 'text' || (fin(q.x) && fin(q.y) && q.size > 0)) && (q.t !== 'rule' || (fin(q.x) && fin(q.y) && fin(q.w) && fin(q.h)))));
   };
@@ -230,6 +230,36 @@ const HELPERS = () => {
   ok(await ev(() => a.strokes.length === 0 && a.latex === ''), 'strokes that are not a list leave an empty pad');
   await ev(st => { a.strokes = st; }, place(r1, W, H, [0.05, 0.12, 0.6, 0.72]));
   await settle('a');
+
+  console.log('answers after "=" in a pad');
+  {
+    const { compose } = require('./compose.js');
+    const NibNode = require(path.join(__dirname, '..', 'dist', 'nib.js'));
+    const find = (tex, want) => { for (let k = 0; k < 25; k++) { const e = compose(tex); if (new NibNode.Recognizer().recognize(e.strokes).latex === want) return e; } return null; };
+    const p1 = find('12+30=', '12+30='), p2 = find('x=5\\\\2x+1=', '\\begin{gathered}x=5 \\\\ 2x+1=\\end{gathered}');
+    ok(!!p1 && !!p2, 'handwritten 12 + 30 = and a two-line x = 5, 2x + 1 =');
+    const putIn = async e => { await ev(st => { a.strokes = st; }, place({ strokes: e.strokes }, W, H, [0.1, 0.15, 0.5, 0.7])); return settle('a'); };
+    await ev(() => { a.view = 'tidy'; a.solve = true; });
+    ok(await putIn(p1), 'read');
+    ok(await ev(() => JSON.stringify(a.answers.map(x => x.latex)) === '["42"]' && a.solved === '12+30=42'), 'answers and solved');
+    ok(await ev(() => a.shown.some(s => s.answer) && a.shown.filter(s => s.answer).every(s => s.label === '4' || s.label === '2')), 'the view shows the answer, marked as an answer');
+    ok(await ev(() => sane('a')), 'answers are tied to the "=" they follow');
+    for (let i = 0; i < 10; i++) { await ev(() => { a.solve = !a.solve; }); await wait(15); }
+    ok(await settle('a') && await ev(() => a.solve === true && a.answers.length === 1 && sane('a')), 'Solve toggled ten times in a row lands where it should');
+    for (const v of ['typeset', 'ink', 'hand', 'tidy']) { await ev(v => { a.view = v; }, v); await wait(40); }
+    ok(await settle('a') && await ev(() => a.answers.length === 1 && a.shown.some(s => s.answer) && sane('a')), 'answers ride along through quick view changes');
+    await ev(() => { a.solve = false; });
+    ok(await ev(() => a.answers.length === 0 && !a.shown.some(s => s.answer) && a.solved === a.latex), 'solve off: no answers anywhere');
+    await ev(() => { a.solve = true; });
+    ok(await putIn(p2) && await ev(() => JSON.stringify(a.answers.map(x => [x.line, x.latex])) === '[[1,"11"]]'), 'x = 5 on one line sets x for the next: 2x + 1 = 11');
+    await ev(() => { a.view = 'ink'; });
+    await wait(400);
+    ok(await ev(() => a.pad.plan && a.pad.plan.items.every(i => i.answer) && a.shown.length > 0 && sane('a')), 'ink as written: only the answer is drawn, the writing stays as it is');
+    await ev(st => { a.strokes = st; }, place(r1, W, H, [0.05, 0.12, 0.6, 0.72]));
+    ok(await settle('a') && await ev(() => a.answers.length === 0 && !a.shown.length), 'writing without a trailing "=": nothing extra');
+    await ev(() => { a.solve = false; a.view = 'tidy'; });
+    await settle('a');
+  }
 
   console.log('my hand with no hand saved');
   await ev(() => { Nib.hand.clear(); a.view = 'hand'; });

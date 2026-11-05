@@ -55,7 +55,7 @@ function inkOf(input) {
 // res.tree rows -> units {k, label, src, pts (level coordinates), box, full, sup, sub, num, den, body, idx}
 function unitsOf(row, ink, lev) {
   return row.map(n => {
-    const u = { k: n.k === 's' ? 's' : n.k, label: n.k === 's' ? n.label : n.k === 'frac' ? '-' : '\\sqrt', src: (n.strokes || []).slice() };
+    const u = { k: n.k === 's' ? 's' : n.k, label: n.k === 's' ? n.label : n.k === 'frac' || n.k === 'over' ? '-' : '\\sqrt', src: (n.strokes || []).slice() };
     u.pts = u.src.map(i => (ink[i] || []).map(lev)).filter(s => s.length);
     u.box = bboxOf(u.pts);
     for (const key of ['num', 'den', 'body', 'idx', 'sup', 'sub']) if (n[key]) u[key] = unitsOf(n[key], ink, lev);
@@ -221,6 +221,10 @@ function unitBox(u, s, P, ctx) {
     }
     const items = [{ u, g: P.radical(u, cw, top, low, total, s), x: shift, y: 0 }].concat(shiftItems(body.items, shift + cw + gap, 0), idxItems);
     B = { w: total + shift, h: top + 0.03 * s, d: -low, items, atom: 'ord' };
+  } else if (u.k === 'over') {
+    // a bar over digits (a repeating decimal), as long as they are
+    const body = rowBox(u.body || [], s, P, ctx), y = Math.max(body.h, NEAT.cap * s) + 0.11 * s;
+    B = { w: body.w, h: y + 0.03 * s, d: body.d, items: [{ u, g: P.bar(u, body.w, s), x: 0, y }].concat(body.items), atom: 'ord' };
   } else {
     B = glyphBox(u, P.glyph(u, s));
   }
@@ -259,6 +263,7 @@ function planOf(res, input, P, opts) {
   const c0 = n ? sx / n : 0, t = Math.tan((out.skew || 0) * Math.PI / 180);
   const lev = p => [p[0], p[1] - t * (p[0] - c0)];
   const lines = res.tree.map(row => unitsOf(row, ink, lev));
+  out.c0 = c0; out.t = t;
   let em = opts.em > 0 ? opts.em : emOf(lines);
   if (!(em > 0)) {
     const sz = []; for (const s of ink) if (s.length) { const b = bboxOf([s]); sz.push(Math.max(b[2] - b[0], b[3] - b[1])); }
@@ -266,25 +271,26 @@ function planOf(res, input, P, opts) {
   }
   out.em = em;
   const ctx = { gaps: gapsOf(lines, em) };
-  for (const row of lines) {
-    if (!row.length) continue;
+  lines.forEach((row, li) => {
+    if (!row.length) return;
     const base = baselineOf(row, em);
+    if (opts.answersOnly) { out.lines.push({ li, baseline: base, segments: [] }); return; }
     // a wide gap splits the line: each part starts where it was written
     const parts = [[row[0]]];
     for (let i = 1; i < row.length; i++) {
       const gap = row[i].full[0] - row[i - 1].full[2];
       if (gap > NEAT.wide * em) parts.push([row[i]]); else parts[parts.length - 1].push(row[i]);
     }
-    const line = { baseline: base, segments: [] };
+    const line = { li, baseline: base, segments: [] };
     for (const part of parts) {
       const box = rowBox(part, 1, P, ctx);
       const k = opts.fit === false ? 1 : fitRow(box, (part[part.length - 1].full[2] - part[0].full[0]) / em, P);
       line.segments.push({ x: part[0].full[0], box, units: part, k });
     }
     out.lines.push(line);
-  }
+  });
   // equals signs written one under another stay one under another
-  if (opts.align !== false) {
+  if (opts.align !== false && !opts.answersOnly) {
     const rel = [];
     for (const line of out.lines) {
       const hits = [];
@@ -304,6 +310,41 @@ function planOf(res, input, P, opts) {
     const e = em * seg.k;
     out.items.push({ key: it.u.src.join(',') + '|' + it.u.label, src: it.u.src, label: it.u.label, k: it.u.k,
       x: seg.x + it.x * e, y: line.baseline - it.y * e, scale: e, g: it.g });
+  }
+  if (opts.answers) placeAnswers(out, lines, em, ctx, P, opts);
+  return out;
+}
+// Answers (reading-tree nodes for each line that ends with "=") go just after that "=", on the line's baseline at the
+// writer's size: after the "=" as the view shows it, or after the "=" as written (answersOnly, for ink as written).
+function placeAnswers(out, lines, em, ctx, P, opts) {
+  const sample = opts.sample || (l => DEFAULT_GLYPHS[l] || null);
+  for (const line of out.lines) {
+    const nodes = opts.answers[line.li], row = lines[line.li], eq = row[row.length - 1];
+    if (!nodes || !nodes.length || !eq || eq.k !== 's' || eq.label !== '=' || eq.sup || eq.sub) continue;
+    const units = answerUnitsOf(nodes, sample, P.ink);
+    if (!units) continue;
+    const box = rowBox(units, 1, P, ctx), gap = spaceBetween('rel', 'ord') + (P.ink ? (ctx.gaps || { oo: 0.13 }).oo : 0);
+    let x0, e;
+    if (opts.answersOnly) { e = em; x0 = eq.box[2] + gap * e; }
+    else {
+      const seg = line.segments.find(sg => sg.units.includes(eq)), it = seg && seg.box.items.find(q => q.u === eq);
+      if (!it) continue;
+      e = em * seg.k; x0 = seg.x + (it.x + it.g.w) * e + gap * e;
+    }
+    box.items.forEach((it, n) => out.items.push({ key: 'ans' + line.li + '|' + n + '|' + it.u.label, src: [], label: it.u.label, k: it.u.k,
+      x: x0 + it.x * e, y: line.baseline - it.y * e, scale: e, g: it.g, answer: true, eq: eq.src }));
+  }
+}
+// answer nodes as units: no strokes of their own, a glyph's worth of ink from the sample book for the tidy and hand views
+function answerUnitsOf(row, sample, needInk) {
+  const out = [];
+  for (const n of row) {
+    const u = { k: n.k === 's' ? 's' : n.k, label: n.k === 's' ? n.label : n.k === 'frac' || n.k === 'over' ? '-' : '\\sqrt', src: [], answer: true };
+    u.pts = u.k === 's' ? sample(u.label) || [] : [];
+    if (u.k === 's' && needInk && !u.pts.length) return null;
+    u.box = bboxOf(u.pts); u.full = u.box.slice();
+    for (const key of ['num', 'den', 'body', 'idx', 'sup', 'sub']) if (n[key]) { u[key] = answerUnitsOf(n[key], sample, needInk); if (!u[key]) return null; }
+    out.push(u);
   }
   return out;
 }
@@ -384,14 +425,14 @@ function squareSign(l, paths) {
   const flat = p => { const b = bboxOf([p]); return (b[2] - b[0]) > 2.5 * (b[3] - b[1]); };
   const upright = p => { const b = bboxOf([p]); return (b[3] - b[1]) > 2.5 * (b[2] - b[0]); };
   const spread = (p, x0, x1) => { const b = bboxOf([p]), w = b[2] - b[0] || 1, y = (b[1] + b[3]) / 2; return p.map(q => [x0 + (q[0] - b[0]) / w * (x1 - x0), y]); };
-  if ((l === '=' || l === '\ne') && paths.length >= 2) {
+  if ((l === '=' || l === '\\ne') && paths.length >= 2) {
     const bars = paths.filter(p => p.length >= 2 && flat(p));
     if (bars.length === 2) {
       const b = bboxOf(bars), x0 = b[0], x1 = b[2];
       return paths.map(p => (bars.includes(p) ? spread(p, x0, x1) : p));
     }
   }
-  if ((l === '+' || l === '\pm') && paths.length >= 2) {
+  if ((l === '+' || l === '\\pm') && paths.length >= 2) {
     const h = paths.filter(p => p.length >= 2 && flat(p)), v = paths.filter(p => p.length >= 2 && upright(p));
     if (h.length >= 1 && v.length === 1) {
       const hb = bboxOf([h[0]]), vb = bboxOf(v), cx = (hb[0] + hb[2]) / 2, dx = cx - (vb[0] + vb[2]) / 2;
@@ -401,7 +442,7 @@ function squareSign(l, paths) {
       return out;
     }
   }
-  if (l === '\div' && paths.length === 3) {
+  if (l === '\\div' && paths.length === 3) {
     const bar = paths.find(p => p.length >= 2 && flat(p));
     if (bar) { const bb = bboxOf([bar]), cx = (bb[0] + bb[2]) / 2; return paths.map(p => { if (p === bar) return p; const b = bboxOf([p]), dx = cx - (b[0] + b[2]) / 2; return p.map(q => [q[0] + dx, q[1]]); }); }
   }
@@ -454,9 +495,9 @@ function tidyProvider(ink) {
     glyph(u, s) {
       const f = fitInk(u.pts, sizeSpec(u.label), s);
       // a dot is a dot: one point, drawn as round as the pen
-      if (u.label === '.' || u.label === '\cdot') {
+      if (u.label === '.' || u.label === '\\cdot') {
         const b = bboxOf(f.paths), c = [(b[0] + b[2]) / 2 - b[0], u.label === '.' ? 0.035 * s : NEAT.axis * s];
-        return { w: 0.07 * s, h: c[1] + 0.035 * s, d: 0, draw: [{ t: 'ink', paths: [[[0.035 * s, c[1]]]] }] };
+        return { w: 0.07 * s, h: c[1] + 0.035 * s, d: 0, draw: [{ t: 'ink', paths: [[[0.035 * s, c[1]]]], dot: 0.042 * s }] };
       }
       const paths = squareSign(u.label, tidyPaths(f.paths, s, NEAT_OPS.has(u.label) || u.label === '/'));
       return { w: f.w, h: f.h, d: f.d, draw: [{ t: 'ink', paths }] };
@@ -479,6 +520,74 @@ function tidyProvider(ink) {
     },
   };
   return P;
+}
+
+// ------------------------------------------------------------------ glyphs for answers: whose handwriting to borrow
+// An answer has no strokes of its own. Its symbols are drawn with the writer's own: the clearest of each symbol
+// already on the board, else the same character from their Replicator handwriting, else a plain built-in hand.
+// Built-in hand: control points in a box one unit tall (y down, baseline at 1), joined smoothly; '|' starts a
+// sharp corner, ';' a new stroke.
+const DEFAULT_HAND = {
+  '0': 'o', '1': '0.1 0.2 0.22 0.1 0.34 0|0.34 0 0.34 0.5 0.34 1',
+  '2': '0.04 0.24 0.14 0.06 0.32 0 0.5 0.08 0.55 0.26 0.45 0.48 0.24 0.72 0.02 0.99|0.02 0.99 0.3 0.99 0.58 0.99',
+  '3': '0.06 0.1 0.26 0 0.46 0.06 0.52 0.22 0.42 0.38 0.24 0.46|0.24 0.46 0.46 0.54 0.56 0.72 0.5 0.9 0.3 1 0.08 0.94 0.02 0.86',
+  '4': '0.4 0 0.21 0.33 0.02 0.66|0.02 0.66 0.31 0.66 0.6 0.66;0.46 0.28 0.46 0.64 0.46 1',
+  '5': '0.52 0.02 0.32 0.02 0.12 0.02|0.12 0.02 0.1 0.23 0.08 0.44|0.08 0.44 0.3 0.36 0.5 0.44 0.56 0.66 0.48 0.88 0.28 1 0.04 0.92',
+  '6': '0.48 0.02 0.28 0.16 0.1 0.42 0.04 0.7 0.12 0.92 0.3 1 0.5 0.9 0.54 0.7 0.44 0.54 0.26 0.52 0.08 0.64',
+  '7': '0.02 0.02 0.3 0.02 0.58 0.02|0.58 0.02 0.46 0.3 0.34 0.62 0.24 1',
+  '8': '0.48 0.14 0.3 0 0.1 0.1 0.1 0.3 0.3 0.46 0.5 0.6 0.54 0.82 0.32 1 0.08 0.88 0.08 0.66 0.28 0.48 0.46 0.32 0.48 0.14',
+  '9': '0.52 0.12 0.36 0 0.14 0.06 0.06 0.24 0.18 0.42 0.4 0.42 0.54 0.26|0.54 0.26 0.54 0.62 0.54 1',
+  '.': '0.05 0.98', '-': '0 0.5 0.25 0.5 0.5 0.5', '+': '0 0.5 0.25 0.5 0.5 0.5;0.25 0.25 0.25 0.5 0.25 0.75',
+};
+// Catmull-Rom through the points, 7 samples per span
+function crPath(pts) {
+  if (pts.length < 3) return pts.map(p => p.slice());
+  const out = [pts[0].slice()];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    for (let k = 1; k <= 7; k++) {
+      const t = k / 7, t2 = t * t, t3 = t2 * t;
+      out.push([0, 1].map(j => 0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3)));
+    }
+  }
+  return out;
+}
+const DEFAULT_GLYPHS = {};
+for (const ch of Object.keys(DEFAULT_HAND)) {
+  if (DEFAULT_HAND[ch] === 'o') {                           // an oval from the top, round to the left and back
+    const p = []; for (let i = 0; i <= 26; i++) { const a = i / 26 * (2 * Math.PI + 0.2); p.push([0.3 - 0.27 * Math.sin(a), 0.5 - 0.5 * Math.cos(a)]); }
+    DEFAULT_GLYPHS[ch] = [p]; continue;
+  }
+  DEFAULT_GLYPHS[ch] = DEFAULT_HAND[ch].split(';').map(stroke => {
+    const out = [];
+    for (const piece of stroke.split('|')) {
+      const v = piece.trim().split(/\s+/).map(Number), pts = [];
+      for (let i = 0; i + 1 < v.length; i += 2) pts.push([v[i], v[i + 1]]);
+      const q = crPath(pts);
+      if (out.length) q.shift();                              // the corner point is already there
+      out.push(...q);
+    }
+    return out;
+  });
+}
+// label -> strokes (y down, any units) to draw an answer's symbol with
+function sampleBook(res, input, hand) {
+  const ink = inkOf(input), best = new Map();
+  for (const sy of (res && res.symbols) || []) {
+    const c = sy.candidates && sy.candidates[0], p = sy.fixed ? 1 : c && c[0] === sy.label ? c[1] : 0;
+    const pts = sy.strokes.map(i => ink[i] || []).filter(q => q.length);
+    if (!pts.length) continue;
+    const b = best.get(sy.label);
+    if (!b || p > b.p) best.set(sy.label, { p, pts });
+  }
+  return label => {
+    const b = best.get(label);
+    if (b && b.p >= 0.6) return b.pts;
+    const ch = HAND_CHAR[label] || label;
+    if (hand && hand[ch] && hand[ch].length) return hand[ch];
+    if (DEFAULT_GLYPHS[label]) return DEFAULT_GLYPHS[label];
+    return b ? b.pts : null;                      // a letter of the question, however it was written
+  };
 }
 
 // ------------------------------------------------------------------ glyphs: the writer's Replicator handwriting
@@ -642,12 +751,14 @@ function drawablesOf(plan) {
   return plan.items.map(it => {
     const e = it.scale, X = v => it.x + v * e, Y = v => it.y - v * e;
     const parts = it.g.draw.map(p => {
-      if (p.t === 'ink' || p.t === 'line') return Object.assign({ t: p.t, paths: p.paths.map(s => s.map(q => [X(q[0]), Y(q[1])])) }, p.width ? { width: p.width * e } : {});
+      if (p.t === 'ink' || p.t === 'line') return Object.assign({ t: p.t, paths: p.paths.map(s => s.map(q => [X(q[0]), Y(q[1])])) }, p.width ? { width: p.width * e } : {}, p.dot ? { dot: p.dot * e } : {});
       if (p.t === 'text') return { t: 'text', text: p.text, font: p.font, x: X(p.x), y: Y(p.y), size: p.size * e, sx: p.sx || 1, sy: p.sy || 1 };
       return { t: 'rule', x: X(p.x), y: Y(p.y + p.h), w: p.w * e, h: p.h * e };
     });
     const g = it.g;
-    return { key: it.key, src: it.src, label: it.label, parts, box: [X(0), Y(g.h), X(g.w), Y(-g.d)] };
+    const d = { key: it.key, src: it.src, label: it.label, parts, box: [X(0), Y(g.h), X(g.w), Y(-g.d)] };
+    if (it.answer) { d.answer = true; d.eq = it.eq; }
+    return d;
   });
 }
 // all the ink paths of a plan in one list (tidy and hand plans), for a page or a test to use as strokes
@@ -659,15 +770,36 @@ function pathsOf(items) {
 
 // Nib.neaten / Nib.typeset: recognise (or take options.result), then lay out in place
 function inPlace(strokes, style, options) {
-  const o = options || {};
+  const o = Object.assign({}, options || {});
   const res = o.result || defaultRecognizer().recognize(strokes, o);
+  const g = style === 'hand' || o.solve || o.answers ? (o.hand ? handClean(o.hand.glyphs || o.hand) : handLoad()) : null;
   let P;
   if (style === 'typeset') P = typeProvider();
-  else if (style === 'hand') { const g = o.hand ? handClean(o.hand.glyphs || o.hand) : handLoad(); P = handProvider(g && Object.keys(g).length ? g : null); }
+  else if (style === 'hand') P = handProvider(g && Object.keys(g).length ? g : null);
   else P = tidyProvider();
+  let answers = null;
+  if (o.solve && !o.answers && res && res.tree) answers = solveRows(res.tree);
+  if (answers) o.answers = answers.map(a => a && a.nodes);
+  if (o.answers && !o.sample) o.sample = sampleBook(res, strokes, g);
+  if (style === 'ink') o.answersOnly = true;
   const plan = planOf(res, strokes, P, o);
-  const items = drawablesOf(plan);
-  return { style, latex: res ? res.latex : '', result: res, em: plan.em, skew: plan.skew, items, strokes: style === 'typeset' ? [] : pathsOf(items) };
+  let items = drawablesOf(plan);
+  if (o.answersOnly) items = items.map(it => unlevel(it, plan.t || 0, plan.c0 || 0));
+  const out = { style, latex: res ? res.latex : '', result: res, em: plan.em, skew: plan.skew, items, strokes: style === 'typeset' ? [] : pathsOf(items.filter(it => !it.answer)) };
+  if (answers) out.answers = answers;
+  return out;
+}
+// an item laid out on the levelled line, put back on the line as written (the slope sheared back in)
+function unlevel(it, t, c0) {
+  if (!t) return it;
+  const Y = (x, y) => y + t * (x - c0);
+  const parts = it.parts.map(p => {
+    if (p.t === 'ink' || p.t === 'line') return Object.assign({}, p, { paths: p.paths.map(s => s.map(q => [q[0], Y(q[0], q[1])])) });
+    if (p.t === 'text') return Object.assign({}, p, { y: Y(p.x, p.y) });
+    return Object.assign({}, p, { y: Y(p.x + p.w / 2, p.y) });
+  });
+  const b = it.box, y0 = Math.min(Y(b[0], b[1]), Y(b[2], b[1])), y1 = Math.max(Y(b[0], b[3]), Y(b[2], b[3]));
+  return Object.assign({}, it, { parts, box: [b[0], y0, b[2], y1] });
 }
 
 // ------------------------------------------------------------------ drawing (browser)
@@ -691,7 +823,7 @@ function drawItems(ctx, items, o) {
   for (const it of items) for (const p of it.parts) {
     if (p.t === 'ink') {
       ctx.lineWidth = o.width;
-      for (const s of p.paths) strokePath(ctx, s, ctx.lineWidth);
+      for (const s of p.paths) strokePath(ctx, s, s.length === 1 && p.dot ? Math.max(ctx.lineWidth, 2 * p.dot) : ctx.lineWidth);
     } else if (p.t === 'line') {                  // typeset rules: straight, crisp corners
       ctx.save(); ctx.lineWidth = p.width; ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
       for (const s of p.paths) { ctx.beginPath(); s.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); }

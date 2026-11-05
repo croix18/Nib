@@ -14,6 +14,7 @@
   --gold: #c9a227;
   --gold-ink: #8a6a10;
   --gold-wash: #f4e7bd;
+  --answer: #a9801a;    /* answers after "=": gold deep enough for a pen line on cream */
   --coral: #d9654f;
   --f-display: "DM Serif Display", Georgia, "Times New Roman", serif;
   --f-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -22,12 +23,12 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --board: #101a2e; --rail: #0b1324; --rule: #26334f; --dot: #1d2943; --ink: #f1eadb; --muted: #a7afc0;
-    --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --coral: #ef8a73; color-scheme: dark;
+    --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --answer: #e0b84f; --coral: #ef8a73; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --board: #101a2e; --rail: #0b1324; --rule: #26334f; --dot: #1d2943; --ink: #f1eadb; --muted: #a7afc0;
-  --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --coral: #ef8a73; color-scheme: dark;
+  --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --answer: #e0b84f; --coral: #ef8a73; color-scheme: dark;
 }
 [hidden] { display: none !important; }
 html, body { height: 100%; }
@@ -55,7 +56,7 @@ body { margin: 0; background: var(--board); color: var(--ink); font-family: var(
 .seg button:focus-visible, .tool:focus-visible, .notebtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .surface { position: relative; flex: 1; min-height: 0; }
 nib-pad {
-  position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--gold);
+  position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--gold); --nib-answer: var(--answer);
   background-image: radial-gradient(var(--dot) 1.2px, transparent 1.4px); background-size: 28px 28px; background-position: 14px 14px;
 }
 .note {
@@ -81,6 +82,8 @@ nib-pad {
 .cand:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .latexbox { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); top: 10px; }
 .latexbox textarea { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--rail); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; resize: none; }
+@media (max-width: 1379px) { .tool .t2 { display: none; } }
+@media (max-width: 1119px) { .tool .t3 { display: none; } }
 @media (max-width: 720px) { .tool .t { display: none; } .tool { padding: 8px; } .mark { display: none; } .seg button { padding: 8px 10px; } }
 @media (prefers-reduced-motion: no-preference) { .tool, .seg button { transition: background .15s, color .15s, border-color .15s; } }
 </style>
@@ -94,15 +97,16 @@ nib-pad {
       <button type="button" role="radio" data-view="hand" aria-checked="false">My hand</button>
       <button type="button" role="radio" data-view="typeset" aria-checked="false">Typeset</button>
     </div>
+    <button type="button" class="tool" id="solve" aria-label="Solve" aria-pressed="false" title="Answers after = (S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h10"/><path d="M4 15h10"/><path d="M19 4v5"/><path d="M16.5 6.5h5"/><path d="M18 14.5v3"/><path d="M16.5 16h3"/></svg><span class="t">Solve</span></button>
     <span class="sp"></span>
-    <button type="button" class="tool" id="erase" aria-pressed="false" title="Erase (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg><span class="t">Erase</span></button>
-    <button type="button" class="tool" id="fix" aria-pressed="false" title="Fix a misread symbol (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/><path d="m16 20 2 2 4-4"/></svg><span class="t">Fix</span></button>
-    <button type="button" class="tool" id="undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span class="t">Undo</span></button>
-    <button type="button" class="tool" id="redo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg><span class="t">Redo</span></button>
-    <button type="button" class="tool" id="clear" title="Clear the board (undo brings it back)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg><span class="t">Clear</span></button>
-    <button type="button" class="tool" id="hand" title="Open the handwriting you saved from Replicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="t">My handwriting</span></button>
-    <button type="button" class="tool" id="copy" title="Copy the LaTeX of everything on the board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="t">Copy LaTeX</span></button>
-    <button type="button" class="tool" id="full" title="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="t">Full screen</span></button>
+    <button type="button" class="tool" id="erase" aria-label="Erase" aria-pressed="false" title="Erase (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg><span class="t">Erase</span></button>
+    <button type="button" class="tool" id="fix" aria-label="Fix" aria-pressed="false" title="Fix a misread symbol (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/><path d="m16 20 2 2 4-4"/></svg><span class="t">Fix</span></button>
+    <button type="button" class="tool" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span class="t t2">Undo</span></button>
+    <button type="button" class="tool" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg><span class="t t2">Redo</span></button>
+    <button type="button" class="tool" id="clear" aria-label="Clear" title="Clear the board (undo brings it back)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg><span class="t t3">Clear</span></button>
+    <button type="button" class="tool" id="hand" aria-label="My handwriting" title="Open the handwriting you saved from Replicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="t t3">My handwriting</span></button>
+    <button type="button" class="tool" id="copy" aria-label="Copy LaTeX" title="Copy the LaTeX of everything on the board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="t t3">Copy LaTeX</span></button>
+    <button type="button" class="tool" id="full" aria-label="Full screen" title="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="t t2">Full screen</span></button>
     <input type="file" id="file" accept=".json,application/json" hidden>
   </header>
   <div class="surface">
@@ -125,10 +129,11 @@ nib-pad {
   try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { /* first visit or storage blocked */ }
   const VIEWS = ['ink', 'tidy', 'hand', 'typeset'];
   let view = saved && VIEWS.includes(saved.view) ? saved.view : 'tidy';
+  let solve = saved && typeof saved.solve === 'boolean' ? saved.solve : true;
   let saveTimer = null;
   const persist = () => {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify({ view, strokes: pad.strokes.map(s => s.map(p => [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10])) })); } catch (e) { /* full or blocked */ } }, 500);
+    saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify({ view, solve, strokes: pad.strokes.map(s => s.map(p => [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10])) })); } catch (e) { /* full or blocked */ } }, 500);
   };
 
   // ---------------------------------------------------------------- notes
@@ -162,7 +167,17 @@ nib-pad {
     $('fix').disabled = !any; if (!any && fixing) fixMode(false);
   }
   pad.addEventListener('nib:change', () => { closePop(); tools(); persist(); });
-  pad.addEventListener('change', () => { closePop(); tools(); if (!$('latexbox').hidden) $('latexout').value = pad.latex; });
+  pad.addEventListener('change', () => { closePop(); tools(); if (!$('latexbox').hidden) $('latexout').value = solve ? pad.solved : pad.latex; });
+
+  // ---------------------------------------------------------------- answers after "="
+  function setSolve(on, quiet) {
+    solve = on; pad.solve = on; persist();
+    $('solve').setAttribute('aria-pressed', String(on));
+    if (!$('latexbox').hidden) $('latexout').value = on ? pad.solved : pad.latex;
+    if (!quiet) note(on ? 'Write a problem and end it with = to see its answer.' : 'Answers are hidden.');
+  }
+  $('solve').onclick = () => setSolve(!solve);
+  setSolve(solve, true);
   const erase = on => { pad.mode = on ? 'erase' : 'draw'; $('erase').setAttribute('aria-pressed', String(on)); if (on && fixing) fixMode(false); };
 
   // ---------------------------------------------------------------- fix a misread symbol: tap it, pick what it is
@@ -250,7 +265,7 @@ nib-pad {
     });
   };
   $('copy').onclick = () => {
-    const t = pad.latex; if (!t) return;
+    const t = solve ? pad.solved : pad.latex; if (!t) return;
     const done = () => note('LaTeX copied.');
     const manual = () => { $('latexbox').hidden = false; $('latexout').value = t; $('latexout').focus(); $('latexout').select(); note('Press Ctrl+C to copy the LaTeX.'); };
     try { navigator.clipboard.writeText(t).then(done, manual); } catch (e) { manual(); }
@@ -269,6 +284,7 @@ nib-pad {
     if (k === 'escape') { if (!$('fixpop').hidden) closePop(); else if (fixing) fixMode(false); return; }
     if (e.target && e.target.classList && e.target.classList.contains('cand') && (k === ' ' || k === 'enter')) return;
     if (k === 'e') erase(pad.mode !== 'erase');
+    else if (k === 's') setSolve(!solve);
     else if (k === 'x') { if (!$('fix').disabled || fixing) fixMode(!fixing); }
     else if (k === 'f') toggleFull();
     else if (k >= '1' && k <= '4') setView(VIEWS[+k - 1]);

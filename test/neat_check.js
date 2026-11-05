@@ -227,5 +227,39 @@ for (const r of sample.slice(0, 15)) {
 }
 ok(moved === 0, 'moved ink gives the same result, moved');
 
+// ------------------------------------------------------------------ 9. signs drawn the way they are meant (tidy)
+section('9. signs');
+{
+  const T = I.tidyProvider(), s = 1;
+  const glyph = (label, pts) => T.glyph({ k: 's', label, pts }, s).draw[0].paths;
+  const bx = p => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (const q of p) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); } return [x0, y0, x1, y1]; };
+  const line = (a, b, n = 8) => Array.from({ length: n }, (_, i) => [a[0] + (b[0] - a[0]) * i / (n - 1), a[1] + (b[1] - a[1]) * i / (n - 1)]);
+  const near = (a, b, t = 0.01) => Math.abs(a - b) < t;
+  // ÷: the dots over the middle of the bar
+  const dv = glyph('\\div', [line([0, 50], [40, 52]), [[8, 34], [9, 35]], [[31, 67], [32, 68]]]);
+  const bar = dv.find(p => p.length > 4), dots = dv.filter(p => p !== bar), bm = (bx(bar)[0] + bx(bar)[2]) / 2;
+  ok(dots.length === 2 && dots.every(p => near((bx(p)[0] + bx(p)[2]) / 2, bm)), '÷: both dots sit over the middle of the bar');
+  // ≠: the two bars level, the same length, one above the other; the slash kept
+  const ne = glyph('\\ne', [line([0, 40], [30, 42]), line([4, 60], [40, 57]), line([28, 25], [12, 75])]);
+  const flat = ne.filter(p => { const b = bx(p); return b[2] - b[0] > 3 * (b[3] - b[1]); });
+  ok(flat.length === 2 && flat.every(p => near(bx(p)[1], bx(p)[3])) && near(bx(flat[0])[0], bx(flat[1])[0]) && near(bx(flat[0])[2], bx(flat[1])[2]), '≠: two level bars of one length');
+  ok(ne.length === 3, '≠: the stroke through it is kept');
+  // ±: the upright through the middle of the top bar, the lower bar as long as the top one
+  const pm = glyph('\\pm', [line([0, 30], [40, 31]), line([26, 10], [27, 52]), line([6, 70], [30, 71])]);
+  const hs = pm.filter(p => { const b = bx(p); return b[2] - b[0] > 3 * (b[3] - b[1]); }), up = pm.find(p => { const b = bx(p); return b[3] - b[1] > 3 * (b[2] - b[0]); });
+  const top = hs.slice().sort((a, b) => bx(b)[1] - bx(a)[1])[0], low = hs.find(p => p !== top);
+  ok(up && near((bx(up)[0] + bx(up)[2]) / 2, (bx(top)[0] + bx(top)[2]) / 2), '±: the upright stands on the middle of the bar');
+  ok(low && near(bx(low)[0], bx(top)[0]) && near(bx(low)[2], bx(top)[2]), '±: the lower bar as long as the top one');
+  // ⋅: a dot, not a squiggle
+  const cd = glyph('\\cdot', [[[10, 50], [12, 51], [11, 53], [9, 52]]]);
+  ok(cd.length === 1 && cd[0].length === 1, '⋅: drawn as one round dot');
+  // = and + (already right; kept right)
+  const eq = glyph('=', [line([0, 40], [30, 43]), line([5, 58], [36, 56])]);
+  ok(eq.every(p => near(bx(p)[1], bx(p)[3])) && near(bx(eq[0])[0], bx(eq[1])[0]) && near(bx(eq[0])[2], bx(eq[1])[2]), '=: two level bars of one length');
+  const pl = glyph('+', [line([0, 30], [40, 31]), line([28, 10], [27, 52])]);
+  const ph = pl.find(p => bx(p)[2] - bx(p)[0] > 3 * (bx(p)[3] - bx(p)[1])), pv = pl.find(p => p !== ph);
+  ok(near((bx(pv)[0] + bx(pv)[2]) / 2, (bx(ph)[0] + bx(ph)[2]) / 2) && near((bx(ph)[1] + bx(ph)[3]) / 2, (bx(pv)[1] + bx(pv)[3]) / 2), '+: upright and bar cross in their middles');
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);
