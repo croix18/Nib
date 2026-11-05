@@ -39,14 +39,14 @@ function cleanStrokes(raw) {
 // box strokes ([[x, y], ...] in 0..1) -> font units
 function toUnits(stroke) { return stroke.map(p => [p[0] * BOX.w, BOX.top - p[1] * BOX.h]); }
 
-// even out the pen's sampling, then soften the wobble (endpoints stay where they were)
-function smooth(stroke, spacing, passes) {
+// even out the pen's sampling: a point every `spacing` font units along the stroke
+function resample(stroke, spacing) {
   if (stroke.length < 3) return stroke.map(p => p.slice());
   const out = [stroke[0].slice()];
   let acc = 0;
   for (let i = 1; i < stroke.length; i++) {
     const a = stroke[i - 1], b = stroke[i];
-    let d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
     let t0 = 0;
     while (acc + d * (1 - t0) >= spacing) {
       const t = t0 + (spacing - acc) / d;
@@ -57,16 +57,63 @@ function smooth(stroke, spacing, passes) {
   }
   const last = stroke[stroke.length - 1];
   if (Math.hypot(last[0] - out[out.length - 1][0], last[1] - out[out.length - 1][1]) > spacing * 0.25) out.push(last.slice());
-  let pts = out;
-  for (let k = 0; k < passes; k++) {
-    const nx = pts.map(p => p.slice());
-    for (let i = 1; i + 1 < pts.length; i++) {
-      nx[i][0] = 0.25 * pts[i - 1][0] + 0.5 * pts[i][0] + 0.25 * pts[i + 1][0];
-      nx[i][1] = 0.25 * pts[i - 1][1] + 0.5 * pts[i][1] + 0.25 * pts[i + 1][1];
-    }
-    pts = nx;
+  return out;
+}
+// Smoothing 0..10 is a Gaussian along the stroke with this sigma, in font units (the cap height is 700): the shake of
+// the hand goes, corners (a turn of more than about 70°) stay sharp, and every stroke still starts and ends where it did.
+const SMOOTH_SIGMA = [0, 5, 9, 14, 20, 27, 35, 44, 54, 65, 78];
+function smooth(stroke, spacing, level) {
+  const pts = resample(stroke, spacing);
+  const sigma = SMOOTH_SIGMA[Math.max(0, Math.min(10, Math.round(+level || 0)))];
+  if (!sigma || pts.length < 4) return pts;
+  const m = Math.max(2, Math.round(Math.max(15, 0.6 * sigma) / spacing));
+  const out = [];
+  let from = 0;
+  for (const c of cornersOf(pts, m).concat([pts.length - 1])) {
+    const piece = gaussPath(pts.slice(from, c + 1), sigma / spacing);
+    if (out.length) piece.shift();
+    for (const p of piece) out.push(p);
+    from = c;
   }
-  return pts;
+  return out;
+}
+// where a stroke turns sharply: the turn between the m points before and the m after, at its sharpest
+function cornersOf(pts, m) {
+  const n = pts.length, ang = new Float64Array(n), out = [];
+  for (let i = m; i + m < n; i++) {
+    const ax = pts[i][0] - pts[i - m][0], ay = pts[i][1] - pts[i - m][1], bx = pts[i + m][0] - pts[i][0], by = pts[i + m][1] - pts[i][1];
+    const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+    if (la > 0 && lb > 0) ang[i] = Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / (la * lb))));
+  }
+  for (let i = m; i + m < n; i++) {
+    if (ang[i] < 1.2) continue;
+    let peak = true;
+    for (let j = i - m; j <= i + m && peak; j++) if (ang[j] > ang[i] || (ang[j] === ang[i] && j < i)) peak = false;
+    if (peak) out.push(i);
+  }
+  return out;
+}
+// Gaussian smoothing (sigma in points) with both ends held: the path is mirrored through each end, so a straight run
+// stays straight up to its end and the end point does not move
+function gaussPath(pts, s) {
+  const n = pts.length;
+  if (n < 3 || !(s > 0)) return pts.map(p => p.slice());
+  const r = Math.ceil(3 * s), w = [];
+  let tot = 0;
+  for (let k = -r; k <= r; k++) { const v = Math.exp(-k * k / (2 * s * s)); w.push(v); tot += v; }
+  const at = i => {
+    if (i < 0) { const q = pts[Math.min(n - 1, -i)]; return [2 * pts[0][0] - q[0], 2 * pts[0][1] - q[1]]; }
+    if (i >= n) { const q = pts[Math.max(0, 2 * (n - 1) - i)]; return [2 * pts[n - 1][0] - q[0], 2 * pts[n - 1][1] - q[1]]; }
+    return pts[i];
+  };
+  const out = [pts[0].slice()];
+  for (let i = 1; i < n - 1; i++) {
+    let x = 0, y = 0;
+    for (let k = -r; k <= r; k++) { const q = at(i + k); x += w[k + r] * q[0]; y += w[k + r] * q[1]; }
+    out.push([x / tot, y / tot]);
+  }
+  out.push(pts[n - 1].slice());
+  return out;
 }
 
 // ------------------------------------------------------------------ ink: strokes -> coverage raster
@@ -184,13 +231,36 @@ function simplify(loop, tol) {
 
 function area(loop) { let s = 0; for (let i = 0; i < loop.length; i++) { const p = loop[i], q = loop[(i + 1) % loop.length]; s += p[0] * q[1] - q[0] * p[1]; } return s / 2; }
 
+// ------------------------------------------------------------------ even sizes
+// A letter's drawing scaled (across and down alike, before the pen is applied, so the pen keeps its weight) and moved
+// so it spans its guides: the x-height for a, c, e, …; the cap height for capitals, digits and b, d, h, k, l; x-height
+// to descender for g, p, q, y. Scaling stays within 0.7–1.4. Letters whose height varies by design (i, j, t, f, J, Q)
+// and the rest only move, as "Line up with the guides" does.
+const FIT = {};
+for (const c of 'acemnorsuvwxz') FIT[c] = [GUIDE.base, GUIDE.x];
+for (const c of 'bdhkl') FIT[c] = [GUIDE.base, GUIDE.cap];
+for (const c of 'gpqy') FIT[c] = [GUIDE.desc, GUIDE.x];
+for (const c of 'ABCDEFGHIKLMNOPRSTUVWXYZ0123456789') FIT[c] = [GUIDE.base, GUIDE.cap];
+function fitToGuides(S, ch) {
+  const f = FIT[ch];
+  if (!f) return null;
+  let x0 = Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const s of S) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  if (!(y1 - y0 > 1)) return null;
+  const k = Math.max(0.7, Math.min(1.4, (f[1] - f[0]) / (y1 - y0))), down = DESCENDERS.has(ch);
+  // descending letters keep their tops on the x-height, the rest their feet on the baseline
+  return S.map(s => s.map(p => [x0 + (p[0] - x0) * k, down ? f[1] - (y1 - p[1]) * k : f[0] + (p[1] - y0) * k]));
+}
+
 // ------------------------------------------------------------------ one glyph
 // strokes: box-space strokes. Returns {contours: [[x, y]...] in font units (y up), bbox} or null when empty.
+// opts.even with opts.ch: fitted to the guides (above).
 function outline(strokes, o) {
   const opts = Object.assign({ weight: 80, smoothing: 2 }, o || {});
   const unit = opts.unit || Math.max(3, opts.weight / 27);           // finer raster for thin pens
-  const S = cleanStrokes(strokes).map(s => smooth(toUnits(s), 6, opts.smoothing));
+  let S = cleanStrokes(strokes).map(s => smooth(toUnits(s), 6, opts.smoothing));
   if (!S.length) return null;
+  if (opts.even && opts.ch) S = fitToGuides(S, opts.ch) || S;
   const R = rasterize(S, opts.weight, unit);
   const loops = trace(R)
     .map(l => simplify(l, 0.35))
@@ -372,12 +442,13 @@ function writeTTF(font) {
 }
 
 // ------------------------------------------------------------------ the font
-const FONT_DEFAULTS = { name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 2, tidy: true, cache: null };
+const FONT_DEFAULTS = { name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 2, tidy: true, even: false, cache: null };
+const fits = (ch, opts) => !!(opts.even && FIT[ch]);
 // one glyph's outline, kept in opts.cache (a Map) while its strokes and the pen settings stay the same
 function cachedOutline(ch, st, opts) {
-  const key = JSON.stringify([st, opts.weight, opts.smoothing]);
+  const key = JSON.stringify([st, opts.weight, opts.smoothing, fits(ch, opts)]);
   let ol = opts.cache && opts.cache.get(ch);
-  if (!ol || ol.key !== key) { ol = { key, g: outline(st, opts) }; if (opts.cache) opts.cache.set(ch, ol); }
+  if (!ol || ol.key !== key) { ol = { key, g: outline(st, Object.assign({}, opts, { ch })) }; if (opts.cache) opts.cache.set(ch, ol); }
   return ol.g;
 }
 // Traces the outlines buildFont will need into opts.cache, one glyph per step, so a page can spread the work
@@ -387,7 +458,7 @@ function* warm(glyphs, o) {
   for (const sec of SECTIONS) for (const ch of sec.chars) {
     const st = cleanStrokes(glyphs && glyphs[ch]);
     if (!st.length) continue;
-    const key = JSON.stringify([st, opts.weight, opts.smoothing]), ol = opts.cache && opts.cache.get(ch);
+    const key = JSON.stringify([st, opts.weight, opts.smoothing, fits(ch, opts)]), ol = opts.cache && opts.cache.get(ch);
     if (ol && ol.key === key) continue;
     cachedOutline(ch, st, opts);
     yield ch;
@@ -407,7 +478,7 @@ function buildFont(glyphs, o) {
     const st = cleanStrokes(glyphs && glyphs[ch]);
     const g = st.length ? cachedOutline(ch, st, opts) : null;
     if (!g) { missing.push(ch); continue; }
-    const dy = tidyShift(ch, g.bbox, opts), dx = opts.spacing - g.bbox[0];
+    const dy = fits(ch, opts) ? 0 : tidyShift(ch, g.bbox, opts), dx = opts.spacing - g.bbox[0];
     const contours = g.contours.map(l => toContour(l, dx, dy)).filter(Boolean);
     if (!contours.length) { missing.push(ch); continue; }
     list.push({ codes: [ch.codePointAt(0)].concat(ALTS[ch] || []), adv: Math.max(1, Math.round(g.bbox[2] - g.bbox[0] + 2 * opts.spacing)), contours });
@@ -419,6 +490,222 @@ function buildFont(glyphs, o) {
   return { bytes, built, missing, metrics: { asc, desc, upm: UPM } };
 }
 
-const Replicator = { UPM, BOX, GUIDE, GUIDE_FRAC, SECTIONS, ALTS, DESCENDERS, cleanStrokes, smooth, rasterize, trace, simplify, outline, toContour, writeTTF, warm, buildFont, tidyShift };
+// ------------------------------------------------------------------ sentences: the letters written in context
+// A sentence is written on ruled lines whose guides sit where a box's do. Its strokes are given in line units: one
+// unit is the height of a box, y = 0 at the top of the line's box and 1 at its bottom (so the guides are at
+// GUIDE_FRAC), x growing to the right. A box drawing's x (0..1 of the box's width) is x · LU in line units.
+const LU = BOX.w / BOX.h;
+const toLine = st => st.map(s => s.map(p => [p[0] * LU, p[1]]));
+const toBox = st => st.map(s => s.map(p => [p[0] / LU, p[1]]));
+function plength(s) { let L = 0; for (let i = 1; i < s.length; i++) L += Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]); return L; }
+// m points spread evenly along a stroke (one point: its middle)
+function along(s, m) {
+  if (m <= 1 || s.length === 1) { const c = s.reduce((a, p) => [a[0] + p[0], a[1] + p[1]], [0, 0]); return [[c[0] / s.length, c[1] / s.length]]; }
+  const L = plength(s), out = [];
+  if (!(L > 0)) return Array.from({ length: m }, () => s[0].slice());
+  let k = 0, acc = 0;
+  for (let j = 0; j < m; j++) {
+    const want = (L * j) / (m - 1);
+    while (k + 1 < s.length - 1 && acc + Math.hypot(s[k + 1][0] - s[k][0], s[k + 1][1] - s[k][1]) < want) { acc += Math.hypot(s[k + 1][0] - s[k][0], s[k + 1][1] - s[k][1]); k++; }
+    const d = Math.hypot(s[k + 1][0] - s[k][0], s[k + 1][1] - s[k][1]) || 1e-9, t = Math.max(0, Math.min(1, (want - acc) / d));
+    out.push([s[k][0] + (s[k + 1][0] - s[k][0]) * t, s[k][1] + (s[k + 1][1] - s[k][1]) * t]);
+  }
+  return out;
+}
+// exactly n points spread over the strokes by their lengths (every stroke at least one), centred across but kept at
+// their height against the guides
+function cloud(st, n) {
+  const L = st.map(plength), tot = L.reduce((a, b) => a + b, 0);
+  const share = st.map((s, i) => (tot > 0 ? (n - st.length) * L[i] / tot : 0));
+  const m = share.map(v => 1 + Math.floor(v));
+  let left = n - m.reduce((a, b) => a + b, 0);
+  share.map((v, i) => [v - Math.floor(v), i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (left > 0) { m[i]++; left--; } });
+  const pts = [];
+  st.forEach((s, i) => { if (m[i] > 0) pts.push(...along(s, m[i])); });
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+  return pts.map(p => [p[0] - cx, p[1]]);
+}
+// how far apart two clouds of the same size are: each point matched greedily to the nearest unmatched one, early
+// matches counting more (the $P recogniser's measure), the better of both directions; in line units
+function cloudDist(a, b) {
+  const one = (A, B) => {
+    const n = A.length, used = new Uint8Array(B.length), step = Math.max(1, Math.floor(Math.sqrt(n)));
+    let best = Infinity;
+    for (let start = 0; start < n; start += step) {
+      used.fill(0);
+      let sum = 0, ws = 0;
+      for (let k = 0; k < n; k++) {
+        const p = A[(start + k) % n];
+        let md = Infinity, mj = -1;
+        for (let j = 0; j < B.length; j++) if (!used[j]) { const dx = p[0] - B[j][0], dy = p[1] - B[j][1], d = dx * dx + dy * dy; if (d < md) { md = d; mj = j; } }
+        if (mj < 0) break;
+        used[mj] = 1;
+        const w = 1 - k / n;
+        sum += w * Math.sqrt(md); ws += w;
+        if (sum / ws > best) break;
+      }
+      best = Math.min(best, sum / ws);
+    }
+    return best;
+  };
+  return Math.min(one(a, b), one(b, a));
+}
+const sbox = st => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const s of st) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); } return [x0, y0, x1, y1]; };
+const SENT = { n: 24, accept: 0.085, skip: 0.4, wordGap: 0.08, letterGap: 0.33, maxGroup: 4 };
+// A written sentence, matched letter by letter to its text.
+// lines: [[stroke, ...], ...] — the strokes on each ruled line in line units, in the order written.
+// text: what was written; templates: {char: [drawings in line units]} (the box drawing first).
+// Returns {letters: [{ch, strokes (line units, on its own line), line, cost, ok}], cost} where ok marks a letter close
+// enough to its own drawings to learn from; characters without a drawing are matched loosely and never ok.
+// Dots and crossings added after the rest of a word (the dot of an i, the bar of a t) are given to the letter under
+// them; a stray stroke or a letter left out is passed over.
+function alignSentence(lines, text, templates, o) {
+  const P = Object.assign({}, SENT, o || {});
+  const chars = [], spaceBefore = [];
+  let sp = false;
+  for (const ch of String(text || '')) { if (/\s/.test(ch)) { sp = chars.length > 0; continue; } chars.push(ch); spaceBefore.push(sp); sp = false; }
+  // all the lines as one long line (each next one further right), keeping writing order
+  const all = [];
+  (Array.isArray(lines) ? lines : []).forEach((ln, li) => { for (const s of cleanStrokes(ln)) all.push({ s: s.map(p => [p[0] + li * 1000, p[1]]), li, b: null }); });
+  for (const t of all) t.b = sbox([t.s]);
+  // late strokes: small marks written to the left of the stroke before them (going back to dot or cross)
+  const main = [], late = [];
+  for (const t of all) {
+    const prev = main[main.length - 1], h = t.b[3] - t.b[1], w = t.b[2] - t.b[0];
+    if (prev && t.b[2] < prev.b[0] - 0.02 && Math.max(h, w) < 0.45) late.push(t); else main.push(t);
+  }
+  const N = main.length, M = chars.length;
+  if (!M || !N) return { letters: [], cost: Infinity };
+  const tc = {}, T0 = templates && typeof templates === 'object' ? templates : {};
+  const tmpl = ch => (Array.isArray(T0[ch]) ? T0[ch] : []).map(cleanStrokes).filter(d => d.length).slice(0, 5).map(d => ({ c: cloud(d, P.n), k: d.length }));
+  for (const ch of new Set(chars)) tc[ch] = tmpl(ch);
+  // every other character's first drawing, to make sure a letter learned looks like itself more than like another
+  const others = Object.keys(T0).filter(ch => [...ch].length === 1).map(ch => [ch, tmpl(ch)[0]]).filter(([, t]) => t);
+  const reach = new Float64Array(N + 1).fill(-Infinity);                // furthest right reached by the first i strokes
+  for (let i = 0; i < N; i++) reach[i + 1] = Math.max(reach[i], main[i].b[2]);
+  const memo = new Map();
+  const groupCost = (i, k, j) => {
+    const ch = chars[j], key = i + ',' + k + ',' + ch;
+    let c = memo.get(key);
+    if (c === undefined) {
+      const st = main.slice(i, i + k).map(t => t.s), T = tc[ch];
+      if (T.length) {
+        const g = cloud(st, P.n);
+        c = Math.min(...T.map(t => cloudDist(g, t.c) + 0.015 * Math.abs(k - t.k)));
+      } else c = 0.11 + 0.02 * Math.max(0, k - 2);                     // no drawing of it to compare with
+      memo.set(key, c);
+    }
+    // the space between words, and none inside one (a new line starts fresh)
+    const b = sbox(main.slice(i, i + k).map(t => t.s)), gap = b[0] - reach[i];
+    let g = 0;
+    if (i > 0 && main[i].li === main[i - 1].li) {
+      if (spaceBefore[j] && gap < P.wordGap) g = 0.6 * (P.wordGap - gap);
+      if (!spaceBefore[j] && gap > P.letterGap) g = 0.3 * (gap - P.letterGap);
+    }
+    return c + g;
+  };
+  // best[i][j]: strokes 0..i-1 written as characters 0..j-1
+  const W = M + 1, best = new Float64Array((N + 1) * W).fill(Infinity), from = new Int32Array((N + 1) * W).fill(-1);
+  best[0] = 0;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= M; j++) {
+    const here = best[i * W + j];
+    if (here === Infinity) continue;
+    if (j < M && best[i * W + j + 1] > here + P.skip) { best[i * W + j + 1] = here + P.skip; from[i * W + j + 1] = 0; }          // a letter left out
+    if (i < N && best[(i + 1) * W + j] > here + P.skip) { best[(i + 1) * W + j] = here + P.skip; from[(i + 1) * W + j] = 1; }      // a stray stroke
+    if (j < M) for (let k = 1; k <= P.maxGroup && i + k <= N; k++) {
+      if (k > 1 && main[i + k - 1].li !== main[i].li) break;
+      const v = here + groupCost(i, k, j), at = (i + k) * W + j + 1;
+      if (v < best[at]) { best[at] = v; from[at] = 1 + k; }
+    }
+  }
+  const letters = chars.map((ch, j) => ({ ch, strokes: [], line: -1, cost: Infinity, ok: false, idx: [] }));
+  for (let i = N, j = M; i > 0 || j > 0;) {
+    const f = from[i * W + j];
+    if (f === 0) j--;
+    else if (f === 1) i--;
+    else if (f >= 2) {
+      const k = f - 1, L = letters[j - 1];
+      L.idx = Array.from({ length: k }, (_, q) => i - k + q);
+      L.cost = groupCost(i - k, k, j - 1);
+      i -= k; j--;
+    } else break;
+  }
+  // late strokes to the letter whose ink they sit over (or nearest across)
+  for (const t of late) {
+    let bestL = null, bd = Infinity;
+    for (const L of letters) {
+      if (!L.idx.length) continue;
+      const b = sbox(L.idx.map(q => main[q].s));
+      const d = Math.max(0, b[0] - t.b[2], t.b[0] - b[2]) + 0.3 * Math.max(0, b[1] - t.b[3], t.b[1] - b[3]);
+      if (d < bd) { bd = d; bestL = L; }
+    }
+    if (bestL && bd < 0.25) bestL.late = (bestL.late || []).concat([t]);
+  }
+  let total = 0, n = 0;
+  for (const L of letters) {
+    if (!L.idx.length) { delete L.idx; continue; }
+    const parts = L.idx.map(q => main[q]).concat(L.late || []);
+    L.line = parts[0].li;
+    L.strokes = parts.map(t => t.s.map(p => [p[0] - L.line * 1000, p[1]]));
+    const g = cloud(L.strokes, P.n);
+    if (tc[L.ch].length) L.cost = Math.min(...tc[L.ch].map(t => cloudDist(g, t.c) + 0.015 * Math.abs(L.strokes.length - t.k)));
+    // learned only when close to its own drawings and clearly closer to them than to any other character's
+    let rival = Infinity;
+    if (tc[L.ch].length && L.cost < P.accept) for (const [ch, t] of others) if (ch !== L.ch) rival = Math.min(rival, cloudDist(g, t.c));
+    L.ok = tc[L.ch].length > 0 && L.cost < P.accept && L.cost < 0.8 * rival;
+    total += L.cost; n++;
+    delete L.idx; delete L.late;
+  }
+  // a sentence that does not match its text as a whole (the wrong sentence, words left out) teaches nothing
+  const cost = n ? total / n : Infinity;
+  if (n < 0.75 * M || cost > 1.3 * P.accept) for (const L of letters) L.ok = false;
+  return { letters, cost };
+}
+// The average drawing of one character from its samples (box space; the box drawing usually first): the samples
+// with the usual number of strokes, each stroke matched to the most typical sample's (order and direction), resampled
+// and averaged point by point, the outliers left out; null when fewer than two agree.
+function averageGlyph(samples, o) {
+  const P = Object.assign({ points: 40 }, o || {});
+  const S = (samples || []).map(cleanStrokes).filter(st => st.length);
+  if (S.length < 2) return null;
+  const counts = new Map();
+  for (const st of S) counts.set(st.length, (counts.get(st.length) || 0) + 1);
+  let K = S[0].length, bestN = counts.get(K) || 0;
+  for (const [k, c] of counts) if (c > bestN) { K = k; bestN = c; }
+  let G = S.filter(st => st.length === K);
+  if (G.length < 2) return null;
+  const L = G.map(toLine), C = L.map(st => cloud(st, 32));
+  const dsum = C.map(a => C.reduce((t, b) => t + cloudDist(a, b), 0));
+  const ref = dsum.indexOf(Math.min(...dsum));
+  const dref = C.map(c => cloudDist(c, C[ref])), med = dref.slice().sort((a, b) => a - b)[Math.floor(dref.length / 2)];
+  const keep = L.map((st, i) => i).filter(i => dref[i] <= Math.max(2.2 * med, 0.05));
+  if (keep.length < 2) return null;
+  const R = L[ref].map(s => along(s, P.points));
+  const acc = R.map(s => s.map(() => [0, 0]));
+  const refC = sbox(L[ref]);
+  for (const i of keep) {
+    // centred across on the reference, kept at its height
+    const b = sbox(L[i]), dx = (refC[0] + refC[2]) / 2 - (b[0] + b[2]) / 2;
+    const strokes = L[i].map(s => along(s.map(p => [p[0] + dx, p[1]]), P.points));
+    const used = new Set();
+    R.forEach((rs, a) => {
+      let bj = -1, bd = Infinity, brev = false;
+      strokes.forEach((s, j) => {
+        if (used.has(j)) return;
+        for (const rev of [false, true]) {
+          const q = rev ? s.slice().reverse() : s;
+          let d = 0; for (let t = 0; t < q.length; t++) d += Math.hypot(q[t][0] - rs[t][0], q[t][1] - rs[t][1]);
+          if (d < bd) { bd = d; bj = j; brev = rev; }
+        }
+      });
+      used.add(bj);
+      const q = brev ? strokes[bj].slice().reverse() : strokes[bj];
+      q.forEach((p, t) => { acc[a][t][0] += p[0]; acc[a][t][1] += p[1]; });
+    });
+  }
+  return toBox(acc.map(s => s.map(p => [p[0] / keep.length, p[1] / keep.length])));
+}
+
+const Replicator = { UPM, BOX, GUIDE, GUIDE_FRAC, SECTIONS, ALTS, DESCENDERS, FIT, LU, cleanStrokes, smooth, rasterize, trace, simplify, outline, toContour, writeTTF, warm, buildFont, tidyShift, fitToGuides, toLine, toBox, cloud, cloudDist, alignSentence, averageGlyph };
 if (typeof module !== 'undefined' && module.exports) module.exports = Replicator;
 if (typeof window !== 'undefined') window.Replicator = Replicator;

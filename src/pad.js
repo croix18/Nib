@@ -287,13 +287,33 @@ class Pad {
         let answers = null;
         if (this.o.solve) {
           const box = part.strokes.map(sbox).reduce(ubox);
+          const rowBox = row => {
+            const bs = [];
+            const walk = r => { for (const u of r) { for (const k of u.strokes || []) if (part.strokes[k]) bs.push(sbox(part.strokes[k])); for (const key of ['num', 'den', 'body', 'idx', 'sup', 'sub']) if (u[key]) walk(u[key]); } };
+            walk(row);
+            return bs.length ? bs.reduce(ubox) : null;
+          };
+          const lab = u => (u && u.k === 's' ? u.label : '');
+          const rows = pr.tree.slice(), fb = rowBox(rows[0]);
+          // writing carried on past a gap on the same line is one problem: "13.999 +      2 + 7 =" (the writing to its
+          // left ends with a sign, or this begins with one)
+          const startsOp = ['+', '\\times', '\\div', '\\cdot', '='].includes(lab(rows[0][0]));
+          let left = null;
+          for (const d of done) {
+            if (!fb || !d.lastBox || !(d.endsOp || startsOp)) continue;
+            const ov = Math.min(d.lastBox[3], fb[3]) - Math.max(d.lastBox[1], fb[1]), gx = fb[0] - d.lastBox[2];
+            if (ov > 0.4 * Math.min(d.lastBox[3] - d.lastBox[1], fb[3] - fb[1]) && gx > -0.5 * R && gx <= 6 * R && (!left || gx < left.gx)) left = { d, gx };
+          }
+          if (left) rows[0] = left.d.lastRow.concat(rows[0]);
           let above = null, gap = Infinity;
           for (const d of done) {
             const gy = box[1] - d.box[3], gx = Math.max(0, d.box[0] - box[2], box[0] - d.box[2]);
             if (gy > -0.5 * R && gy <= 4 * R && gx <= R && gy < gap) { above = d; gap = gy; }
           }
-          try { answers = solveRows(pr.tree, this.o, above && above.eqs); } catch (err) { answers = null; }
-          done.push({ box, eqs: (answers && answers.eqs) || [] });
+          try { answers = solveRows(rows, this.o, above && above.eqs); } catch (err) { answers = null; }
+          const lastRow = rows[rows.length - 1];
+          done.push({ box, eqs: (answers && answers.eqs) || [], lastRow, lastBox: rowBox(pr.tree[pr.tree.length - 1]),
+            endsOp: ['+', '-', '\\times', '\\div', '\\cdot', '\\pm'].includes(lab(lastRow[lastRow.length - 1])) });
         }
         if (answers) answers.forEach((a, k) => { if (a) this.answers.push({ line: li + k, latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value }); });
         li += pr.tree.length;

@@ -184,7 +184,7 @@ class Recognizer {
     const ref = refSize(strokes);
     const mask = allowedMask(opts.symbols, opts.times);
     const { fixOf, fixes } = fixesOf(opts.fix, src, strokes.length);
-    this.prior = priorVector(opts);
+    this.prior = priorVector(opts); this.foldX = opts.times === false;
     this.misses = null;
     const cref = this.classRef(ref, ids);
     let syms = opts.oracle ? opts.oracle(strokes, ref) : this.segment(strokes, ids, ref, mask, opts, fixOf, fixes, cref);
@@ -244,7 +244,7 @@ class Recognizer {
     }
     if (opts.oracle) return;
     const mask = allowedMask(opts.symbols, opts.times), { fixOf, fixes } = fixesOf(opts.fix, src, n);
-    this.prior = priorVector(opts);
+    this.prior = priorVector(opts); this.foldX = opts.times === false;
     for (let pass = 0; pass < 12; pass++) {
       const miss = this.misses = [];
       try {
@@ -268,7 +268,7 @@ class Recognizer {
     const M = model();
     const score = group => {
       const key = group.map(i => ids[i]).join(',');
-      const p = withPrior(this.probs(group.map(i => strokes[i]), cref, key, opts.memory), this.prior);
+      const p = foldTimes(withPrior(this.probs(group.map(i => strokes[i]), cref, key, opts.memory), this.prior), this.foldX);
       let tot = 0; for (let c = 0; c < p.length; c++) if (mask[c]) tot += p[c];
       const pjunk = p[M.junk] / tot, norm = tot * Math.max(1 - pjunk, 1e-6);
       const list = [];
@@ -350,7 +350,7 @@ class Recognizer {
           else if (bad) break;
         }
         const group = strokes.slice(i, j + 1);
-        const p = withPrior(this.probs(group, cref, ids.slice(i, j + 1).join(','), opts.memory), this.prior);
+        const p = foldTimes(withPrior(this.probs(group, cref, ids.slice(i, j + 1).join(','), opts.memory), this.prior), this.foldX);
         let tot = 0; for (let c = 0; c < p.length; c++) if (mask[c]) tot += p[c];
         const pjunk = p[M.junk] / tot, norm = tot * Math.max(1 - pjunk, 1e-6);
         const list = [];
@@ -465,6 +465,16 @@ function priorVector(opts) {
   const set = opts.symbols === undefined ? 'school' : opts.symbols;
   if (!opts.prior || typeof set !== 'string' || !DATA.prior || !DATA.prior[set]) return null;
   return Float64Array.from(DATA.prior[set], r => Math.pow(r, opts.prior));
+}
+// x as a letter only (times: false): what the network gives a times sign belongs to the letter x — a cross is an x,
+// never a plus
+function foldTimes(p, on) {
+  if (!on) return p;
+  const { idx } = model(), x = idx.x, t = idx['\\times'];
+  if (x === undefined || t === undefined || !p[t]) return p;
+  const q = Float64Array.from(p);
+  q[x] += q[t]; q[t] = 0;
+  return q;
 }
 function withPrior(p, f) {
   if (!f) return p;
@@ -911,7 +921,13 @@ function balanceBrackets(row) {
 // how high a dot sits against the digits and letters beside it: 0 on their baseline, 0.5 halfway up (null: none beside it)
 function dotLift(row, i, ref) {
   const u = row[i], nb = [row[i - 1], row[i + 1]].filter(v => v && v.k === 's' && (v.type === T_ASC || v.type === T_XH));
-  if (!nb.length) return null;
+  if (!nb.length) {
+    // between fractions: a dot level with a fraction bar is a times dot (2/3 · 3/4, not 2/3 − 3/4)
+    const fr = [row[i - 1], row[i + 1]].find(v => v && v.k === 'f' && v.bar && v.bar.box);
+    if (!fr) return null;
+    const cy = (u.box[1] + u.box[3]) / 2, by = (fr.bar.box[1] + fr.bar.box[3]) / 2;
+    return Math.abs(cy - by) < 0.25 * (fr.box[3] - fr.box[1]) ? 0.5 : 0;
+  }
   let lift = 0;
   for (const v of nb) { const vb = v.box; lift += (vb[3] - (u.box[1] + u.box[3]) / 2) / Math.max(vb[3] - vb[1], 0.3 * ref); }
   return lift / nb.length;
@@ -1062,9 +1078,28 @@ function plain(row) {
 }
 function balanced(t) { let d = 0; for (const c of t) { if (c === '(') d++; else if (c === ')') { d--; if (d < 0) return false; } } return d === 0; }
 
+// Two symbols one above the other, read as neighbours on a line (a fraction whose bar was missed: ½ read as −12),
+// are marked doubtful, and no answer is worked out from a reading with them.
+function markStacked(row) {
+  for (let i = 0; i + 1 < row.length; i++) {
+    const a = row[i], b = row[i + 1];
+    if (a.k !== 's' || b.k !== 's') continue;
+    const A = a.box, B = b.box, across = Math.min(A[2], B[2]) - Math.max(A[0], B[0]);
+    if (Math.max(B[1] - A[3], A[1] - B[3]) > 0 && across > 0.5 * Math.max(Math.min(A[2] - A[0], B[2] - B[0]), 1e-9)) a.doubt = b.doubt = true;
+  }
+  // a power or index straight above or below its base, not beside it (the 1 of a ½ with no bar read as 2¹)
+  for (const u of row) {
+    if (u.k === 's' && u.box) for (const key of ['sup', 'sub']) {
+      if (!u[key] || !u[key].length) continue;
+      const S = u[key].map(v => v.box).filter(Boolean).reduce((p, q) => [Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.max(p[2], q[2]), Math.max(p[3], q[3])]);
+      if ((S[0] + S[2]) / 2 < u.box[0] + 0.75 * (u.box[2] - u.box[0])) u.doubt = true;
+    }
+    for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) markStacked(u[k]);
+  }
+}
 function strip(row) {
   return row.map(u => {
-    const o = u.k === 's' ? { k: 's', label: u.sym.label, strokes: u.sym.strokes } : u.k === 'f'
+    const o = u.k === 's' ? Object.assign({ k: 's', label: u.sym.label, strokes: u.sym.strokes }, u.doubt ? { doubt: true } : {}) : u.k === 'f'
       ? { k: 'frac', strokes: u.bar.strokes, num: strip(u.num), den: strip(u.den) }
       : { k: 'root', strokes: u.rad.strokes, body: strip(u.body), idx: u.idx ? strip(u.idx) : undefined };
     if (u.sup) o.sup = strip(u.sup); if (u.sub) o.sub = strip(u.sub);
@@ -1088,7 +1123,7 @@ function finish(syms, ref, opts) {
   const unbalanced = syms.map(s => s.label).join('\u0001');
   for (const row of lines) balanceBrackets(row);
   if (syms.map(s => s.label).join('\u0001') !== unbalanced) lines = layout(syms, ref, opts);
-  for (const row of lines) fixRow(row, ref, opts);
+  for (const row of lines) { fixRow(row, ref, opts); markStacked(row); }
   const lineOut = lines.map(row => { const tokens = rowTokens(row); return { latex: joinTex(tokens), text: plain(row), tokens }; });
   let conf = 1;
   for (const s of syms) conf *= (s.cands && s.cands[0] ? s.cands[0][1] : 1) * (1 - (s.junk || 0));

@@ -401,5 +401,36 @@ for (const [t, w] of [
   ['\\sqrt{2}-1.4142135623730951=', null], ['2\\pi-\\pi-\\pi=', '0'], ['x=10\\div 4 \\\\ x=', '2.5'], ['(15\\%+5\\%)=', '20\\%'],
 ]) sol(t, w, X);
 
+
+section('18. what the board showed: misreadings that must not become answers');
+ok(Nib.solve({ tree: [[{ k: 's', label: '7' }, { k: 's', label: '+' }, { k: 's', label: '-', doubt: true }, { k: 's', label: '1', doubt: true }, { k: 's', label: '2' }, { k: 's', label: '=' }]] })[0] === null,
+  'a reading with two symbols stacked but read side by side (½ read as −12) gets no answer');
+for (const [t, w] of [['5++2x=', null], ['3++4=', null], ['x+-3=', 'x-3'], ['+5+2=', '7'], ['(+3)+2=', '5']]) sol(t, w, X);
+{
+  // a fraction whose bar the reader missed: the 1 and the 2 stacked are never read as 12
+  const { compose } = require('./compose.js');
+  let tried = 0, answered = [];
+  for (let k = 0; k < 12; k++) {
+    const e = compose('7+\\frac{1}{2}='), bar = e.symbols.find(s => s.label === '-');
+    if (!bar) continue;
+    const st = e.strokes.filter((_, i) => !bar.strokes.includes(i)), r = new Nib.Recognizer().recognize(st, X), a = Nib.solve(r, X)[0];
+    tried++;
+    if (a) answered.push(r.latex + ' = ' + a.latex);
+  }
+  ok(tried >= 8 && answered.length === 0, `½ with its bar taken away gets no answer (${tried} writers${answered.length ? '; answered: ' + answered.join(', ') : ''})`);
+}
+{
+  // a times dot between two fractions is a times dot, not a minus
+  const { compose } = require('./compose.js');
+  let n = 0, minus = 0;
+  for (let k = 0; k < 16; k++) {
+    const e = compose('\\frac{2}{3}\\cdot\\frac{3}{4}='), r = new Nib.Recognizer().recognize(e.strokes, X);
+    if (!/\\frac\{2\}\{3\}.*\\frac\{3\}\{4\}/.test(r.latex)) continue;
+    n++;
+    if (/\\frac\{2\}\{3\}-\\frac\{3\}\{4\}/.test(r.latex)) minus++;
+  }
+  ok(n >= 8 && minus === 0, `a dot between fractions is read as times (${minus} of ${n} read as minus)`);
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

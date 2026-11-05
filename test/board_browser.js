@@ -282,7 +282,23 @@ function makeHandFile() {
       const got = await answers(), g = await gold();
       ok(got.includes(want) && g > 40, `${what} (${JSON.stringify(got)}, ${g} gold pixels)`);
     }
+    // writing carried on past a gap after a sign is one problem; two problems on one line stay two
+    {
+      const a = find('13.999+'), b = find('2+7='), c = find('3+4='), d = find('5+6=');
+      if (a && b && c && d) {
+        await page.click('#clear'); await wait(300);
+        await write(a, [0.05, 0.25, 0.25, 0.1]); await write(b, [0.38, 0.25, 0.2, 0.1]);
+        await write(c, [0.05, 0.6, 0.18, 0.1]); await write(d, [0.55, 0.6, 0.18, 0.1]);
+        await wait(600); await sameRead();
+        const got = await answers(), parts = await page.evaluate(() => {
+          const P = document.getElementById('pad').pad, sb = s => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); } return [x0, y0, x1, y1]; };
+          return { R: Nib._internals.refSize(P.resultStrokes), parts: (P.result.parts || []).map(p => p.result.latex + ' ' + p.strokes.map(sb).reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]).map(Math.round).join(',')) };
+        });
+        ok(got.includes('22.999') && !got.includes('9') && got.includes('7') && got.includes('11'), `"13.999 +" then a gap then "2 + 7 =" is 22.999; 3 + 4 = and 5 + 6 = on one line stay two (${JSON.stringify(got)}; read ${JSON.stringify(parts)})`);
+      } else console.log('    (no writers for the gap check; skipped)');
+    }
     // Fix on a times dot offers both the times dot and the decimal point
+    { const e = find('121\\cdot 21='); if (e) { await page.click('#clear'); await wait(300); await write(e, [0.2, 0.2, 0.45, 0.4]); await wait(600); await sameRead(); } }
     const dot = await page.evaluate(() => {
       const P = document.getElementById('pad').pad, s = P.result && P.result.symbols.find(q => q.label === '\\cdot');
       return s ? [s.box.x + s.box.w / 2, s.box.y + s.box.h / 2] : null;

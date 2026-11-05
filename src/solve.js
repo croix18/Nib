@@ -209,6 +209,7 @@ function tokensOf(row, options) {
   const lastNum = () => { const t = out[out.length - 1]; return t && t.t === 'num' && !t.closed ? t : null; };
   for (let i = 0; i < (row || []).length; i++) {
     const u = row[i], nx = row[i + 1];
+    if (u.doubt) sfail('two symbols one above the other, read side by side');
     if (u.k === 'frac') out.push({ t: 'frac', num: tokensOf(u.num, options), den: tokensOf(u.den, options) });
     else if (u.k === 'root') out.push({ t: 'root', body: tokensOf(u.body, options), idx: u.idx && u.idx.length ? tokensOf(u.idx, options) : null });
     else if (u.k !== 's') sfail('unknown');
@@ -328,7 +329,11 @@ function solveParse(tokens) {
   }
   function unary(inAbs) {
     const tk = peek();
-    if (tk && tk.t === 'op' && (tk.v === '-' || tk.v === '+')) { next(); const a = unary(inAbs); return tk.v === '-' ? { t: 'neg', a } : { t: 'pos', a }; }
+    if (tk && tk.t === 'op' && (tk.v === '-' || tk.v === '+')) {
+      // a plus sign straight after another sign (5 + + 2x) is a misreading, not maths; a minus is a negative number
+      if (tk.v === '+' && i > 0 && tokens[i - 1].t === 'op') sfail('two signs');
+      next(); const a = unary(inAbs); return tk.v === '-' ? { t: 'neg', a } : { t: 'pos', a };
+    }
     return power(inAbs);
   }
   function power(inAbs) {

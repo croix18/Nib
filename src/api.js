@@ -7,7 +7,7 @@ Recognizer.prototype.classify = function (strokes, options) {
   if (!s.length) return [];
   const opts = Object.assign({}, DEFAULTS, options || {});
   const ref = opts.ref || refSize(s), mask = allowedMask(opts.symbols, opts.times), M = model();
-  const p = this.probs(s, ref, 'c' + Math.random());
+  const p = foldTimes(this.probs(s, ref, 'c' + Math.random()), opts.times === false);
   let tot = 0; for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) tot += p[c];
   const list = [];
   for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) list.push([M.cls[c], p[c] / tot]);
