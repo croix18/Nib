@@ -415,7 +415,8 @@ const PRESETS = {
     '\\infty', '\\ldots', '\\gamma', '\\lambda', '\\mu', '\\sigma', '\\phi', '\\{', '\\}', '!', 'l', 'I', 'o', 'O', 'X'] },
   numbers: { include: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ',', '-', '+', '/', '%', '$', '(', ')', '\\times', '\\div', '='] },
 };
-function allowedMask(symbols) {
+// times === false: × is never read (every cross is the letter x; multiply with · or brackets)
+function allowedMask(symbols, times) {
   const { cls, junk } = model();
   const mask = new Uint8Array(cls.length);
   let spec = symbols === undefined ? PRESETS.school : (typeof symbols === 'string' ? PRESETS[symbols] : symbols);
@@ -424,6 +425,7 @@ function allowedMask(symbols) {
   else if (Array.isArray(spec)) { for (const s of spec) if (s in model().idx) mask[model().idx[s]] = 1; }
   else if (spec.include) { for (const s of spec.include) if (s in model().idx) mask[model().idx[s]] = 1; }
   else { mask.fill(1); for (const s of spec.exclude) if (s in model().idx) mask[model().idx[s]] = 0; }
+  if (times === false && '\\times' in model().idx) mask[model().idx['\\times']] = 0;
   mask[junk] = 1; mask[model().idx['-']] = 1;
   return mask;
 }

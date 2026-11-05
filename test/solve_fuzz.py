@@ -1,5 +1,6 @@
 """Random arithmetic, checked against Python's own exact fractions: every answer Nib gives must have exactly the
-value Python works out (or, when Nib marks it approximate, be within rounding of it).
+value Python works out (or, when Nib marks it approximate, be within rounding of it, its digits the start of the
+number).
 
     python3 test/solve_fuzz.py [count=3000] [seed=7]
 
@@ -70,6 +71,9 @@ def expr(depth):
 def value_of(tex):
     """the number an answer's LaTeX means (exact), or None for approximations"""
     t = tex.replace(' ', '')
+    if t.endswith('\\%'):
+        v = value_of(t[:-2])
+        return None if v is None else v / 100
     neg = t.startswith('-')
     if neg: t = t[1:]
     m = re.fullmatch(r'(\d+)\\frac\{(\d+)\}\{(\d+)\}', t)
@@ -111,6 +115,16 @@ for (tex, v), a in zip(cases, answers):
         approx += 1
         if a['exact'] or abs(a['value'] - float(v)) > 1e-6 * max(1, abs(float(v))):
             wrong.append((tex, a['latex'], str(v), 'approximation off'))
+        # the digits before "..." are how the number starts: cut, never rounded up
+        m = re.fullmatch(r'(-?)(\d+)(?:\.(\d+))?\\ldots(\\%)?', a['latex'].replace(' ', ''))
+        if not m:
+            wrong.append((tex, a['latex'], str(v), 'cannot read the approximation'))
+        else:
+            places = len(m[3] or '')
+            shown = F(m[2] + ('.' + m[3] if m[3] else ''))
+            vv = v * 100 if m[4] else v
+            if (m[1] == '-') != (vv < 0) or not (shown <= abs(vv) < shown + F(1, 10 ** places)):
+                wrong.append((tex, a['latex'], str(v), 'digits are not the start of the number'))
         continue
     if got != v:
         wrong.append((tex, a['latex'], str(v), 'wrong value'))

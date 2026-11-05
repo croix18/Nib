@@ -97,7 +97,7 @@ nib-pad {
       <button type="button" role="radio" data-view="hand" aria-checked="false">My hand</button>
       <button type="button" role="radio" data-view="typeset" aria-checked="false">Typeset</button>
     </div>
-    <button type="button" class="tool" id="solve" aria-label="Solve" aria-pressed="false" title="Answers after = (S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h10"/><path d="M4 15h10"/><path d="M19 4v5"/><path d="M16.5 6.5h5"/><path d="M18 14.5v3"/><path d="M16.5 16h3"/></svg><span class="t">Solve</span></button>
+    <button type="button" class="tool" id="solve" aria-label="Solve" aria-pressed="false" title="Answers after =, and x = under an equation (S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h10"/><path d="M4 15h10"/><path d="M19 4v5"/><path d="M16.5 6.5h5"/><path d="M18 14.5v3"/><path d="M16.5 16h3"/></svg><span class="t">Solve</span></button>
     <span class="sp"></span>
     <button type="button" class="tool" id="erase" aria-label="Erase" aria-pressed="false" title="Erase (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg><span class="t">Erase</span></button>
     <button type="button" class="tool" id="fix" aria-label="Fix" aria-pressed="false" title="Fix a misread symbol (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/><path d="m16 20 2 2 4-4"/></svg><span class="t">Fix</span></button>
@@ -110,7 +110,7 @@ nib-pad {
     <input type="file" id="file" accept=".json,application/json" hidden>
   </header>
   <div class="surface">
-    <nib-pad id="pad" view="tidy" stroke-width="3.5" separate aria-label="Board"></nib-pad>
+    <nib-pad id="pad" view="tidy" stroke-width="3.5" separate times="false" aria-label="Board"></nib-pad>
     <div class="fixlayer" id="fixlayer" hidden></div>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
     <div class="latexbox" id="latexbox" hidden><textarea id="latexout" rows="3" readonly aria-label="LaTeX"></textarea></div>
@@ -174,7 +174,7 @@ nib-pad {
     solve = on; pad.solve = on; persist();
     $('solve').setAttribute('aria-pressed', String(on));
     if (!$('latexbox').hidden) $('latexout').value = on ? pad.solved : pad.latex;
-    if (!quiet) note(on ? 'Write a problem and end it with = to see its answer.' : 'Answers are hidden.');
+    if (!quiet) note(on ? 'End a problem with = to see its answer. Under an equation, write x = to solve it.' : 'Answers are hidden.');
   }
   $('solve').onclick = () => setSolve(!solve);
   setSolve(solve, true);
@@ -217,7 +217,11 @@ nib-pad {
   function openPop(hit) {
     const pop = $('fixpop'), sym = hit.sym;
     pop.textContent = '';
-    const labels = [sym.label].concat(sym.candidates.map(c => c[0]).filter(l => l !== sym.label)).slice(0, 6);
+    // a dot can be a times dot or a decimal point: offer both
+    const cands = sym.candidates.map(c => c[0]);
+    const dot = cands.indexOf('.');
+    if (dot >= 0 && !cands.includes('\\cdot')) cands.splice(sym.label === '.' ? 0 : dot, 0, '\\cdot');
+    const labels = [sym.label].concat(cands.filter(l => l !== sym.label)).slice(0, 6);
     for (const l of labels) {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'cand'; b.textContent = shownAs(l); b.dataset.label = l;

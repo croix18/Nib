@@ -35,9 +35,9 @@ table([
   ['10\\div 4=', '2.5'], ['10\\div 3=', '3.\\overline{3}'], ['1\\div 6=', '0.1\\overline{6}'], ['1\\div 7=', '0.\\overline{142857}'],
   ['1\\div 17=', '0.0588\\ldots'], ['0.5\\div 3=', '0.1\\overline{6}'], ['2.5-2.5=', '0'], ['0.001\\times 0.001=', '0.000001'],
   ['12.5\\times 4=', '50'], ['.5+.25=', '0.75'], ['100-99.5=', '0.5'], ['2\\div 3=', '0.\\overline{6}'], ['22\\div 7=', '3.\\overline{142857}'],
-  ['-1\\div 4=', '-0.25'], ['1.1\\times 1.1=', '1.21'], ['5/2=', '2.5'], ['1/3+1/3=', '0.\\overline{6}'],
-  ['1\\div 44650=', '0.0000224\\ldots'], ['0.001\\div 3000=', '0.000000\\overline{3}'], ['1\\div 300=', '0.00\\overline{3}'],
-  ['1\\div 1700=', '0.000588\\ldots'], ['2\\div 70001=', '0.0000286\\ldots'],
+  ['-1\\div 4=', '-0.25'], ['1.1\\times 1.1=', '1.21'], ['5/2=', '2\\frac{1}{2}'], ['1/3+1/3=', '\\frac{2}{3}'], ['16/3=', '5\\frac{1}{3}'], ['10/4=', '\\frac{5}{2}'],
+  ['1\\div 44650=', '0.0000223\\ldots'], ['0.001\\div 3000=', '0.000000\\overline{3}'], ['1\\div 300=', '0.00\\overline{3}'],
+  ['1\\div 1700=', '0.000588\\ldots'], ['2\\div 70001=', '0.0000285\\ldots'], ['3\\div 17=', '0.1764\\ldots'], ['0.99999999999999\\times 1=', '0.9999\\ldots'],
 ]);
 
 section('3. fractions and mixed numbers');
@@ -57,20 +57,20 @@ table([
   ['\\frac{18}{12}=', '\\frac{3}{2}'], ['5\\frac{1}{3}=', '\\frac{16}{3}'], ['-2\\frac{1}{4}=', '-\\frac{9}{4}'], ['4\\frac{4}{8}=', '\\frac{9}{2}'],
   ['0.75=', '\\frac{3}{4}'], ['0.5=', '\\frac{1}{2}'], ['2.5=', '2\\frac{1}{2}'], ['-0.25=', '-\\frac{1}{4}'], ['4.0=', '4'], ['0.333=', '\\frac{333}{1000}'],
   ['75\\%=', '0.75'], ['5\\%=', '0.05'], ['150\\%=', '1.5'], ['100\\%=', '1'], ['12.5\\%=', '0.125'], ['(0.75)=', '\\frac{3}{4}'],
-  ['7=', null], ['-7=', null], ['(7)=', null], ['0=', null], ['\\pi=', '3.142\\ldots'], ['-(-4)=', '4'], ['--4=', '4'], ['-(-(-2))=', '-2'],
+  ['7=', null], ['-7=', null], ['(7)=', null], ['0=', null], ['\\pi=', '3.141\\ldots'], ['-(-4)=', '4'], ['--4=', '4'], ['-(-(-2))=', '-2'],
   ['(-563)=', null], ['+(-3)=', null],
 ]);
 
 section('5. percents');
 table([
-  ['15\\% of 80=', '12'], ['15\\%\\times 80=', '12'], ['20\\%\\times 45=', '9'], ['50\\%+25\\%=', '0.75'], ['10\\%\\times 10\\%=', '0.01'],
+  ['15\\% of 80=', '12'], ['15\\%\\times 80=', '12'], ['20\\%\\times 45=', '9'], ['50\\%+25\\%=', '75\\%'], ['80+15\\%=', null], ['\\frac{20}{80}\\times 100\\%=', '25\\%'], ['0.125\\times 100\\%=', '12.5\\%'], ['\\frac{1}{3}\\times 100\\%=', '33\\frac{1}{3}\\%'], ['10\\%\\times 10\\%=', '0.01'],
   ['200\\times 15\\%=', '30'], ['15\\% x 60=', '9'],
 ]);
 
 section('6. irrational answers are approximated, never passed off as exact');
 table([
   ['\\sqrt{2}=', '1.414\\ldots'], ['2\\pi=', '6.283\\ldots'], ['\\pi\\times 3^{2}=', '28.274\\ldots'], ['\\pi-\\pi=', '0'],
-  ['\\sqrt{2}\\times\\sqrt{2}=', '2'], ['\\sqrt{2}+\\sqrt{8}=', '4.243\\ldots'], ['2^{0.5}=', '1.414\\ldots'], ['4^{\\frac{1}{2}}=', '2'],
+  ['\\sqrt{2}\\times\\sqrt{2}=', '2'], ['\\sqrt{2}+\\sqrt{8}=', '4.242\\ldots'], ['2^{0.5}=', '1.414\\ldots'], ['4^{\\frac{1}{2}}=', '2'],
   ['8^{\\frac{2}{3}}=', '4'], ['(-8)^{\\frac{1}{3}}=', '-2'], ['-\\sqrt{3}=', '-1.732\\ldots'],
 ]);
 ok(one('\\sqrt{2}=').exact === false && one('\\sqrt{4}=').exact === true && one('1\\div 17=').exact === false, 'approximate answers say so (exact: false)');
@@ -81,7 +81,7 @@ table([
   ['(2x)^{2}=', '4x^{2}'], ['3(2a-4)=', '6a-12'], ['-(x-3)=', '-x+3'], ['2x+3y-x+y=', 'x+4y'], ['5-2(x+1)=', '-2x+3'],
   ['x+x+x=', '3x'], ['\\frac{6x+4}{2}=', '3x+2'], ['(6x+4)\\div 2=', '3x+2'], ['0.5x+0.25x=', '0.75x'], ['4(2x-1)+3=', '8x-1'],
   ['x-x=', '0'], ['3x-3x+5=', '5'], ['\\frac{1}{2}x+\\frac{1}{3}x=', '\\frac{5}{6}x'], ['(x+2)(x-2)=', 'x^{2}-4'], ['(x+1)(x+2)=', 'x^{2}+3x+2'],
-  ['1x=', 'x'], ['0x+3=', '3'], ['x\\cdot 2=', '2x'], ['x4=', '4x'], ['-x-x=', '-2x'], ['-5a+13a=', '8a'], ['\\theta+\\theta=', '2\\theta'],
+  ['1x=', 'x'], ['0x+3=', '3'], ['x\\cdot 2=', '2x'], ['x4=', null], ['-x-x=', '-2x'], ['-5a+13a=', '8a'], ['\\theta+\\theta=', '2\\theta'],
   ['\\alpha\\cdot\\alpha=', '\\alpha^{2}'], ['x_{1}+x_{1}=', '2x_{1}'], ['\\frac{x}{2}+\\frac{x}{2}=', 'x'], ['2(x+3)+3(x-1)=', '5x+3'],
 ]);
 section('   already as simple as it gets: no answer');
@@ -91,7 +91,7 @@ table([
 ]);
 section('   things letters cannot do here: no answer');
 table([
-  ['\\frac{6}{x}=', null], ['x\\div x=', null], ['x^{-1}=', null], ['x^{0.5}=', null], ['2^{x}=', null], ['\\sqrt{x}=', null], ['|x|=', null],
+  ['\\frac{6}{x}=', null], ['x\\div x=', '1'], ['x^{-1}=', null], ['x^{0.5}=', null], ['2^{x}=', null], ['\\sqrt{x}=', null], ['|x|=', null],
   ['2\\pi r=', null], ['x!=', null],
 ]);
 
@@ -124,7 +124,7 @@ table([
   ['\\frac{}{2}=', null], ['2^{}=', null], ['x=5=', null], ['1,23+1=', null], ['3\\cdot=', null], ['\\%=', null], ['!=', null],
   ['3^{10000}=', null], ['10\\div 3^{40}=', null],
 ]);
-table([['1,000+1=', '1001'], ['12,345+1=', '12346'], ['3+4=7+1=', '8'], ['2\\times 3=6\\times 2=', '12'], ['3 x 4=', '12'],
+table([['1,000+1=', '1001'], ['12,345+1=', '12346'], ['3+4=7+1=', null], ['2\\times 3=6\\times 2=', null], ['2(3+4)=2\\cdot 7=', '14'], ['3+4=7=', null], ['3 x 4=', '12'],
   ['2x4=', '8'], ['(2+3) x 4=', '20']]);
 ok(Nib.solve('3+4').length === 1 && Nib.solve('3+4')[0] === null, 'a line without "=" has no answer');
 ok(Nib.solve(null).length >= 0 && Nib.solve([]).every(a => a === null), 'no input: nothing, no error');
@@ -173,7 +173,7 @@ const lhs = r => {
 };
 let placed = 0, bad = [];
 const withEq = rowsS.filter(r => r.symbols.filter(s => s.label === '=').length === 1 && !r.latex.includes('\\\\'));
-for (const r of withEq.slice(0, 60)) {
+for (const r of withEq.slice(0, 90)) {
   const st = lhs(r), res = new Nib.Recognizer().recognize(st);
   if (!Nib.solve(res)[0]) continue;
   for (const style of ['tidy', 'hand', 'typeset', 'ink']) {
@@ -246,13 +246,131 @@ ok(placed >= 100, `enough answers checked (${placed})`);
   } else console.log('    (slanted 12+30= misread: ' + res.latex + ')');
 }
 {
+  // x² = 49, then x =: the ± answer is drawn after the "=" of the second line in every view
+  let e = null, res = null;
+  for (let k = 0; k < 30 && !e; k++) { const c = compose('x^{2}=49 \\\\ x='), r = new Nib.Recognizer().recognize(c.strokes, { times: false }); if (r.latex.replace(/\s/g, '') === '\\begin{gathered}x^{2}=49\\\\x=\\end{gathered}') { e = c; res = r; } }
+  if (e) {
+    for (const style of ['tidy', 'hand', 'typeset']) {
+      const t = style === 'typeset' ? Nib.typeset(e.strokes, { result: res, solve: true, times: false }) : Nib.neaten(e.strokes, { style, result: res, solve: true, times: false });
+      const A = t.items.filter(it => it.answer), pm = A.find(it => it.label === '\\pm'), seven = A.find(it => it.label === '7');
+      ok(pm && seven && pm.box[2] <= seven.box[0] + 1 && A.every(it => it.parts.length), `${style}: x = ±7 is drawn, ± before the 7`);
+    }
+  } else console.log('    (no writer read x² = 49 / x = right; skipped)');
+}
+{
   // glyphs: the writer's own symbols first, the built-in hand for the rest; every built-in glyph is drawable
   const e = compose('2+5='), res = new Nib.Recognizer().recognize(e.strokes);
   const book = I.sampleBook(res, e.strokes, null), two = res.symbols.find(s => s.label === '2');
   ok(!two || book('2') === book('2') && book('2').length === two.strokes.length, "an answer's 2 is the writer's own 2");
-  ok('0123456789.-+'.split('').every(ch => { const g = I.DEFAULT_GLYPHS[ch]; return g && g.length && g.every(s => s.length && s.every(p => isFinite(p[0]) && isFinite(p[1]))); }), 'the built-in hand has every digit, the point, minus and plus');
+  ok('0123456789.-+'.split('').concat(['\\pm']).every(ch => { const g = I.DEFAULT_GLYPHS[ch]; return g && g.length && g.every(s => s.length && s.every(p => isFinite(p[0]) && isFinite(p[1]))); }), 'the built-in hand has every digit, the point, minus, plus and ±');
+  ok(I.DEFAULT_GLYPHS['\\pm'].length === 3, '± is a plus over a bar');
   ok(book('7') === I.DEFAULT_GLYPHS['7'] || res.symbols.some(s => s.label === '7'), 'a digit never written comes from the built-in hand');
 }
+
+
+// ------------------------------------------------------------------ equations: "x =" under an equation solves it
+section('14. equations: write the equation, then "x =" on the line below');
+const sol = (tex, want, opts) => {
+  let got;
+  try { const r = Nib.solve(tex, opts); got = r[r.length - 1]; got = got ? got.latex : null; } catch (e) { got = 'THREW ' + e.message; }
+  ok(got === want, `${tex}  ->  ${got}   (want ${want})`);
+};
+for (const [t, w] of [
+  ['x+5=12 \\\\ x=', '7'], ['x-3=-8 \\\\ x=', '-5'], ['4x=28 \\\\ x=', '7'], ['\\frac{x}{3}=5 \\\\ x=', '15'], ['x\\div 4=3 \\\\ x=', '12'],
+  ['2x+3=11 \\\\ x=', '4'], ['-4x+1=-7 \\\\ x=', '2'], ['3x-7=-1 \\\\ x=', '2'], ['5-2x=11 \\\\ x=', '-3'], ['-x=4 \\\\ x=', '-4'],
+  ['3(x-2)=2x+5 \\\\ x=', '11'], ['2(x+1)=3(x-1) \\\\ x=', '5'], ['5x-2=3x+8 \\\\ x=', '5'], ['7=2x+1 \\\\ x=', '3'], ['x=x\\cdot 2-6 \\\\ x=', '6'],
+  ['3x=2 \\\\ x=', '\\frac{2}{3}'], ['4x=6 \\\\ x=', '\\frac{3}{2}'], ['-6x=4 \\\\ x=', '-\\frac{2}{3}'], ['\\frac{2}{3}x=4 \\\\ x=', '6'],
+  ['x+\\frac{1}{2}=\\frac{3}{4} \\\\ x=', '\\frac{1}{4}'], ['1\\frac{1}{2}x=6 \\\\ x=', '4'], ['2x=1\\frac{1}{2} \\\\ x=', '\\frac{3}{4}'],
+  ['2x=7\\frac{1}{2} \\\\ x=', '3\\frac{3}{4}'], ['0.5x+1.2=3.7 \\\\ x=', '5'], ['0.2x=1 \\\\ x=', '5'], ['3x=1.6 \\\\ x=', '0.5\\overline{3}'],
+  ['1.5x-0.25=2 \\\\ x=', '1.5'], ['\\frac{x}{2}+3=7 \\\\ x=', '8'], ['\\frac{x+4}{3}=5 \\\\ x=', '11'], ['25\\%x=20 \\\\ x=', '80'],
+  ['x^{2}=49 \\\\ x=', '\\pm 7'], ['x^{2}=\\frac{9}{16} \\\\ x=', '\\pm\\frac{3}{4}'], ['x^{2}=2.25 \\\\ x=', '\\pm 1.5'], ['2x^{2}=50 \\\\ x=', '\\pm 5'],
+  ['x^{2}+1=50 \\\\ x=', '\\pm 7'], ['x^{2}=50 \\\\ x=', '\\pm 7.071\\ldots'], ['x^{2}=0 \\\\ x=', '0'], ['x^{3}=-8 \\\\ x=', '-2'], ['x^{3}=64 \\\\ x=', '4'],
+  ['x^{3}=10 \\\\ x=', '2.154\\ldots'], ['x^{2}=-4 \\\\ x=', null], ['x+1=x+2 \\\\ x=', null], ['2x=2x \\\\ x=', null], ['x^{2}+5x+6=0 \\\\ x=', null],
+  ['\\pi x=10 \\\\ x=', '3.183\\ldots'], ['a+3=10 \\\\ a=', '7'], ['3n=12 \\\\ n=', '4'],
+  // the nearest equation with the letter in it, and the working under it
+  ['2x+3=11 \\\\ 2x=8 \\\\ x=', '4'], ['2x+3=11 \\\\ 5x-1=9 \\\\ x=', '2'], ['3x=12 \\\\ x=4 \\\\ y+2=7 \\\\ y=', '5'],
+  ['2x+3=11 \\\\ x', null], ['x=', null], ['2x+3 \\\\ x=', null],
+  // two or three letters: the equations that pin them down
+  ['x+y=10 \\\\ x-y=2 \\\\ x=', '6'], ['x+y=10 \\\\ x-y=2 \\\\ y=', '4'], ['y=2x+1 \\\\ x=3 \\\\ y=', '7'], ['2x+y=7 \\\\ y=3 \\\\ x=', '2'],
+  ['x+y=10 \\\\ x-y=2 \\\\ x=6 \\\\ y=', '4'], ['a+b+c=6 \\\\ a-b=1 \\\\ c=2 \\\\ a=', '\\frac{5}{2}'], ['x+y=10 \\\\ y=', null], ['x+y=1 \\\\ 2x+2y=2 \\\\ x=', null],
+  ['y=2x+1 \\\\ y=', null], ['xy=6 \\\\ x=2 \\\\ y=', null],
+  // inequalities: the number only when the sign written is the right one
+  ['2x+3<11 \\\\ x<', '4'], ['2x+3<11 \\\\ x>', null], ['2x+3<11 \\\\ x=', null], ['-3x\\ge 12 \\\\ x\\le', '-4'], ['-3x\\ge 12 \\\\ x\\ge', null],
+  ['11>2x+3 \\\\ x<', '4'], ['\\frac{x}{-2}>3 \\\\ x<', '-6'], ['x-5\\le 2 \\\\ x\\le', '7'], ['4x>2 \\\\ x>', '\\frac{1}{2}'], ['x+y<3 \\\\ x<', null],
+  ['2x+3=11 \\\\ x<', null],
+]) sol(t, w);
+// what "x = 4" under the working of an equation does to the lines below
+lines('2x+3=11 \\\\ x=4 \\\\ 3x+2x=', [null, null, '5x']);
+lines('2x+3=11 \\\\ x=4 \\\\ 2x+3=', [null, null, '11']);
+lines('x=4 \\\\ 5x-1=9 \\\\ 3x+2x=', [null, null, '5x']);
+lines('x=4 \\\\ 2x+3=11 \\\\ x+1=', [null, null, '5']);
+lines('x=3 \\\\ 2x+y=', [null, 'y+6']);
+lines('x=2 \\\\ xy+y=', [null, '3y']);
+{
+  // an "x =" written further down than its equation (a separate piece of writing on a board) solves the one just above
+  const up = I.solveRows(I.latexRows('2x+3=11 \\\\ 2x=8')), down = I.solveRows(I.latexRows('x='), {}, up.eqs);
+  ok(up.eqs.length === 2 && down[0] && down[0].latex === '4', `x = under a separate piece of writing solves its equation (${down[0] && down[0].latex})`);
+  const own = I.solveRows(I.latexRows('3x=6 \\\\ x='), {}, up.eqs);
+  ok(own[1] && own[1].latex === '2', 'its own equation comes first');
+  ok(I.solveRows(I.latexRows('x='), {}, []).every(a => a === null) && I.solveRows(I.latexRows('x=')).eqs.length === 0, 'nothing above: no answer');
+}
+ok(Nib.solve('x^{2}=49 \\\\ x=')[1].kind === 'plusminus' && Nib.solve('x^{2}=49 \\\\ x=')[1].text === '±7' && Nib.solve('2x+3=11 \\\\ x=')[1].kind === 'integer', 'a solution says what kind of number it is (±7: plusminus)');
+
+section('15. what the review found: no guesses, no false digits, no crashes');
+table([
+  // ÷ takes a term with letters as a whole; dividing by letters has no answer
+  ['6x\\div 3x=', '2'], ['6x/3x=', '2'], ['12a\\div 4a=', '3'], ['1\\div 2x=', null], ['8\\div 2x=', null], ['6x^{2}\\div 3x=', '2x'],
+  ['(6x^{2}+3x)\\div 3x=', '2x+1'], ['\\frac{6x}{3x}=', '2'], ['12\\div 4\\pi=', '0.954\\ldots'], ['6\\div 2(1+2)=', '9'],
+  // a number straight after a letter, bracket, power, percent or fraction is not how maths is written
+  ['15\\%0880=', null], ['15\\%0+80=', null], ['15\\%0180=', null], ['x4=', null], ['(2)3=', null], ['2^{3}4=', null], ['\\frac{1}{2}3=', null],
+  ['x\\frac{1}{2}=', null], ['2.5\\frac{1}{2}=', null],
+  // "of" (and "0f", an o read as a zero)
+  ['15\\%0f80=', '12'], ['\\frac{1}{2}0f10=', '5'], ['\\frac{3}{4} of 20=', '15'], ['1\\frac{1}{2} of 10=', '15'], ['(1+1) of 3=', '6'],
+  // a cross between a number, fraction, power, root or bar and a number or fraction can be a times sign
+  ['\\frac{2}{3} x 6=', '4'], ['3 x \\frac{1}{4}=', '\\frac{3}{4}'], ['2\\frac{1}{2} x 4=', '10'], ['2^{3} x 4=', '32'], ['\\sqrt{9} x 4=', '12'], ['|-3| x 4=', '12'],
+  ['2x(3)=', '6x'], ['4x(2+3)=', '20x'],
+  // units and words
+  ['1m+50cm=', null], ['3ft\\times 4ft=', null], ['GCF(36,120)=', null], ['LCM(15,100)=', null], ['6CF(36,120)=', null], ['f(2,300)=', null], ['2(1,000)=', '2000'], ['5m+3m=', '8m'], ['2abc+abc=', '3abc'],
+  // approximations: cut, never rounded up; never a false whole number or a false zero
+  ['\\pi=', '3.141\\ldots'], ['\\sqrt{7}=', '2.645\\ldots'], ['r=3 \\\\ 2\\pi r=', '18.849\\ldots'], ['\\pi\\times 10^{9}=', '3141592653.589\\ldots'],
+  ['\\pi\\times 659^{2}=', '1364333.999\\ldots'], ['\\sqrt{900000001}=', '30000.000\\ldots'], ['\\pi\\times 10^{-10}=', '0.000000000314\\ldots'],
+  ['\\pi-3.141=', '0.000592\\ldots'], ['\\pi-3.14=', '0.00159\\ldots'], ['\\pi-3.14159265358979=', null], ['\\sqrt{2}-1.4142135623731=', null],
+  ['\\sqrt{3}\\times\\sqrt{3}\\div 2=', '1.5'], ['\\pi\\div\\pi=', '1'], ['\\pi\\times 10^{-20}=', null],
+  // powers
+  ['2^3^2=', null], ['2^{3}^{2}=', null], ['(-1)^{2025}=', '-1'], ['(-1)^{2026}=', '1'], ['1^{99999}=', '1'], ['0^{5000}=', '0'],
+  // already simplest, or not
+  ['x+-3=', 'x-3'], ['2x--3=', '2x+3'], ['5--2x=', '2x+5'], ['\\frac{x+1}{2}=', null], ['\\frac{3x}{4}=', null], ['\\frac{2x+4}{2}=', 'x+2'],
+  ['\\frac{-3}{4}=', '-0.75'], ['\\frac{3}{-4}=', '-0.75'], ['-\\frac{-3}{4}=', '\\frac{3}{4}'],
+  // standard form with several letters
+  ['(5x)=', null], ['((x+1))=', null], ['-(x+1)=', '-x-1'], ['2(x)=', '2x'],
+  ['(a-b)^{2}=', 'a^{2}-2ab+b^{2}'], ['(x+y)^{2}=', 'x^{2}+2xy+y^{2}'], ['x(x+y)=', 'x^{2}+xy'], ['3y+2x-5+x=', '3x+3y-5'],
+  // percents
+  ['15\\%+5\\%=', '20\\%'], ['80+15\\%=', null], ['x+5\\%=', null], ['25\\%-75\\%=', '-50\\%'],
+]);
+ok((() => { try { for (const t of ['3+4=\\', '\\', '\\\n', '\\ ', '{'.repeat(20000), '\\sqrt{'.repeat(5000), 42, undefined, null, {}, [[]], '\\left(', '^{', '_']) Nib.solve(t); return true; } catch (e) { console.log('   ', e.message); return false; } })(), 'nothing throws: lone backslashes, deep nesting, numbers, objects');
+ok(JSON.stringify(Nib.solve('3+4= \\\\ {2+2= \\\\ 5+5=').map(a => a && a.latex)) === '["7",null,"10"]', 'a line that cannot be read leaves the lines around it');
+ok(JSON.stringify(Nib.solve(42)) === '[null]' && JSON.stringify(Nib.solve({})) === '[]', 'a number is read as LaTeX; an object that is not a reading has no lines');
+{
+  let wrongCut = 0;
+  for (let n = 1; n <= 400; n++) for (const d of [7, 13, 17, 19, 23, 29, 31, 37, 41, 43, 97]) {
+    const a = one(`${n}\\div ${d}=`);
+    if (!a || !/ldots/.test(a.latex)) continue;
+    const m = /^(\d+)\.(\d+)\\ldots$/.exec(a.latex), shown = m && +(m[1] + '.' + m[2]);
+    if (!m || !(shown <= n / d + 1e-12 && n / d < shown + Math.pow(10, -m[2].length) + 1e-12)) wrongCut++;
+  }
+  ok(wrongCut === 0, `long decimals are cut, never rounded up (${wrongCut} wrong)`);
+}
+
+section('16. x is a letter (times: false): multiply with a dot or brackets');
+const X = { times: false };
+for (const [t, w] of [
+  ['3x4=', null], ['4x2+3x2=', null], ['3 x \\frac{1}{4}=', null], ['(2+3) x 4=', null], ['15\\% x 60=', null],
+  ['2x(x+5)=', '2x^{2}+10x'], ['x\\cdot x=', 'x^{2}'], ['(x+2)(x-3)=', 'x^{2}-x-6'], ['6x\\cdot 2=', '12x'], ['121\\cdot 21=', '2541'],
+  ['(121)(21)=', '2541'], ['12(3)=', '36'], ['-3(2x-4)=', '-6x+12'], ['5x-2(x+1)=', '3x-2'], ['2\\cdot x+5x=', '7x'], ['3\\times 4=', '12'],
+  ['x^{2}\\cdot x^{3}=', 'x^{5}'], ['2x\\cdot 3x=', '6x^{2}'], ['(2x)(3x)=', '6x^{2}'], ['x(x-1)(x+1)=', 'x^{3}-x'],
+  ['2x+3=11 \\\\ x=', '4'], ['3(x+2)=x+10 \\\\ x=', '2'],
+]) sol(t, w, X);
+ok(Nib.solve('3 x 4=')[0] && Nib.solve('3 x 4=')[0].latex === '12', 'by default a cross between numbers is still a times sign');
 
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

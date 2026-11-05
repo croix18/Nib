@@ -12,6 +12,7 @@ const PAD_DEFAULTS = {
   hand: null,           // handwriting for view 'hand' (the Replicator's saved data); default: whatever Nib.hand holds
   separate: false,      // a board: writing in different places is read as separate expressions
   solve: false,         // work out lines that end with "=" and write the answer after the "=" (in --nib-answer)
+  times: true,          // × can be a times sign; false: every cross is the letter x (multiply with · or brackets)
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
@@ -277,12 +278,23 @@ class Pad {
         try { hand = this.o.hand ? handClean(this.o.hand.glyphs || this.o.hand) : handLoad(); } catch (err) { hand = null; }
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
+      const R = refSize(at), done = [];
       for (const part of res.parts || [{ strokes: at, result: res }]) {
         const pr = part.result;
         if (!pr || !pr.lines || !pr.lines.length) continue;
-        // answers belong to the expression they are in: "x = 5" sets x for the lines below it, here only
+        // answers belong to the expression they are in: "x = 5" sets x for the lines below it, here only; an "x ="
+        // may also solve an equation in the writing just above it (within four writing heights, overlapping across)
         let answers = null;
-        if (this.o.solve) { try { answers = solveRows(pr.tree); } catch (err) { answers = null; } }
+        if (this.o.solve) {
+          const box = part.strokes.map(sbox).reduce(ubox);
+          let above = null, gap = Infinity;
+          for (const d of done) {
+            const gy = box[1] - d.box[3], gx = Math.max(0, d.box[0] - box[2], box[0] - d.box[2]);
+            if (gy > -0.5 * R && gy <= 4 * R && gx <= R && gy < gap) { above = d; gap = gy; }
+          }
+          try { answers = solveRows(pr.tree, this.o, above && above.eqs); } catch (err) { answers = null; }
+          done.push({ box, eqs: (answers && answers.eqs) || [] });
+        }
         if (answers) answers.forEach((a, k) => { if (a) this.answers.push({ line: li + k, latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value }); });
         li += pr.tree.length;
         if (style === 'ink' && !(answers && answers.some(Boolean))) continue;
@@ -465,7 +477,7 @@ class Pad {
         const ref = refSize(normStrokes(this.strokes).strokes), sm = this._ropts().smooth;
         let g = normStrokes(ss).strokes;
         if (sm > 0) g = g.map(st => smoothPath(st, sm * ref));
-        memLearn(classifyGroup(g, ref).hidden, label);
+        memLearn(classifyGroup(g, ref).hidden, label === '\\cdot' ? '.' : label);   // a dot is a dot; where it sits says which
       } catch (e) { /* ok */ }
     }
     return this.recognize();
@@ -512,7 +524,7 @@ class Pad {
 // <nib-pad symbols="school" delay="450" ink="#1b2a4a" stroke-width="3" boxes></nib-pad>
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
-    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve']; }
+    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -531,6 +543,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         motion: a('motion') !== 'false',
         separate: has('separate') && a('separate') !== 'false',
         solve: has('solve') && a('solve') !== 'false',
+        times: a('times') !== 'false',
       };
     }
     connectedCallback() {

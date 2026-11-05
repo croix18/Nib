@@ -17,11 +17,11 @@ Measured on handwriting from writers it never saw in training (the CROHME 2019 t
 
 | Test | Expressions | Read exactly right |
 | --- | --- | --- |
-| Middle-school maths composed from those writers' real symbols (`test/school_synth.jsonl`) | 700 | 89.3% |
-| Real expressions in middle-school notation (no subscripts, calculus or rare symbols) | 546 | 70.0% |
-| The full CROHME 2019 test set (university maths, symbol set `all`) | 1,187 | 55.8% |
+| Middle-school maths composed from those writers' real symbols (`test/school_synth.jsonl`) | 700 | 90.1% |
+| Real expressions in middle-school notation (no subscripts, calculus or rare symbols) | 546 | 70.3% |
+| The full CROHME 2019 test set (university maths, symbol set `all`) | 1,187 | 55.9% |
 
-"Exactly right" means every symbol and every fraction, power, root and line in the LaTeX matches. By category on the composed school set: arithmetic 90%, one- and two-step equations 88%, inequalities 88%, fractions and mixed numbers 90%, powers and scientific notation 94%, roots 95%, percents and money 96%, ratios 90%, formulas 87%, absolute value 83%, multi-line work 81%.
+"Exactly right" means every symbol and every fraction, power, root and line in the LaTeX matches. By category on the composed school set: arithmetic 95%, one- and two-step equations 89%, inequalities 88%, fractions and mixed numbers 90%, powers and scientific notation 95%, roots 95%, percents and money 96%, ratios 90%, formulas 87%, absolute value 83%, multi-line work 81%.
 
 ### When the writing is messy
 
@@ -55,7 +55,7 @@ Paste `nib.js` into the page once — as `<script src="nib.js"></script>` next t
 </script>
 ```
 
-Attributes: `symbols="school|all|numbers|0,1,2,x,+"`, `ink="#1b2a4a"`, `stroke-width="3"`, `delay="450"` (ms of rest before reading), `auto="false"` (only read when you call `recognize()`), `boxes` (draw what was read), `pen-only` (ignore fingers and palms), `lines="false"`, `degrees="false"`, `smooth="0.03"` (smooth very shaky ink before reading; off by default, as finger ink already reads as well as pen ink), `view="tidy|hand|typeset"` (show what was read in place — see below), `motion="false"` (change views without animating), `separate` (a board: writing in different places is read as separate expressions), `solve` (write the answer after any line that ends with "=" — see below).
+Attributes: `symbols="school|all|numbers|0,1,2,x,+"`, `ink="#1b2a4a"`, `stroke-width="3"`, `delay="450"` (ms of rest before reading), `auto="false"` (only read when you call `recognize()`), `boxes` (draw what was read), `pen-only` (ignore fingers and palms), `lines="false"`, `degrees="false"`, `smooth="0.03"` (smooth very shaky ink before reading; off by default, as finger ink already reads as well as pen ink), `view="tidy|hand|typeset"` (show what was read in place — see below), `motion="false"` (change views without animating), `separate` (a board: writing in different places is read as separate expressions), `solve` (write the answer after any line that ends with "=", and solve equations — see below), `times="false"` (× is never read: x is always a letter, and you multiply with a dot or brackets).
 
 Properties and methods: `latex`, `text`, `result`, `strokes` (get or set), `view` (get or set), `solve` (get or set), `answers` and `solved` (the answers, and the LaTeX with them written in), `shown` (what the view draws), `mode` (`'draw'` or `'erase'`), `undo()`, `redo()`, `clear()`, `recognize()`, `relabel(symbol, label)`, `toImage()`.
 
@@ -116,17 +116,34 @@ Nib.hand.size; Nib.hand.name; Nib.hand.has('7'); Nib.hand.clear();
 
 Turn on **Solve** (on the Board it starts on) and any line that ends with "=" gets its answer written just after the equals sign, in gold, at the size of your writing: in your own digits where you have written them on the board, in your Replicator handwriting where you haven't, and typeset in the Typeset view. Change the problem and the answer follows it. Start writing your own answer after the "=" and the gold one steps aside; erase the "=" and it goes.
 
-- Whole numbers, decimals, fractions, mixed numbers and percents are worked out exactly, with + − × ÷, brackets, powers, square and cube roots, absolute value and factorials, in the usual order of operations.
-- The answer comes in the form the question was asked in: decimals give decimals (repeating ones with a bar, 1 ÷ 3 = 0.3̄; ones whose repeat is too long to show are rounded and marked with "…", 1 ÷ 17 = 0.0588…), fractions give fractions, mixed numbers give mixed numbers, and dividing whole numbers gives a decimal.
-- A lone number becomes its other form: 3/4 = 0.75, 0.75 = 3/4, 6/8 = 3/4, 5 1/3 = 16/3, 16/3 = 5 1/3, 75% = 0.75.
-- π and roots that don't come out are rounded to three places and marked with "…" (√2 = 1.414…), so an approximation is never passed off as exact.
-- Letters stay letters: like terms are combined and brackets multiplied out, 3(x + 2) − x = 2x + 6. Something already as simple as it gets gets no answer. A line like x = 5 sets x for the lines below it in the same piece of work.
-- "15% of 80 =" and "3 x 4 =" (an x between two numbers) mean what you'd mean.
-- Nothing appears when there is nothing sound to say: dividing by zero, an unfinished line, an inequality, or something Nib doesn't work out (equations to solve for x, money, sin and log).
+- Whole numbers, decimals, fractions, mixed numbers and percents are worked out exactly, with + − × · ÷ /, brackets, powers, square and cube roots, absolute value and factorials, in the usual order of operations.
+- The answer comes in the form the question was asked in: decimals give decimals (repeating ones with a bar, 1 ÷ 3 = 0.3̄; ones whose repeat is too long to show are cut and marked with "…", 1 ÷ 17 = 0.0588…), fractions give fractions (stacked or with a slash: 1/3 + 1/3 = 2/3), mixed numbers give mixed numbers, and dividing whole numbers gives a decimal.
+- A lone number becomes its other form: 3/4 = 0.75, 0.75 = 3/4, 6/8 = 3/4, 5 1/3 = 16/3, 16/3 = 5 1/3, 75% = 0.75. Percents added together stay percents (15% + 5% = 20%), and so does anything times 100% (3/4 × 100% = 75%).
+- π and roots that don't come out are cut to three places and marked with "…" (π = 3.141…, √2 = 1.414…): the digits shown are always how the number really starts, never rounded up, and an approximation is never passed off as exact.
+- Letters stay letters: like terms are combined, brackets multiplied out, a term divided by a term (6x ÷ 3x = 2), in standard form (a² − 2ab + b²): 3(x + 2) − x = 2x + 6. Something already as simple as it gets gets no answer. A line like x = 5 gives x for the lines below it in the same piece of work.
+- A chain works when its parts agree: 2(3 + 4) = 2 · 7 = gives 14, but 3 + 4 = 9 + 1 = gives nothing.
+- "15% of 80 =" means what you'd mean, and so does "3 x 4 =" (an x between two numbers) — unless x is always a letter (below).
+- Nothing appears when there is nothing sound to say: dividing by zero or by letters, an unfinished line, something written two ways at once (80 + 15%: 15% of what?), a number straight after a letter or bracket (x4, (2)3), units and words (1m + 50cm, GCF(12, 18)), money, sin and log.
+
+### Solving equations
+
+Write an equation, then **x =** on the line below it, and x's value appears:
+
+- one-step, two-step and multi-step equations, with x on both sides and with fractions or decimals: 3(x − 2) = 2x + 5 gives x = 11; 2/3 x = 4 gives x = 6; 4x = 6 gives x = 3/2 (decimals in the equation give a decimal answer);
+- x² = p and x³ = q: x² = 49 gives x = ±7, x³ = −8 gives x = −2;
+- inequalities: under 2x + 3 < 11 write **x <**, and 4 appears. Deciding which way the sign points is the lesson, so the number only appears when the sign you wrote is the right one (under −3x ≥ 12, x ≤ gives −4 and x ≥ gives nothing);
+- two or three equations together: under x + y = 10 and x − y = 2, x = gives 6 and y = gives 4.
+
+It solves the nearest equation above with that letter in it (the working under an equation solves to the same answer). Equations it can't settle — no solution, every number, or x² + 5x + 6 = 0 — get nothing. A value found this way (2x + 3 = 11, then x = 4) is used below only where there is nothing else to do: x + 1 = gives 5, but 3x + 2x = still gives 5x.
+
+### x as a letter
+
+With `times="false"` (`{times: false}` for `Nib.recognize`, `Nib.solve` and the rest), × is never read: every cross is the letter x, and you multiply with a raised dot or brackets, 2x(x + 5) = 2x² + 10x, (x + 2)(x − 3) = x² − x − 6, 121 · 21 = 2541. The Board works this way.
 
 ```js
 Nib.solve('\\frac{1}{3}+\\frac{1}{6}=')   // [{ latex: '\\frac{1}{2}', text: '1/2', kind: 'fraction', exact: true, value: 0.5 }]
-Nib.solve(strokes)                         // one entry per line of the writing: an answer, or null
+Nib.solve('2x+3=11 \\\\ x=')           // [null, { latex: '4', text: '4', kind: 'integer', exact: true, value: 4 }]
+Nib.solve(strokes, { times: false })       // one entry per line of the writing: an answer, or null
 Nib.neaten(strokes, { solve: true })       // the tidy view with the answers drawn in
 ```
 
@@ -134,8 +151,8 @@ Nib.neaten(strokes, { solve: true })       // the tidy view with the answers dra
 
 `dist/Board.html` is a whiteboard for the classroom display, in one file that works offline. Write anywhere: each expression is read on its own, and the board shows it **Tidy**, in **My hand** or **Typeset** — or as **Ink**, exactly as written (keys 1–4). Along the top:
 
-- **Solve** (S): answers after every "=", as above. It starts on; the board remembers if you turn it off.
-- **Fix** (X): tap a symbol that was read wrong and pick what it is. The board re-reads it, and Nib remembers your shape.
+- **Solve** (S): answers after every "=", and **x =** under an equation solves it, as above. It starts on; the board remembers if you turn it off. On the Board x is always a letter: multiply with a raised dot or brackets.
+- **Fix** (X): tap a symbol that was read wrong and pick what it is (a dot offers both the times dot and the decimal point). The board re-reads it, and Nib remembers your shape.
 - **Erase** (E), **Undo** (Ctrl+Z), **Redo** (Ctrl+Y or Ctrl+Shift+Z) and **Clear** (Undo brings it back).
 - **My handwriting** opens the file Replicator saves. When Replicator and the Board are opened from the same computer in Chrome, the Board also picks up what you last wrote in Replicator by itself; whichever is newer, your file or your Replicator work, wins.
 - **Copy LaTeX** copies the whole board, one line per expression, with the answers in when Solve is on. **Full screen** (F).

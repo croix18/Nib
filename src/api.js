@@ -6,7 +6,7 @@ Recognizer.prototype.classify = function (strokes, options) {
   const { strokes: s } = normStrokes(strokes);
   if (!s.length) return [];
   const opts = Object.assign({}, DEFAULTS, options || {});
-  const ref = opts.ref || refSize(s), mask = allowedMask(opts.symbols), M = model();
+  const ref = opts.ref || refSize(s), mask = allowedMask(opts.symbols, opts.times), M = model();
   const p = this.probs(s, ref, 'c' + Math.random());
   let tot = 0; for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) tot += p[c];
   const list = [];
@@ -46,13 +46,14 @@ const Nib = {
   neaten(strokes, options) { const o = options || {}; return inPlace(strokes, o.style === 'hand' ? 'hand' : 'tidy', o); },
   typeset(strokes, options) { return inPlace(strokes, 'typeset', options); },
   // the answer to each line that ends with "=" (null for the other lines): from LaTeX, strokes or a reading
+  // (options.times === false: × is never a times sign, so x is always the letter x)
   solve(input, options) {
     let rows;
-    if (typeof input === 'string') {
-      try { rows = latexRows(input); } catch (e) { if (e instanceof SolveError) return [null]; throw e; }
-    } else if (input && input.tree) rows = input.tree;
-    else { const r = defaultRecognizer().recognize(input || [], options); rows = r ? r.tree : []; }
-    return solveRows(rows).map(a => a && { latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value });
+    if (typeof input === 'string' || typeof input === 'number') rows = latexRows(input);
+    else if (input && input.tree) rows = input.tree;
+    else if (Array.isArray(input)) { const r = defaultRecognizer().recognize(input, options); rows = r ? r.tree : []; }
+    else return [];
+    return solveRows(rows, options).map(a => a && { latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value });
   },
   hand: {
     // data: the Replicator's saved handwriting ({glyphs: {char: strokes}}), as an object or its JSON text

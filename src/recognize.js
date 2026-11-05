@@ -5,7 +5,7 @@ const NO_SCRIPT = new Set(['+', '-', '=', '<', '>', '\\le', '\\ge', '\\ne', '\\t
   '/', ',', '.', '\\rightarrow', ':', '\\in']);
 const CIRCLES = new Set(['o', '0', 'O']);
 const DOTTED = new Set(['i', 'j', '\\div', '!', '\\ldots', ':', ';', '?']);
-const DEFAULTS = { symbols: 'school', lines: true, degrees: true, wJunk: 2.0, wClass: 1.0, wJoin: 0.2, beta: 0.5, lm: 0.35, size: 0, maxGap: 1.6, prune: 0.03, barH: 1.1, barW: 0.15, prior: 0.5, dotPen: 3, parenPen: 3, lmSeg: 0, delayed: true, delayGain: 0.3, lateTol: 0.08, deskew: 3, skewW: 2.5, skewAgree: 0.5, smooth: 0 };
+const DEFAULTS = { symbols: 'school', lines: true, degrees: true, wJunk: 2.0, wClass: 1.0, wJoin: 0.2, beta: 0.5, lm: 0.35, size: 0, maxGap: 1.6, prune: 0.03, barH: 1.1, barW: 0.15, prior: 0.5, dotPen: 3, parenPen: 3, parenH: 1.0, lmSeg: 0, delayed: true, delayGain: 0.3, lateTol: 0.08, deskew: 3, skewW: 2.5, skewAgree: 0.5, smooth: 0 };
 
 function normStrokes(input) {
   const out = [], src = [];
@@ -182,7 +182,7 @@ class Recognizer {
     const empty = { latex: '', text: '', lines: [], symbols: [], tree: [], confidence: 0 };
     if (!strokes.length) return Object.assign(empty, { skew: 0, ms: 0 });
     const ref = refSize(strokes);
-    const mask = allowedMask(opts.symbols);
+    const mask = allowedMask(opts.symbols, opts.times);
     const { fixOf, fixes } = fixesOf(opts.fix, src, strokes.length);
     this.prior = priorVector(opts);
     this.misses = null;
@@ -243,7 +243,7 @@ class Recognizer {
       }
     }
     if (opts.oracle) return;
-    const mask = allowedMask(opts.symbols), { fixOf, fixes } = fixesOf(opts.fix, src, n);
+    const mask = allowedMask(opts.symbols, opts.times), { fixOf, fixes } = fixesOf(opts.fix, src, n);
     this.prior = priorVector(opts);
     for (let pass = 0; pass < 12; pass++) {
       const miss = this.misses = [];
@@ -360,19 +360,23 @@ class Recognizer {
           inner + (j + 1 < n ? opts.wJoin * Math.log(1 - pj[j]) : 0);
         if (!forced && j > i) {
           const tl = list[0][0];
-          // a decimal point does not hide inside a digit or letter (4.7 is not 47); a stray tap at the end of a
-          // bar or other sign is part of that sign
+          // a decimal point or a times dot does not hide inside a digit or letter (4.7 is not 47, 121·21 is not
+          // 12121, 2·x is not 2x); a stray tap at the end of a bar or other sign is part of that sign
           if (!DOTTED.has(tl) && /^[0-9A-Za-z]$/.test(tl)) {
             const gs = Math.max(u[2] - u[0], u[3] - u[1]);
-            // a decimal point sits on the baseline: a tiny mark in the bottom of the group, off to one side
+            // a tiny mark off to one side of the group: on the baseline, or in the middle of the line and clear of the
+            // rest (a tap where two strokes of a 4 meet is part of the 4)
             for (let k = i; k <= j; k++) {
-              const b = boxes[k], d = Math.max(b[2] - b[0], b[3] - b[1]);
-              if (d < 0.12 * ref && d < 0.2 * gs && (b[1] + b[3]) / 2 > u[1] + 0.7 * (u[3] - u[1]) &&
-                ((b[0] + b[2]) / 2 > u[0] + 0.75 * (u[2] - u[0]) || (b[0] + b[2]) / 2 < u[0] + 0.25 * (u[2] - u[0]))) { base -= opts.dotPen; break; }
+              const b = boxes[k], d = Math.max(b[2] - b[0], b[3] - b[1]), at = ((b[1] + b[3]) / 2 - u[1]) / Math.max(u[3] - u[1], 1e-9);
+              if (!(d < 0.12 * ref && d < 0.2 * gs && at > 0.25 &&
+                ((b[0] + b[2]) / 2 > u[0] + 0.75 * (u[2] - u[0]) || (b[0] + b[2]) / 2 < u[0] + 0.25 * (u[2] - u[0])))) continue;
+              let apart = Infinity;
+              for (let m = i; m <= j; m++) if (m !== k) apart = Math.min(apart, boxGap(b, boxes[m]));
+              if (at > 0.7 || apart > 0.05 * ref) { base -= opts.dotPen; break; }
             }
           }
           // two tall arcs back to back are brackets, not an x: (-3)(7)
-          if (j === i + 1 && (tl === 'x' || tl === 'X' || tl === '\\times') && (u[3] - u[1]) > 1.3 * localHeight(boxes, i, j, ref)) {
+          if (j === i + 1 && (tl === 'x' || tl === 'X' || tl === '\\times') && (u[3] - u[1]) > opts.parenH * localHeight(boxes, i, j, ref)) {
             const pa = this.probs([strokes[i]], cref, ids[i], opts.memory), pb = this.probs([strokes[j]], cref, ids[j], opts.memory);
             // ...and only when a bracket was opened before them (some writers draw every x as ")(")
             let opened = false;
@@ -873,6 +877,45 @@ function layout(syms, ref, opts) {
 }
 
 // ------------------------------------------------------------------ post-layout fix-ups
+// A ")" with no "(" before it takes one from the most bracket-like 1 before it, and a "(" never closed takes a ")"
+// from the most bracket-like 1 after it (the classifier's own second guess, when it is a real one).
+function balanceBrackets(row) {
+  const lab = u => (u.k === 's' ? u.sym.label : null);
+  const pOf = (u, l) => { const c = (u.sym.cands || []).find(x => x[0] === l); return c ? c[1] : 0; };
+  const loose = u => u.k === 's' && !u.sym.fixed && (u.sym.label === '1' || u.sym.label === 'l' || u.sym.label === 'I');
+  const turn = (u, l) => { u.sym.label = l; u.type = symType(l); };
+  let depth = 0;
+  for (let i = 0; i < row.length; i++) {
+    const l = lab(row[i]);
+    if (l === '(') depth++;
+    else if (l === ')') {
+      if (depth > 0) { depth--; continue; }
+      let best = -1, bp = 0.08;
+      for (let k = i - 1; k >= 0; k--) if (loose(row[k]) && pOf(row[k], '(') > bp) { bp = pOf(row[k], '('); best = k; }
+      if (best >= 0) turn(row[best], '(');
+    }
+  }
+  depth = 0;
+  for (let i = row.length - 1; i >= 0; i--) {
+    const l = lab(row[i]);
+    if (l === ')') depth++;
+    else if (l === '(') {
+      if (depth > 0) { depth--; continue; }
+      let best = -1, bp = 0.08;
+      for (let k = i + 1; k < row.length; k++) if (loose(row[k]) && pOf(row[k], ')') > bp) { bp = pOf(row[k], ')'); best = k; }
+      if (best >= 0) turn(row[best], ')');
+    }
+  }
+  for (const u of row) for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) balanceBrackets(u[k]);
+}
+// how high a dot sits against the digits and letters beside it: 0 on their baseline, 0.5 halfway up (null: none beside it)
+function dotLift(row, i, ref) {
+  const u = row[i], nb = [row[i - 1], row[i + 1]].filter(v => v && v.k === 's' && (v.type === T_ASC || v.type === T_XH));
+  if (!nb.length) return null;
+  let lift = 0;
+  for (const v of nb) { const vb = v.box; lift += (vb[3] - (u.box[1] + u.box[3]) / 2) / Math.max(vb[3] - vb[1], 0.3 * ref); }
+  return lift / nb.length;
+}
 function fixRow(row, ref, opts) {
   for (let i = 0; i < row.length; i++) {
     const u = row[i];
@@ -883,15 +926,10 @@ function fixRow(row, ref, opts) {
       const numR = (b.k === 's' && /^[0-9]$/.test(b.sym.label)) || b.k === 'f';
       if (numL && numR && (u.sym.cands || []).some(([l, q]) => l === '\\times' && q >= 0.02)) { u.sym.label = '\\times'; u.type = symType('\\times'); }
     }
-    if (u.k === 's' && (u.sym.label === '.' || u.sym.label === '\\cdot')) {
-      // decimal point sits on the baseline; a centred dot is multiplication
-      const nb = [row[i - 1], row[i + 1]].filter(v => v && v.k === 's' && (v.type === T_ASC || v.type === T_XH));
-      if (nb.length) {
-        let lift = 0;
-        for (const v of nb) { const vb = v.box; lift += (vb[3] - (u.box[1] + u.box[3]) / 2) / Math.max(vb[3] - vb[1], 0.3 * ref); }
-        lift /= nb.length;
-        u.sym.label = lift > 0.3 ? '\\cdot' : '.';
-      }
+    if (u.k === 's' && (u.sym.label === '.' || u.sym.label === '\\cdot') && !(u.sym.fixed && u.sym.label === '\\cdot')) {
+      // decimal point sits on the baseline; a centred dot is multiplication (one the writer fixed as a times dot stays)
+      const lift = dotLift(row, i, ref);
+      if (lift !== null) u.sym.label = lift > 0.3 ? '\\cdot' : '.';
     }
     if (opts.degrees && u.sup && u.sup.length === 1 && u.sup[0].k === 's' && CIRCLES.has(u.sup[0].sym.label) && !u.sup[0].sup && !u.sup[0].sub) {
       const c = u.sup[0], cb = c.box, ub = u.box, h = cb[3] - cb[1], w = cb[2] - cb[0];
@@ -936,10 +974,15 @@ function sizeFit(row, u, label, g) {
   return -g * d * d / (2 * 0.18 * 0.18);
 }
 
-function rescore(row, start, w, g) {
+function rescore(row, start, w, g, ref) {
   if (!row.length) return;
-  const opts = row.map(u => (u.k === 's' && u.sym.cands && u.sym.cands.length > 1 && !u.sym.fixed)
-    ? u.sym.cands.slice(0, 5).map(([l, p]) => [l, Math.log(Math.max(p, 1e-6)) + sizeFit(row, u, l, g)]) : [[tokOf(u), 0]]);
+  const opts = row.map((u, i) => {
+    if (!(u.k === 's' && u.sym.cands && u.sym.cands.length > 1 && !u.sym.fixed)) return [[tokOf(u), 0]];
+    // a dot in the middle of the line is a times dot, and the context model hears it as one (x · x, not x . x,
+    // which it would rather read as x - x)
+    const lift = ref && u.sym.cands.slice(0, 5).some(([l]) => l === '.') ? dotLift(row, i, ref) : null;
+    return u.sym.cands.slice(0, 5).map(([l, p]) => [l === '.' && lift !== null && lift > 0.3 ? '\\cdot' : l, Math.log(Math.max(p, 1e-6)) + sizeFit(row, u, l, g)]);
+  });
   // Viterbi
   let prev = opts[0].map(([l, s]) => ({ l, s: s + w * lmLogp(start, l), b: -1 }));
   const hist = [prev];
@@ -960,12 +1003,12 @@ function rescore(row, start, w, g) {
     bi = node.b;
   }
   for (const u of row) {
-    if (u.sup) rescore(u.sup, '<sup>', w, g);
-    if (u.sub) rescore(u.sub, '<sub>', w, g);
-    if (u.num) rescore(u.num, '<num>', w, g);
-    if (u.den) rescore(u.den, '<den>', w, g);
-    if (u.body) rescore(u.body, '<body>', w, g);
-    if (u.idx) rescore(u.idx, '<idx>', w, g);
+    if (u.sup) rescore(u.sup, '<sup>', w, g, ref);
+    if (u.sub) rescore(u.sub, '<sub>', w, g, ref);
+    if (u.num) rescore(u.num, '<num>', w, g, ref);
+    if (u.den) rescore(u.den, '<den>', w, g, ref);
+    if (u.body) rescore(u.body, '<body>', w, g, ref);
+    if (u.idx) rescore(u.idx, '<idx>', w, g, ref);
   }
 }
 
@@ -1037,10 +1080,14 @@ function finish(syms, ref, opts) {
   if (barsChanged) lines = layout(syms, ref, opts);
   if (opts.lm > 0 && DATA.lm) {
     const before = syms.map(s => s.label).join('\u0001');
-    for (const row of lines) rescore(row, '<s>', opts.lm, opts.size);
+    for (const row of lines) rescore(row, '<s>', opts.lm, opts.size, ref);
     // the context model changed a symbol (x -> \times, 2 -> z): lay out again with the new labels
     if (syms.map(s => s.label).join('\u0001') !== before) lines = layout(syms, ref, opts);
   }
+  // brackets that do not pair up: a "(" or ")" was read as a 1 (12(3) is not 1213))
+  const unbalanced = syms.map(s => s.label).join('\u0001');
+  for (const row of lines) balanceBrackets(row);
+  if (syms.map(s => s.label).join('\u0001') !== unbalanced) lines = layout(syms, ref, opts);
   for (const row of lines) fixRow(row, ref, opts);
   const lineOut = lines.map(row => { const tokens = rowTokens(row); return { latex: joinTex(tokens), text: plain(row), tokens }; });
   let conf = 1;

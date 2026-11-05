@@ -316,11 +316,12 @@ function planOf(res, input, P, opts) {
 }
 // Answers (reading-tree nodes for each line that ends with "=") go just after that "=", on the line's baseline at the
 // writer's size: after the "=" as the view shows it, or after the "=" as written (answersOnly, for ink as written).
+const ANSWER_AFTER = new Set(['=', '<', '>', '\\le', '\\ge']);   // x = 4, and x < 4 under an inequality
 function placeAnswers(out, lines, em, ctx, P, opts) {
   const sample = opts.sample || (l => DEFAULT_GLYPHS[l] || null);
   for (const line of out.lines) {
     const nodes = opts.answers[line.li], row = lines[line.li], eq = row[row.length - 1];
-    if (!nodes || !nodes.length || !eq || eq.k !== 's' || eq.label !== '=' || eq.sup || eq.sub) continue;
+    if (!nodes || !nodes.length || !eq || eq.k !== 's' || !ANSWER_AFTER.has(eq.label) || eq.sup || eq.sub) continue;
     const units = answerUnitsOf(nodes, sample, P.ink);
     if (!units) continue;
     const box = rowBox(units, 1, P, ctx), gap = spaceBetween('rel', 'ord') + (P.ink ? (ctx.gaps || { oo: 0.13 }).oo : 0);
@@ -538,6 +539,7 @@ const DEFAULT_HAND = {
   '8': '0.48 0.14 0.3 0 0.1 0.1 0.1 0.3 0.3 0.46 0.5 0.6 0.54 0.82 0.32 1 0.08 0.88 0.08 0.66 0.28 0.48 0.46 0.32 0.48 0.14',
   '9': '0.52 0.12 0.36 0 0.14 0.06 0.06 0.24 0.18 0.42 0.4 0.42 0.54 0.26|0.54 0.26 0.54 0.62 0.54 1',
   '.': '0.05 0.98', '-': '0 0.5 0.25 0.5 0.5 0.5', '+': '0 0.5 0.25 0.5 0.5 0.5;0.25 0.25 0.25 0.5 0.25 0.75',
+  '\\pm': '0 0.4 0.25 0.4 0.5 0.4;0.25 0.15 0.25 0.4 0.25 0.65;0 0.84 0.25 0.84 0.5 0.84',
 };
 // Catmull-Rom through the points, 7 samples per span
 function crPath(pts) {
@@ -778,7 +780,7 @@ function inPlace(strokes, style, options) {
   else if (style === 'hand') P = handProvider(g && Object.keys(g).length ? g : null);
   else P = tidyProvider();
   let answers = null;
-  if (o.solve && !o.answers && res && res.tree) answers = solveRows(res.tree);
+  if (o.solve && !o.answers && res && res.tree) answers = solveRows(res.tree, o);
   if (answers) o.answers = answers.map(a => a && a.nodes);
   if (o.answers && !o.sample) o.sample = sampleBook(res, strokes, g);
   if (style === 'ink') o.answersOnly = true;

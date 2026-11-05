@@ -257,6 +257,47 @@ function makeHandFile() {
     ok(JSON.stringify((await pad()).answers.map(a => a.latex)) === '["42"]', 'and back on, the board answers again');
   }
 
+  console.log('equations, and x as a letter');
+  {
+    const { compose } = require('./compose.js');
+    const NibNode = require(path.join(__dirname, '..', 'dist', 'nib.js'));
+    const X = { times: false };
+    const flat = t => t.replace(/\\begin\{gathered\}|\\end\{gathered\}|\s/g, '');
+    const find = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if (flat(new NibNode.Recognizer().recognize(e.strokes, X).latex) === flat(tex)) return e; } return null; };
+    const answers = () => page.evaluate(() => document.getElementById('pad').answers.map(a => a.latex));
+    const sameRead = () => page.waitForFunction(() => { const p = document.getElementById('pad').pad; return p.result && !p.anim && p.resultStrokes.length === p.strokes.length && p.resultStrokes.every((s, i) => s === p.strokes[i]); }, { timeout: 30000 }).catch(() => {});
+    const gold = () => page.evaluate(() => {
+      const c = document.querySelector('#pad canvas'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 120 && d[i] > 120 && d[i + 1] > 85 && d[i + 2] < 95 && d[i] - d[i + 2] > 70) n++; return n;
+    });
+    ok(await page.$eval('#pad', e => e.getAttribute('times')) === 'false' && await page.evaluate(() => document.getElementById('pad').pad.o.times === false), 'the board reads every cross as the letter x (times="false")');
+    await page.keyboard.press('1'); await wait(400);                     // ink: the answer is the only gold
+    for (const [tex, want, what] of [['2x+3=11 \\\\ x=', '4', 'x = under 2x + 3 = 11 is answered 4'], ['x^{2}=49 \\\\ x=', '\\pm 7', 'x = under x² = 49 is answered ±7'],
+      ['2x+3<11 \\\\ x<', '4', 'x < under 2x + 3 < 11 is answered 4'], ['2x(x+5)=', '2x^{2}+10x', 'a cross is the letter x: 2x(x + 5) = 2x² + 10x'], ['121\\cdot 21=', '2541', 'a raised dot multiplies: 121 · 21 = 2541']]) {
+      const e = find(tex);
+      if (!e) { console.log('    (no writer read ' + tex + ' right in 40 tries; skipped)'); continue; }
+      await page.click('#clear'); await wait(300);
+      await write(e, [0.2, 0.2, 0.45, 0.4]);
+      await wait(600); await sameRead();
+      const got = await answers(), g = await gold();
+      ok(got.includes(want) && g > 40, `${what} (${JSON.stringify(got)}, ${g} gold pixels)`);
+    }
+    // Fix on a times dot offers both the times dot and the decimal point
+    const dot = await page.evaluate(() => {
+      const P = document.getElementById('pad').pad, s = P.result && P.result.symbols.find(q => q.label === '\\cdot');
+      return s ? [s.box.x + s.box.w / 2, s.box.y + s.box.h / 2] : null;
+    });
+    if (dot) {
+      await page.click('#fix'); await wait(200);
+      const cb = await (await page.$('#pad canvas')).boundingBox();
+      await page.mouse.click(cb.x + dot[0], cb.y + dot[1]); await wait(300);
+      const offered = await page.$$eval('#fixpop .cand', b => b.map(x => x.dataset.label));
+      ok(offered[0] === '\\cdot' && offered.includes('.'), `Fix on a times dot offers it and the decimal point (${offered.join(' ')})`);
+      await page.keyboard.press('Escape'); await wait(200);
+    } else console.log('    (no times dot on the board to fix; skipped)');
+    await page.keyboard.press('2'); await wait(400);
+  }
+
   console.log('a crowded board on a slow computer');
   const many = rows.filter((r, i) => i % 37 === 5).slice(0, 12);
   await page.click('#clear'); await wait(400);
