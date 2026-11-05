@@ -122,8 +122,8 @@ Turn on **Solve** (on the Board it starts on) and any line that ends with "=" ge
 - π and roots that don't come out are cut to three places and marked with "…" (π = 3.141…, √2 = 1.414…): the digits shown are always how the number really starts, never rounded up, and an approximation is never passed off as exact.
 - Letters stay letters: like terms are combined, brackets multiplied out, a term divided by a term (6x ÷ 3x = 2), in standard form (a² − 2ab + b²): 3(x + 2) − x = 2x + 6. Something already as simple as it gets gets no answer. A line like x = 5 gives x for the lines below it in the same piece of work.
 - A chain works when its parts agree: 2(3 + 4) = 2 · 7 = gives 14, but 3 + 4 = 9 + 1 = gives nothing.
-- "15% of 80 =" means what you'd mean, and so does "3 x 4 =" (an x between two numbers) — unless x is always a letter (below).
-- Nothing appears when there is nothing sound to say: dividing by zero or by letters, an unfinished line, something written two ways at once (80 + 15%: 15% of what?), a number straight after a letter or bracket (x4, (2)3), units and words (1m + 50cm, GCF(12, 18)), money, sin and log.
+- "15% of 80 =" means what you'd mean, so does 2/3x (two thirds of x), and so does "3 x 4 =" (an x between two numbers) — unless x is always a letter (below).
+- Nothing appears when there is nothing sound to say: dividing by zero or by letters, an unfinished line, something written two ways at once (80 + 15%: 15% of what?), a number straight after a letter or bracket (x4, (2)3), function notation (f(2)), units and words (1m + 50cm, GCF(12, 18)), money, sin and log.
 
 ### Solving equations
 
@@ -132,9 +132,11 @@ Write an equation, then **x =** on the line below it, and x's value appears:
 - one-step, two-step and multi-step equations, with x on both sides and with fractions or decimals: 3(x − 2) = 2x + 5 gives x = 11; 2/3 x = 4 gives x = 6; 4x = 6 gives x = 3/2 (decimals in the equation give a decimal answer);
 - x² = p and x³ = q: x² = 49 gives x = ±7, x³ = −8 gives x = −2;
 - inequalities: under 2x + 3 < 11 write **x <**, and 4 appears. Deciding which way the sign points is the lesson, so the number only appears when the sign you wrote is the right one (under −3x ≥ 12, x ≤ gives −4 and x ≥ gives nothing);
-- two or three equations together: under x + y = 10 and x − y = 2, x = gives 6 and y = gives 4.
+- fractions with x underneath, like proportions: 3/x = 6/10 gives x = 5 (a value that would divide by zero is never given);
+- two or three equations together: under x + y = 10 and x − y = 2, x = gives 6 and y = gives 4;
+- formulas, with values given below them: A = lw, l = 5, w = 3, then A = gives 15.
 
-It solves the nearest equation above with that letter in it (the working under an equation solves to the same answer). Equations it can't settle — no solution, every number, or x² + 5x + 6 = 0 — get nothing. A value found this way (2x + 3 = 11, then x = 4) is used below only where there is nothing else to do: x + 1 = gives 5, but 3x + 2x = still gives 5x.
+It solves the nearest equation above with that letter in it, and checks the working: every line of working right above it must give the same answer, so a slip in a step (2x + 3 = 11, then 2x = 14) gets no answer instead of the answer to the slip. A line with x in it that Nib can't work out (|x| = 5, √x = 4, 2ˣ = 8, or a misread line) also means no answer below it, never an answer to an older equation. Equations it can't settle — no solution, every number, or x² + 5x + 6 = 0 — get nothing. A value found by solving (2x + 3 = 11, then x = 4) is used below only where there is nothing else to do: x + 1 = gives 5, but 3x + 2x = still gives 5x.
 
 ### x as a letter
 

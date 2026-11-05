@@ -288,12 +288,12 @@ for (const [t, w] of [
   ['x^{3}=10 \\\\ x=', '2.154\\ldots'], ['x^{2}=-4 \\\\ x=', null], ['x+1=x+2 \\\\ x=', null], ['2x=2x \\\\ x=', null], ['x^{2}+5x+6=0 \\\\ x=', null],
   ['\\pi x=10 \\\\ x=', '3.183\\ldots'], ['a+3=10 \\\\ a=', '7'], ['3n=12 \\\\ n=', '4'],
   // the nearest equation with the letter in it, and the working under it
-  ['2x+3=11 \\\\ 2x=8 \\\\ x=', '4'], ['2x+3=11 \\\\ 5x-1=9 \\\\ x=', '2'], ['3x=12 \\\\ x=4 \\\\ y+2=7 \\\\ y=', '5'],
+  ['2x+3=11 \\\\ 2x=8 \\\\ x=', '4'], ['2x+3=11 \\\\ 5x-1=9 \\\\ x=', null], ['3x=12 \\\\ x=4 \\\\ y+2=7 \\\\ y=', '5'],
   ['2x+3=11 \\\\ x', null], ['x=', null], ['2x+3 \\\\ x=', null],
   // two or three letters: the equations that pin them down
   ['x+y=10 \\\\ x-y=2 \\\\ x=', '6'], ['x+y=10 \\\\ x-y=2 \\\\ y=', '4'], ['y=2x+1 \\\\ x=3 \\\\ y=', '7'], ['2x+y=7 \\\\ y=3 \\\\ x=', '2'],
   ['x+y=10 \\\\ x-y=2 \\\\ x=6 \\\\ y=', '4'], ['a+b+c=6 \\\\ a-b=1 \\\\ c=2 \\\\ a=', '\\frac{5}{2}'], ['x+y=10 \\\\ y=', null], ['x+y=1 \\\\ 2x+2y=2 \\\\ x=', null],
-  ['y=2x+1 \\\\ y=', null], ['xy=6 \\\\ x=2 \\\\ y=', null],
+  ['y=2x+1 \\\\ y=', null], ['xy=6 \\\\ x=2 \\\\ y=', '3'],
   // inequalities: the number only when the sign written is the right one
   ['2x+3<11 \\\\ x<', '4'], ['2x+3<11 \\\\ x>', null], ['2x+3<11 \\\\ x=', null], ['-3x\\ge 12 \\\\ x\\le', '-4'], ['-3x\\ge 12 \\\\ x\\ge', null],
   ['11>2x+3 \\\\ x<', '4'], ['\\frac{x}{-2}>3 \\\\ x<', '-6'], ['x-5\\le 2 \\\\ x\\le', '7'], ['4x>2 \\\\ x>', '\\frac{1}{2}'], ['x+y<3 \\\\ x<', null],
@@ -371,6 +371,35 @@ for (const [t, w] of [
   ['2x+3=11 \\\\ x=', '4'], ['3(x+2)=x+10 \\\\ x=', '2'],
 ]) sol(t, w, X);
 ok(Nib.solve('3 x 4=')[0] && Nib.solve('3 x 4=')[0].latex === '12', 'by default a cross between numbers is still a times sign');
+
+
+section('17. what the second review found: a slip in the working, lines that cannot be read, formulas, fractions with x underneath');
+for (const [t, w] of [
+  // a line with x in it that cannot be worked out stands in the way; so does working that does not agree with itself
+  ['5x=20 \\\\ \\frac{12}{x}=4 \\\\ x=', null], ['5x=20 \\\\ |x|=5 \\\\ x=', null], ['5x=20 \\\\ \\sqrt{x}=4 \\\\ x=', null], ['5x=20 \\\\ 2^{x}=8 \\\\ x=', null],
+  ['5x=20 \\\\ 3x=4+5=9 \\\\ x=', null], ['5x=20 \\\\ -3<2x+1<7 \\\\ x<', null], ['2x+3=11 \\\\ 2x=14 \\\\ x=', null], ['-3x\\ge 12 \\\\ 3x\\ge -12 \\\\ x\\ge', null],
+  ['-3x\\ge 12 \\\\ 3x\\ge -12 \\\\ x\\le', null], ['-2x+5<11 \\\\ 2x<-6 \\\\ x<', null], ['-3x\\ge 12 \\\\ x\\le -4 \\\\ x\\le', '-4'], ['2x+3=11 \\\\ x=4 \\\\ x=', '4'],
+  ['2x+3=11 \\\\ x=5 \\\\ x=', null], ['2x+3<11 \\\\ x=4 \\\\ x<', '4'], ['x=4 \\\\ 2x+3=11 \\\\ x=', '4'], ['2x+3=11 \\\\ x=4 \\\\ \\frac{12}{x}=4 \\\\ x=', '3'],
+  // fractions with x underneath: proportions; a value that would divide by zero is no answer
+  ['\\frac{12}{x}=4 \\\\ x=', '3'], ['\\frac{3}{x}=\\frac{6}{10} \\\\ x=', '5'], ['\\frac{x}{4}=\\frac{5}{2} \\\\ x=', '10'], ['\\frac{x+1}{x-1}=3 \\\\ x=', '2'],
+  ['12\\div 3x=2 \\\\ x=', '2'], ['\\frac{2}{x}=0 \\\\ x=', null], ['\\frac{6x}{3x}+x=2 \\\\ x=', null], ['\\frac{x^{2}}{x}=0 \\\\ x=', null], ['x\\div x+x=1 \\\\ x=', null],
+  ['\\frac{1}{x}<2 \\\\ x>', null], ['\\frac{x}{2}<3 \\\\ x<', '6'],
+  // formulas with values given below them
+  ['d=rt \\\\ r=60 \\\\ t=2 \\\\ rt=', '120'], ['P=2l+2w \\\\ l=5 \\\\ w=3 \\\\ 2l+2w=', '16'], ['I=prt \\\\ p=100 \\\\ r=0.05 \\\\ t=2 \\\\ prt=', '10'],
+  ['A=\\frac{1}{2}bh \\\\ b=6 \\\\ h=4 \\\\ \\frac{1}{2}bh=', '12'], ['A=lw \\\\ l=5 \\\\ w=3 \\\\ A=', '15'], ['d=rt \\\\ r=60 \\\\ t=2 \\\\ d=', '120'],
+  ['x+y=10 \\\\ x-y=2 \\\\ x=5 \\\\ y=', null], ['x+y=10 \\\\ x-y=2 \\\\ x=6 \\\\ y=', '4'], ['x+y=10 \\\\ 5x=1 \\\\ y=', '\\frac{49}{5}'],
+  // a contradiction is not a new value; percents of what
+  ['x=3 \\\\ x=x+1 \\\\ x+2=', null], ['x=3 \\\\ x=2x \\\\ x+1=', null], ['x+15\\%=80 \\\\ x=', null], ['x=80+15\\% \\\\ x=', null], ['x-20\\%=40 \\\\ x=', null],
+  ['20\\%x=40 \\\\ x=', '200'], ['x+15\\%x=92 \\\\ x=', '80'],
+  // 2/3x is two thirds of x; f(2) is function notation
+  ['2/3x=4 \\\\ x=', '6'], ['x=4 \\\\ 2/3x=', '\\frac{8}{3}'], ['1/2x+1/2x=', 'x'], ['-2/3x=4 \\\\ x=', '-6'], ['2/3^{2}=', '\\frac{2}{9}'], ['f(2)=', null],
+  ['f(x)=2x+3 \\\\ f(2)=', null], ['3(2)=', '6'], ['x(x+1)=', 'x^{2}+x'], ['\\pi(2)=', '6.283\\ldots'],
+  // chains, approximations, forms
+  ['1\\div 0=2+3=', null], ['\\sqrt{-4}=2+3=', null], ['3+=2+3=', null], ['3+4=x+2x=', null], ['\\pi=3.141592654=', null], ['A=lw=3\\cdot 4=', '12'],
+  ['\\pi\\times 10^{11}=', '314159265358.979\\ldots'], ['\\sqrt{2}\\times 10^{12}=', '1414213562373.09\\ldots'], ['\\frac{\\pi\\cdot 7^{2}}{\\pi\\cdot 50^{2}}=', '\\frac{49}{2500}'],
+  ['\\pi\\cdot 7^{2}\\div(\\pi\\cdot 50^{2})=', '0.0196'], ['\\sqrt{3}\\times\\frac{\\sqrt{3}}{2500}=', '\\frac{3}{2500}'], ['\\pi-3.141592653589793=', null],
+  ['\\sqrt{2}-1.4142135623730951=', null], ['2\\pi-\\pi-\\pi=', '0'], ['x=10\\div 4 \\\\ x=', '2.5'], ['(15\\%+5\\%)=', '20\\%'],
+]) sol(t, w, X);
 
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

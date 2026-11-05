@@ -1759,25 +1759,30 @@ function qnum(q) {
   if (sh > 0) { n >>= BigInt(sh); d >>= BigInt(sh); if (d === 0n) return n < 0n ? -Infinity : Infinity; }
   return Number(n) / Number(d);
 }
-// An approximate result within rounding error of a whole number, or of a fraction with a denominator up to 1000, is
-// that number exactly: √2·√2 = 2, π ÷ π = 1, √3·√3 ÷ 2 = 1.5. (π itself and roots that do not come out never are.)
+// An approximate result within rounding error (1e-13 of itself) of a whole number, a fraction with a denominator up to
+// 1000, or a decimal of up to six significant digits is that number exactly: √2·√2 = 2, π ÷ π = 1, √3·√3 ÷ 2 = 1.5,
+// π·7² ÷ (π·50²) = 0.0196. Never at a billion or more, where a double cannot tell what comes after the point, and
+// never to zero. (π itself and roots that do not come out are made raw and never snap.)
 function snapQ(v) {
-  const a = Math.abs(v), s = v < 0 ? -1 : 1;
-  if (a < 9e15) {
-    const r = Math.round(a);
-    if (Math.abs(a - r) <= 1e-13 * a) return Q(BigInt(s * r));     // (never a small number to zero: π × 10⁻²⁰)
+  const a = Math.abs(v), s = v < 0 ? -1n : 1n;
+  if (a === 0) return QZERO;
+  if (!(a < 1e9)) return null;
+  const r = Math.round(a);
+  if (r && Math.abs(a - r) <= 1e-13 * a) return Q(s * BigInt(r));
+  let h0 = 1, h1 = 0, k0 = 0, k1 = 1, x = a;                       // continued-fraction convergents h/k
+  for (let it = 0; it < 40; it++) {
+    const ai = Math.floor(x), h2 = ai * h0 + h1, k2 = ai * k0 + k1;
+    if (k2 > 1000) break;
+    h1 = h0; h0 = h2; k1 = k0; k0 = k2;
+    if (h0 && Math.abs(a - h0 / k0) <= 1e-13 * a) return Q(s * BigInt(h0), BigInt(k0));
+    const fr = x - ai;
+    if (!(fr > 0)) break;
+    x = 1 / fr;
   }
-  if (a < 1e9) {
-    let h0 = 1, h1 = 0, k0 = 0, k1 = 1, x = a;                   // continued-fraction convergents h/k
-    for (let it = 0; it < 40; it++) {
-      const ai = Math.floor(x), h2 = ai * h0 + h1, k2 = ai * k0 + k1;
-      if (k2 > 1000) break;
-      h1 = h0; h0 = h2; k1 = k0; k0 = k2;
-      if (h0 && Math.abs(a - h0 / k0) <= 1e-13 * a) return Q(BigInt(s * h0), BigInt(k0));
-      const fr = x - ai;
-      if (!(fr > 0)) break;
-      x = 1 / fr;
-    }
+  if (a >= 1e-12) {
+    const e = Math.floor(Math.log10(a)), p = 5 - e;
+    const m = p >= 0 ? a * Math.pow(10, p) : a / Math.pow(10, -p), mr = Math.round(m);
+    if (mr && Math.abs(m - mr) <= 1e-13 * m) return p >= 0 ? Q(s * BigInt(mr), 10n ** BigInt(p)) : Q(s * BigInt(mr) * 10n ** BigInt(-p));
   }
   return null;
 }
@@ -1791,8 +1796,9 @@ const cneg = c => (isFl(c) ? { f: -c.f } : { n: -c.n, d: c.d });
 function cadd(a, b) {
   if (!isFl(a) && !isFl(b)) return Q(a.n * b.d + b.n * a.d, a.d * b.d);
   const x = cval(a), y = cval(b), s = x + y;
-  // two nearly equal approximations cancelling leave only rounding error: zero or not cannot be told (π − 3.14159265358979)
-  if (s !== 0 && Math.abs(s) <= 1e-10 * Math.max(Math.abs(x), Math.abs(y))) sfail('lost to rounding');
+  // two nearly equal numbers cancelling leave only rounding error: zero or not cannot be told (π − 3.14159265358979,
+  // and π − 3.141592653589793, which comes out as exactly 0); two approximations that cancel exactly (π − π) are 0
+  if (Math.abs(s) <= 1e-10 * Math.max(Math.abs(x), Math.abs(y)) && (s !== 0 || isFl(a) !== isFl(b))) sfail('lost to rounding');
   return Fl(s);
 }
 const csub = (a, b) => cadd(a, cneg(b));
@@ -1802,7 +1808,7 @@ const cabs = c => (isFl(c) ? { f: Math.abs(c.f) } : { n: c.n < 0n ? -c.n : c.n, 
 function csame(a, b) {
   if (!isFl(a) && !isFl(b)) return a.n === b.n && a.d === b.d;
   const x = cval(a), y = cval(b);
-  return Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
+  return Math.abs(x - y) <= 1e-12 * Math.max(1, Math.abs(x), Math.abs(y));
 }
 // floor of the k-th root of n >= 0
 function iroot(n, k) {
@@ -2002,6 +2008,19 @@ function solveParse(tokens) {
     }
     return a;
   }
+  const lettered = list => list.some(t => t.t === 'var' || t.t === 'pi' || (t.t === 'frac' && (lettered(t.num) || lettered(t.den))) ||
+    (t.t === 'root' && (lettered(t.body) || (t.idx && lettered(t.idx)))) || (t.t === 'sup' && lettered(t.v)));
+  // the bracket that opens at j holds a letter (up to its matching close)
+  function lettersIn(j) {
+    let depth = 0;
+    for (let m = j; m < tokens.length; m++) {
+      const t = tokens[m];
+      if (t.t === 'open') depth++;
+      else if (t.t === 'close') { if (--depth === 0) return false; }
+      else if (lettered([t])) return true;
+    }
+    return false;
+  }
   function term(inAbs) {
     let a = unary(inAbs);
     for (;;) {
@@ -2009,6 +2028,14 @@ function solveParse(tokens) {
       if (tk && tk.t === 'op' && (tk.v === '*' || tk.v === '/' || tk.v === '÷')) {
         next();
         if (tk.v === '*') { a = { t: 'mul', a, b: unary(inAbs) }; continue; }
+        // a slash between two whole numbers writes a fraction: 2/3x is two thirds of x
+        const nb = peek(), num = a.t === 'num' ? a : a.t === 'neg' && a.a.t === 'num' ? a.a : null;
+        if (tk.v === '/' && num && /^\d+$/.test(num.text) && nb && nb.t === 'num' && /^\d+$/.test(nb.v) && !(tokens[i + 1] && tokens[i + 1].t === 'sup')) {
+          next();
+          const f = { t: 'frac', a: num, b: { t: 'num', text: nb.v } };
+          a = a.t === 'neg' ? { t: 'neg', a: f } : f;
+          continue;
+        }
         // a term with letters after ÷ is divided by as a whole: 6x ÷ 3x = 2, C ÷ 2π
         let b = unary(inAbs);
         while (peek() && (peek().t === 'var' || peek().t === 'pi')) b = { t: 'mul', a: b, b: power(inAbs), implicit: true };
@@ -2016,6 +2043,8 @@ function solveParse(tokens) {
       } else if (starts(tk, inAbs)) {
         // a number straight after anything but an operation (x4, (2)3, 15%80, ½ 0) is not how maths is written
         if (tk.t === 'num' || tk.t === 'frac') sfail('a number straight after');
+        // f(2): a letter just before a bracketed number is function notation, which has no answer here
+        if (tk.t === 'open' && a.t === 'var' && !lettersIn(i)) sfail('function notation');
         a = { t: 'mul', a, b: power(inAbs), implicit: true };
       } else return a;
     }
@@ -2305,6 +2334,7 @@ function putPoly(o, p, info, kind) {
 // how percents were used: 'sum' (15% + 5%: the answer is a percent), 'times100' (3/4 × 100%: a percent too), 'mixed'
 // (80 + 15%: a percent of what? no answer), or null
 function percentForm(ast) {
+  while (ast.t === 'group') ast = ast.a;
   const terms = [];
   const flat = a => { if (a.t === 'add' || a.t === 'sub') { flat(a.a); flat(a.b); } else terms.push(a); };
   flat(ast);
@@ -2322,8 +2352,11 @@ const answerFrom = (o, kind, c) => ({ latex: o.tex, text: o.text, nodes: o.nodes
 // 3x + 2x = gives 5x
 function answerOf(tokens, env) {
   const hard = env && [...env.values()].some(d => d.soft) ? new Map([...env].filter(([, d]) => !d.soft)) : env;
-  const a = answerWith(tokens, hard);
-  return a === null && hard !== env ? answerWith(tokens, env) : a;
+  let a = null, err = null;
+  try { a = answerWith(tokens, hard); } catch (e) { if (!(e instanceof SolveError)) throw e; err = e; }
+  if (a === null && hard !== env) return answerWith(tokens, env);     // 12/x = with x = 4 found above: 3
+  if (err) throw err;
+  return a;
 }
 function answerWith(tokens, env) {
   const ast = solveParse(tokens);
@@ -2347,13 +2380,7 @@ function answerWith(tokens, env) {
     else if (lit === 'pct') putExact(o, c, 'dec', kind);
     else if (lit === 'mixed' || lit === 'frac-reduce') putExact(o, c, 'frac', kind);
     else if (lit === 'frac') putExact(o, c, (c.n < 0n ? -c.n : c.n) > c.d ? 'mixed' : 'dec', kind);
-    else {
-      let style = 'frac';
-      if (info.dec || info.pct) style = 'dec';
-      else if (info.frac) style = info.mixed ? 'mixed' : 'frac';
-      else if (info.div && !info.negpow) style = 'dec';
-      putExact(o, c, style, kind);
-    }
+    else putExact(o, c, styleOf(info), kind);
   } else {
     // two signs in a row (x + -3) are working to do; so is a letter with a value given above
     const signs = tokens.some((t, i) => t.t === 'op' && tokens[i + 1] && tokens[i + 1].t === 'op' && (tokens[i + 1].v === '+' || tokens[i + 1].v === '-'));
@@ -2365,17 +2392,101 @@ function answerWith(tokens, env) {
 
 // ------------------------------------------------------------------ equations
 const SOLVE_FLIP = { '<': '>', '>': '<', '\\le': '\\ge', '\\ge': '\\le' };
-// a solution: the value in the form the equation was written in (decimals give decimals; otherwise fractions, mixed
-// numbers when it had them); pm: "±" in front (x² = 49)
-function valueAnswer(c, info, pm) {
+// the form an answer takes from how the question was asked: decimals or % give decimals; fractions give fractions (mixed
+// numbers when it had them); ÷ of whole numbers gives a decimal; anything else a fraction
+function styleOf(info) {
+  if (info.dec || info.pct) return 'dec';
+  if (info.frac) return info.mixed ? 'mixed' : 'frac';
+  if (info.div && !info.negpow) return 'dec';
+  return 'frac';
+}
+// a solution's form: decimals in the equation give a decimal, mixed numbers a mixed number, anything else a fraction (÷ in
+// an equation is only how it was written; "x = 10 ÷ 4", a value given, keeps the form of its working: 2.5)
+const eqStyleOf = info => (info.dec || info.pct ? 'dec' : info.mixed ? 'mixed' : 'frac');
+// a solution in a style; pm: "±" in front (x² = 49)
+function valueAnswer(c, style, pm) {
   const o = new SolveOut(), kind = { v: '' };
   if (pm) o.sym('\\pm', '\\pm', '±');
   if (isFl(c)) putApprox(o, c.f, kind);
-  else putExact(o, c, info.dec || info.pct ? 'dec' : info.mixed ? 'mixed' : 'frac', kind);
+  else putExact(o, c, style, kind);
   const a = answerFrom(o, kind, c);
   if (pm) a.kind = 'plusminus';
   return a;
 }
+// One side of an equation as a fraction of polynomials {n, d}, so a letter can sit underneath (3/x = 6/10, 12 ÷ 3x = 2)
+function rnorm(r) { const c = pconst(r.d); return c ? { n: pdiv(r.n, r.d), d: pc(QONE) } : r; }
+const rconst = p => ({ n: p, d: pc(QONE) });
+const radd = (a, b) => rnorm({ n: padd(pmul(a.n, b.d), pmul(b.n, a.d)), d: pmul(a.d, b.d) });
+const rmul = (a, b) => rnorm({ n: pmul(a.n, b.n), d: pmul(a.d, b.d) });
+const rdiv = (a, b) => (b.n.size ? rnorm({ n: pmul(a.n, b.d), d: pmul(a.d, b.n) }) : sfail('division by zero'));
+const rneg = a => ({ n: pneg(a.n), d: a.d });
+function ratEval(ast, env, info) {
+  const ev = a => ratEval(a, env, info);
+  switch (ast.t) {
+    case 'frac': info.frac = true; return rdiv(ev(ast.a), ev(ast.b));
+    case 'div': if (ast.sym === '/') info.frac = true; else info.div = true; return rdiv(ev(ast.a), ev(ast.b));
+    case 'add': return radd(ev(ast.a), ev(ast.b));
+    case 'sub': return radd(ev(ast.a), rneg(ev(ast.b)));
+    case 'mul': return rmul(ev(ast.a), ev(ast.b));
+    case 'neg': return rneg(ev(ast.a));
+    case 'pos': case 'group': return ev(ast.a);
+    case 'pow': {
+      const base = ev(ast.a);
+      if (pconst(base.d)) return rconst(solveEval(ast, env, info));
+      const k = pconst(solveEval(ast.b, env, info));                  // (x/2)²: a whole-number power of a fraction
+      if (!k || isFl(k) || k.d !== 1n || k.n < 0n || k.n > 24n) sfail('that power');
+      let out = rconst(pc(QONE));
+      for (let j = 0n; j < k.n; j++) out = rmul(out, base);
+      return out;
+    }
+    default: return rconst(solveEval(ast, env, info));
+  }
+}
+// a line's equation with the values given above put in for every letter but v: P = 0 (or P < 0 ...), the
+// denominators that must not be zero, and how it was written
+function eqOf(rec, env, v) {
+  const sub = env && env.size ? new Map([...env].filter(([k]) => k !== v)) : null;
+  const info = {}, L = ratEval(rec.L, sub, info), R = ratEval(rec.R, sub, info);
+  return { P: padd(pmul(L.n, R.d), pneg(pmul(R.n, L.d))), dens: [L.d, R.d].filter(d => !pconst(d)), info };
+}
+// the value of a polynomial in v at x (null when other letters are left)
+function pAt(p, v, x) {
+  let s = QZERO;
+  for (const [k, c] of p) {
+    let t = c;
+    for (const [u, e] of mparse(k)) { if (u !== v) return null; t = cmul(t, cpow(x, Q(BigInt(e)))); }
+    s = cadd(s, t);
+  }
+  return s;
+}
+// What one line says about v once the given values are in: {rel, vals, pm, info} for v = a, v = ±a, v < a ... — or
+// null when it cannot be settled (other letters left, no solution, every number, a value that divides by zero, x² + 5x)
+function settle(rec, v, env) {
+  const { P, dens, info } = eqOf(rec, env, v);
+  const keys = [...P.keys()];
+  if (!keys.every(k => k === '' || (mparse(k).size === 1 && mparse(k).has(v)))) return null;
+  const c0 = P.get('') || QZERO;
+  const ok = x => dens.every(d => { const y = pAt(d, v, x); return y !== null && !czero(y); });
+  if (P.has(v) && keys.every(k => k === '' || k === v)) {
+    const a = P.get(v), x = cdiv(cneg(c0), a);
+    if (rec.rel !== '=') return dens.length ? null : { rel: csign(a) < 0 ? SOLVE_FLIP[rec.rel] : rec.rel, vals: [x], info };
+    return ok(x) ? { rel: '=', vals: [x], info } : null;
+  }
+  if (rec.rel !== '=') return null;
+  for (const n of [2, 3]) {
+    const kn = v + '^' + n;
+    if (!(P.has(kn) && keys.every(k => k === '' || k === kn))) continue;
+    const q = cdiv(cneg(c0), P.get(kn));
+    if (n === 3) { const x = croot(q, 3); return ok(x) ? { rel: '=', vals: [x], info } : null; }
+    if (csign(q) < 0) return null;                                    // no number squared is negative
+    if (czero(q)) return ok(QZERO) ? { rel: '=', vals: [QZERO], info } : null;
+    const r = croot(q, 2);
+    return ok(r) && ok(cneg(r)) ? { rel: '=', vals: [r, cneg(r)], pm: true, info } : null;
+  }
+  return null;
+}
+const sameSettle = (a, b) => a.rel === b.rel && a.vals.length === b.vals.length && a.vals.every((x, i) => csame(x, b.vals[i]));
+const trySettle = (rec, v, env) => { try { return settle(rec, v, env); } catch (e) { if (e instanceof SolveError) return null; throw e; } };
 // P (everything moved to one side) as a sum of numbers times single letters, or null
 function linearOf(P) {
   const coef = new Map();
@@ -2389,7 +2500,12 @@ function linearOf(P) {
   }
   return { coef, c0 };
 }
-// exact elimination: rank of the chosen equations, and the values when there are as many as unknowns
+function linRec(rec) {
+  if (rec.block || rec.rel !== '=') return null;
+  try { const e = eqOf(rec, null, null); return e.dens.length ? null : linearOf(e.P); } catch (x) { if (x instanceof SolveError) return null; throw x; }
+}
+// exact elimination: the rank, whether the equations contradict each other, and the value of a letter they pin down
+// (null when it still depends on a letter left free)
 function eliminate(lins, U) {
   const A = lins.map(l => U.map(u => l.coef.get(u) || QZERO).concat([cneg(l.c0)]));
   let rank = 0;
@@ -2407,92 +2523,131 @@ function eliminate(lins, U) {
     }
     where[col] = rank++;
   }
-  return { rank, value: u => { const col = U.indexOf(u), r = where[col]; return r === undefined ? null : A[r][U.length]; } };
+  const inconsistent = A.some(r => r.slice(0, U.length).every(czero) && !czero(r[U.length]));
+  return {
+    rank, inconsistent,
+    value: u => {
+      const col = U.indexOf(u), r = where[col];
+      if (r === undefined) return null;
+      for (let c = 0; c < U.length; c++) if (c !== col && !czero(A[r][c])) return null;
+      return A[r][U.length];
+    },
+  };
 }
-// one letter: a·x + b = 0, or a·xⁿ + b = 0 for n = 2, 3
-function solveOne(v, E) {
-  const P = E.P, keys = [...P.keys()];
-  if (keys.every(k => k === '' || k === v) && P.has(v)) return valueAnswer(cdiv(cneg(P.get('') || QZERO), P.get(v)), E.info);
-  for (const n of [2, 3]) {
-    const kn = v + '^' + n;
-    if (!(P.has(kn) && keys.every(k => k === '' || k === kn))) continue;
-    const q = cdiv(cneg(P.get('') || QZERO), P.get(kn));
-    if (n === 3) return valueAnswer(croot(q, 3), E.info);
-    if (csign(q) < 0) return null;                                    // no number squared is negative
-    if (czero(q)) return valueAnswer(QZERO, E.info);
-    return valueAnswer(croot(q, 2), E.info, true);
+// Two or three letters: E with all the equations written together with it (on the lines right next to it, in the same
+// piece of writing) that use at most three letters in all: they must not contradict each other ({bad: true} when they
+// do), and they must pin v down (x + y = 10 and x − y = 2 give both; y = 0 with x + y + z = 6 and x − y + z = 6 gives
+// y alone).
+function systemFor(v, eqs, k) {
+  const E = eqs[k], l0 = linRec(E);
+  if (!l0 || !l0.coef.has(v)) return null;
+  const lins = [l0], info = Object.assign({}, E.info), near = [];
+  let U = new Set(l0.coef.keys());
+  for (let i = k - 1, l = E.line - 1; i >= 0 && eqs[i].src === E.src && eqs[i].line === l; i--, l--) near.push(eqs[i]);
+  for (let i = k + 1, l = E.line + 1; i < eqs.length && eqs[i].src === E.src && eqs[i].line === l; i++, l++) near.push(eqs[i]);
+  for (const C of near) {
+    if (C.block) return null;                                         // a line among them that could not be read
+    const l = linRec(C);
+    if (!l) continue;
+    const W = new Set([...U, ...l.coef.keys()]);
+    if (W.size > 3) continue;
+    lins.push(l); U = W; Object.assign(info, C.info);
   }
-  return null;                                                        // x + 1 = x + 2, x² + 5x + 6 = 0: no answer here
+  const R = eliminate(lins, [...U].sort());
+  if (R.inconsistent) return { bad: true };                         // they contradict each other: no answer at all
+  const x = R.value(v);
+  return x ? { rel: '=', vals: [x], info } : null;
 }
-// "v =" or "v <" ... under equations: the nearest one above with v in it, with the nearest others that pin down its
-// other letters (those just above it first: the problem as set, before any working below it)
-function solveFor(v, ask, eqs) {
+// "v =" or "v <" ... : the nearest line above with v in it that answers that kind of question (a solved "x = 4" check
+// under an inequality is passed over; anything else in the way, or a line with v that could not be read, means no
+// answer). Its working above it, line by line, must say the same about v — a slip in a step gets no answer rather than
+// the answer to the slip.
+function solveFor(v, ask, eqs, env) {
+  const want = ask === '=' ? '=' : 'ineq', kindOf = r => (r.rel === '=' ? '=' : 'ineq');
   let k = eqs.length - 1;
-  while (k >= 0 && !eqs[k].vars.has(v)) k--;
+  for (; k >= 0; k--) {
+    const r = eqs[k];
+    if (!r.vars.has(v)) continue;
+    if (r.block) return null;
+    if (kindOf(r) === want) break;
+    if (!r.solved) return null;
+  }
   if (k < 0) return undefined;
   const E = eqs[k];
-  if (E.rel !== '=') {
-    if (E.vars.size !== 1 || !SOLVE_FLIP[E.rel] || !SOLVE_FLIP[ask]) return null;
-    const P = E.P;
-    if (!P.has(v) || ![...P.keys()].every(x => x === '' || x === v)) return null;
-    const a = P.get(v), rel = csign(a) < 0 ? SOLVE_FLIP[E.rel] : E.rel;
-    // the number only when the sign written is the right one: deciding which way it points is the lesson
-    return ask === rel ? valueAnswer(cdiv(cneg(P.get('') || QZERO), a), E.info) : null;
+  if (want === 'ineq' && !SOLVE_FLIP[ask]) return null;
+  // with the values given above (A = lw, l = 5, w = 3), and as a system on its own (x + y = 10, x − y = 2): where both
+  // speak they must agree (a wrong "x = 5" under x + y = 10 and x − y = 2 does not get y = 5)
+  const s = trySettle(E, v, env);
+  let sys = null;
+  if (want === '=') { try { sys = systemFor(v, eqs, k); } catch (e) { if (!(e instanceof SolveError)) throw e; } }
+  if (sys && sys.bad) return null;
+  if (s && sys && !sameSettle(s, sys)) return null;
+  const S = s || sys;
+  if (!S) return null;
+  if (E.vars.size === 1) {
+    for (let i = k - 1, l = E.line - 1; i >= 0; i--, l--) {
+      const C = eqs[i];
+      if (C.src !== E.src || C.line !== l || C.solved || C.vars.size !== 1 || !C.vars.has(v)) break;
+      if (C.block) return null;
+      const t = trySettle(C, v, env);
+      if (!t || !sameSettle(t, S)) return null;
+    }
   }
-  if (ask !== '=') return null;
-  if (E.vars.size === 1) return solveOne(v, E);
-  let U = [...E.vars].sort();
-  const lin = linearOf(E.P);
-  if (U.length > 3 || !lin) return null;
-  const chosen = [lin], info = Object.assign({}, E.info);
-  const order = [];
-  for (let i = k - 1; i >= 0; i--) order.push(eqs[i]);
-  for (let i = k + 1; i < eqs.length; i++) order.push(eqs[i]);
-  // up to three letters in all; an equation is taken when it says something the others do not
-  for (const C of order) {
-    if (chosen.length === U.length) break;
-    const l = C.rel === '=' && linearOf(C.P);
-    if (!l) continue;
-    const W = [...new Set([...U, ...C.vars])].sort();
-    if (W.length > 3 || eliminate(chosen.concat([l]), W).rank !== chosen.length + 1) continue;
-    chosen.push(l); U = W; Object.assign(info, C.info);
-  }
-  if (chosen.length < U.length) return null;
-  const x = eliminate(chosen, U).value(v);
-  return x ? valueAnswer(x, info) : null;
+  if (want === '=' ? S.rel !== '=' : S.rel !== ask) return null;
+  return valueAnswer(S.vals[0], E.solved ? styleOf(S.info) : eqStyleOf(S.info), S.pm);
 }
 // every part of a chain must agree with the last before it is worked out: 2(3 + 4) = 2 · 7 = has an answer,
-// 3 + 4 = 9 + 1 = does not
+// 3 + 4 = 9 + 1 = does not, nor does 1 ÷ 0 = 2 + 3 = or 3 + 4 = x + 2x =; letters before numbers (A = lw = 3 · 4 =)
+// are what the numbers stand for
 function chainAgrees(toks, rel, env) {
   const parts = [];
   let s = 0;
   for (const i of rel) { parts.push(toks.slice(s, i)); s = i + 1; }
-  const vals = parts.map(p => { try { return p.length ? solveEval(solveParse(p), env, {}) : null; } catch (e) { if (e instanceof SolveError) return null; throw e; } });
+  const vals = parts.map(p => { try { return p.length ? solveEval(solveParse(p), env, {}) : null; } catch (e) { if (e instanceof SolveError) return undefined; throw e; } });
   const last = vals[vals.length - 1];
   if (!last) return true;
   const cl = pconst(last);
   for (const p of vals.slice(0, -1)) {
-    if (!p) continue;
+    if (p === null) continue;
+    if (p === undefined) return false;
     const c = pconst(p);
-    if (c && cl ? !csame(c, cl) : !c && !cl && !psame(p, last)) return false;
+    if (c && cl ? !csame(c, cl) : c ? true : !cl && !psame(p, last)) return false;
   }
   return true;
 }
+// the letters of a reading row (for a line that could not be worked out)
+function rowLetters(row, out) {
+  for (const u of row || []) {
+    if (u.k === 's' && SOLVE_VARS.test(u.label)) out.add(u.label);
+    for (const k of ['num', 'den', 'body', 'idx', 'sup', 'sub']) if (u[k]) rowLetters(u[k], out);
+  }
+  return out;
+}
+const tokLetters = (toks, out) => {
+  for (const t of toks) {
+    if (t.t === 'var') out.add(t.v);
+    else if (t.t === 'frac') { tokLetters(t.num, out); tokLetters(t.den, out); }
+    else if (t.t === 'root') { tokLetters(t.body, out); if (t.idx) tokLetters(t.idx, out); }
+    else if (t.t === 'sup') tokLetters(t.v, out);
+  }
+  return out;
+};
 
 // Every line of a reading (rows of its tree): an answer for each line that ends with "=" (or with x and a sign under
 // an equation), null for the others. "x = 5" on a line gives x for the lines below it (only where there is nothing
-// else to do when it ends the working of an equation in x on the line just above), until an equation below it that
-// x = 5 does not satisfy makes x an unknown again.
+// else to do when it ends the working of an equation in x alone on the line just above), until an equation below it
+// that x = 5 does not satisfy makes x an unknown again.
 // options.times === false: × is never a times sign (see tokensOf). above: the equations of the writing just above
 // (the .eqs of its solveRows), for an "x =" written further down than its equation. The result carries this
 // writing's own equations as .eqs.
 function solveRows(rows, options, above) {
   const env = new Map(), kinds = [];
-  const eqs = (above || []).map(e => Object.assign({}, e, { line: -Infinity }));
+  const eqs = (above || []).map(e => Object.assign({}, e, { src: 1 }));
   const out = (rows || []).map((row, line) => {
     kinds[line] = null;
+    let toks = null;
     try {
-      const toks = tokensOf(row, options);
+      toks = tokensOf(row, options);
       const rel = [];
       toks.forEach((t, i) => { if (t.t === 'rel') rel.push(i); });
       if (!rel.length) return null;
@@ -2503,7 +2658,7 @@ function solveRows(rows, options, above) {
         if (!SOLVE_ASK.has(ask)) return null;
         const from = rel.length > 1 ? rel[rel.length - 2] + 1 : 0, seg = toks.slice(from, last);
         if (rel.length === 1 && seg.length === 1 && seg[0].t === 'var') {
-          const s = solveFor(seg[0].v, ask, eqs);
+          const s = solveFor(seg[0].v, ask, eqs, env);
           if (s !== undefined) return s;
         }
         if (ask !== '=' || rel.some(i => toks[i].v !== '=') || !seg.length) return null;
@@ -2511,36 +2666,46 @@ function solveRows(rows, options, above) {
         return answerOf(seg, env);
       }
       // an equation or inequality: kept for "x =" below it
-      if (rel.length !== 1 || rel[0] === 0 || !SOLVE_ASK.has(toks[rel[0]].v)) return null;
-      const r = toks[rel[0]].v, L = toks.slice(0, rel[0]), R = toks.slice(rel[0] + 1);
-      const info = {}, lp = solveEval(solveParse(L), null, info), rp = solveEval(solveParse(R), null, info);
-      const vars = new Set([...pvars(lp), ...pvars(rp)]), P = padd(lp, pneg(rp));
+      if (rel.length !== 1 || rel[0] === 0 || !SOLVE_ASK.has(toks[rel[0]].v)) sfail('not one relation');
+      const r = toks[rel[0]].v, Lt = toks.slice(0, rel[0]), L = solveParse(Lt), R = solveParse(toks.slice(rel[0] + 1));
+      if (percentForm(L) === 'mixed' || percentForm(R) === 'mixed') sfail('a percent of what');
+      const info = {}, lr = ratEval(L, null, info), rr = ratEval(R, null, info);
+      const rv = new Set([...pvars(rr.n), ...pvars(rr.d)]), vars = new Set([...pvars(lr.n), ...pvars(lr.d), ...rv]);
+      if (!vars.size) return null;
+      const lone = Lt.length === 1 && Lt[0].t === 'var' ? Lt[0].v : null;
+      const rec = { rel: r, L, R, vars, info, line, src: 0, solved: !!lone && !rv.size };
       let given = null;
-      if (r === '=' && L.length === 1 && L[0].t === 'var') {
-        try { const gi = {}, gv = solveEval(solveParse(R), env, gi); if (pconst(gv)) given = { val: gv, info: gi }; } catch (e) { if (!(e instanceof SolveError)) throw e; }
+      if (r === '=' && lone && !rv.has(lone)) {
+        try { const gi = {}, gv = solveEval(R, env, gi); if (pconst(gv)) given = { val: gv, info: gi }; } catch (e) { if (!(e instanceof SolveError)) throw e; }
       }
       if (given) {
-        const v = L[0].v, prev = eqs[eqs.length - 1];
-        const solving = kinds[line - 1] === 'eq' && prev && prev.line === line - 1 && prev.vars.has(v);
-        env.set(v, solving ? Object.assign(given, { soft: true }) : given);
+        const prev = eqs[eqs.length - 1];
+        const solving = kinds[line - 1] === 'eq' && prev && prev.src === 0 && prev.line === line - 1 && prev.vars.size === 1 && prev.vars.has(lone);
+        env.set(lone, solving ? Object.assign(given, { soft: true }) : given);
         kinds[line] = 'given';
       } else {
         kinds[line] = 'eq';
-        // an equation the given values do not satisfy starts a new problem: its letters are unknowns again
+        // an equation the given values do not satisfy (x = x + 1, or a new problem) makes its letters unknowns again
         if (r === '=' && [...vars].some(x => env.has(x))) {
           let holds = true;
-          try { const c = pconst(solveEval(solveParse(L), env, {})), d = pconst(solveEval(solveParse(R), env, {})); holds = !(c && d) || csame(c, d); } catch (e) { if (!(e instanceof SolveError)) throw e; }
+          try { const c = pconst(solveEval(L, env, {})), d = pconst(solveEval(R, env, {})); holds = !(c && d) || csame(c, d); } catch (e) { if (!(e instanceof SolveError)) throw e; holds = false; }
           if (!holds) for (const x of vars) env.delete(x);
         }
       }
-      if (vars.size) eqs.push({ rel: r, P, vars, info, line });
+      eqs.push(rec);
       return null;
     } catch (e) {
-      if (e instanceof SolveError || e instanceof RangeError) return null;
-      throw e;
+      if (!(e instanceof SolveError || e instanceof RangeError)) throw e;
+      // a line with a relation and letters that cannot be worked out stands between an "x =" and the lines above it
+      if (kinds[line] !== 'ask') {
+        const vs = toks ? tokLetters(toks, new Set()) : rowLetters(row, new Set());
+        const hasRel = toks ? toks.some(t => t.t === 'rel') : (row || []).some(u => u.k === 's' && SOLVE_REL.has(u.label));
+        if (vs.size && hasRel) eqs.push({ block: true, vars: vs, line, src: 0 });
+      }
+      return null;
     }
   });
-  Object.defineProperty(out, 'eqs', { value: eqs.filter(e => e.line !== -Infinity) });
+  Object.defineProperty(out, 'eqs', { value: eqs.filter(e => e.src === 0) });
   return out;
 }
 
