@@ -89,6 +89,22 @@ function makeHandFile() {
   await page.screenshot({ path: path.join(out, 'board-test-tidy.png') });
   const nsym = await page.evaluate(() => document.getElementById('pad').result.symbols.length);
   ok((await shown()).length >= nsym, `every symbol is shown tidied (${(await shown()).length} for ${nsym})`);
+  // fresh writing is left as written for 2.5 s before it takes the view, so numbers do not change under the pen
+  {
+    const before = (await shown()).filter(s => !s.answer).length;
+    await write(byId('arith_003'), [0.6, 0.62, 0.3, 0.25]);
+    await wait(1200);
+    const during = (await shown()).filter(s => !s.answer).length, read = await page.evaluate(() => document.getElementById('pad').result.parts.length);
+    ok(read === 4 && during === before, `new writing is read (${read} expressions) but still shown as written 1.2 s after the pen lifts (${during} tidied symbols, as before)`);
+    await wait(2200);
+    const after = (await shown()).filter(s => !s.answer).length;
+    ok(after > before, `and takes the Tidy view once the writer has rested (${after} tidied symbols)`);
+    // take that writing off again (each undo removes one stroke; the result is null while a read is pending)
+    const n3 = byId('arith_003').strokes.length;
+    for (let i = 0; i < n3; i++) { await page.evaluate(() => document.getElementById('pad').undo()); await wait(120); }
+    await wait(1200); await settled();
+    ok((await page.evaluate(() => document.getElementById('pad').result.parts.length)) === 3, 'undone again: three expressions');
+  }
 
   console.log('views and keys');
   await page.keyboard.press('4'); await wait(900);
@@ -233,6 +249,7 @@ function makeHandFile() {
     ok(!!prob, 'a handwritten 12 + 30 = to work with');
     await write(prob, [0.3, 0.3, 0.3, 0.12]);
     await wait(600); await sameRead();
+    await wait(2600);                                   // in a view, fresh writing and its answer wait for the writer to rest
     let st = await pad();
     ok(st.answers.length === 1 && st.answers[0].latex === '42', `12 + 30 = is answered 42 (${JSON.stringify(st.answers.map(a => a.latex))})`);
     const g1 = await gold();
@@ -542,6 +559,165 @@ function makeHandFile() {
     await page.evaluate(() => { HTMLAnchorElement.prototype.click = window.__aclick; });
     const art = fs.readFileSync(path.join(__dirname, '..', 'dist', 'artifact', 'board.html'), 'utf8');
     ok(/window\.claude\.use\('downloads'\)/.test(art), "the published build asks for the downloads capability (with the <a download> fallback)");
+  }
+
+  console.log('keeping writing for training');
+  {
+    const T = () => page.evaluate(() => document.getElementById('pad').pad.training.map(r => JSON.parse(JSON.stringify(r))));
+    const stored = () => page.evaluate(() => { const t = localStorage.getItem('nib-train-v1'); return t === null ? null : JSON.parse(t).records.length; });
+    const countLine = async () => { await closeSettings(); await page.click('#gear'); await wait(150); const t = await page.$eval('#traincount', e => e.textContent); return t; };
+    const sw = () => page.$eval('#train', e => e.getAttribute('aria-checked'));
+    ok((await T()).length === 0 && await stored() === null && await sw() === 'false' && !(await page.evaluate(() => document.getElementById('pad').pad.o.train)),
+      'with "Keep writing for training" off (the default) nothing written on the board so far was kept');
+    const e1 = findX('3+4='), e2 = findX('5+6=');
+    if (e1 && e2) {
+      await page.click('#clear'); await wait(300);
+      await write(e1, [0.15, 0.15, 0.3, 0.12]); await wait(600); await sameReadX(); await wait(4600);
+      ok((await T()).length === 0, 'switch off: an expression written and left alone for 4 s is not kept');
+      await page.click('#clear'); await wait(300);
+      ok((await T()).length === 0, 'nor when its page is cleared');
+      // on: the note says what is kept
+      await page.click('#gear'); await wait(150);
+      ok(/0 expressions kept · 0 corrected/.test(await page.$eval('#traincount', e => e.textContent)) && await page.$eval('#savetrain', e => e.disabled), 'Settings, Training: "0 expressions kept · 0 corrected", Save training disabled');
+      const tb = await (await page.$('#train')).boundingBox();
+      await page.click('#train'); await wait(150);
+      const nt = await page.$eval('#notetext', e => e.textContent);
+      ok(await sw() === 'true' && await page.evaluate(() => document.getElementById('pad').train) && tb.height >= 44, 'the switch turns it on (a 44 px target)');
+      ok(/^Nib keeps what is written on this board — the strokes and how they were read — on this computer only, until you save it\. Nothing else is kept\.$/.test(nt) && !(await page.$eval('#note', e => e.hidden)), 'the first time, a note says what is kept: ' + nt);
+      await page.click('#train'); await wait(100); await page.click('#train'); await wait(100);
+      ok(await sw() === 'true', 'off and on again');
+      await closeSettings();
+      await page.evaluate(() => { window.__trainEv = []; document.getElementById('pad').addEventListener('nib:train', e => window.__trainEv.push(e.detail.key)); });
+      await page.keyboard.press('2'); await wait(300);
+      await write(e1, [0.15, 0.15, 0.3, 0.12]); await wait(600); await sameReadX();
+      ok((await T()).length === 0, 'just read: not kept yet (it waits until the writing is left alone for 4 s)');
+      await wait(4600);
+      let R = await T();
+      const info = await page.evaluate(() => { const p = document.getElementById('pad'), P = p.pad; return { n: P.strokes.length, latex: P.result.parts[0].result.latex, W: Math.round(P.canvas.width / P.dpr), H: Math.round(P.canvas.height / P.dpr), answers: p.answers.length }; });
+      const r0 = R[0] || {};
+      ok(R.length === 1 && r0.latex === '3+4=' && r0.latex === info.latex && r0.strokes.length === info.n, `then one record, with the reading and every stroke (${R.length} record: ${r0.latex}, ${r0.strokes && r0.strokes.length} strokes of ${info.n})`);
+      ok(Array.isArray(r0.types) && r0.types.length === info.n && r0.types.every(t => t === 'mouse'), 'types: the pointer of each stroke (' + (r0.types || []).join(',') + ')');
+      const pts = (r0.strokes || []).flat();
+      ok(pts.length && Math.min(...pts.map(p => p[0])) === 0 && Math.min(...pts.map(p => p[1])) === 0 && pts.every(p => p.length === 3 && p.every(v => Math.round(v * 10) / 10 === v)) && r0.strokes[0][0][2] === 0 && pts.some(p => p[2] > 0),
+        'strokes from the piece\'s top-left, to 0.1 px, with times from its first point');
+      ok(typeof r0.key === 'string' && r0.key.length > 0 && r0.w === info.W && r0.h === info.H && r0.view === 'tidy' && typeof r0.t === 'number' && Math.abs(Date.now() - r0.t) < 60000 && r0.answered === (info.answers > 0) && typeof r0.confidence === 'number',
+        `key, time, the board's size (${r0.w} x ${r0.h}), view, answered (${r0.answered}) and confidence (${r0.confidence})`);
+      ok(Array.isArray(r0.symbols) && r0.symbols.map(s => s.label).join('') === '3+4=' && r0.symbols.every(s => s.strokes.every(i => i >= 0 && i < info.n)) && Array.isArray(r0.fixed) && r0.fixed.length === 0,
+        'symbols with their labels and strokes, nothing fixed');
+      ok(await page.evaluate(() => window.__trainEv.length) === 1, 'the pad sends nib:train with the record');
+      await page.waitForFunction(() => localStorage.getItem('nib-train-v1') !== null, { timeout: 3000 }).catch(() => {});
+      ok(await stored() === 1, 'the Board saves it under its own key, nib-train-v1');
+      ok(/^1 expression kept · 0 corrected$/.test(await countLine()), 'the count line: ' + await page.$eval('#traincount', e => e.textContent));
+      await closeSettings();
+      await wait(4500);
+      ok((await T()).length === 1, 'kept once (left alone longer, it is not kept again)');
+      // Fix a symbol: the record is replaced with the corrected reading
+      const hit = await page.evaluate(() => {
+        const P = document.getElementById('pad').pad;
+        for (const sym of P.result.symbols) {
+          const alt = (sym.candidates || []).find(c => c[0] !== sym.label);
+          const objs = sym.strokes.map(i => P.resultStrokes[i]);
+          const it = P.plan && P.plan.items.find(q => !q.answer && q.from.length === objs.length && q.from.every(o => objs.includes(o)));
+          if (alt && it && /^[0-9]$/.test(sym.label)) return { label: sym.label, x: (it.box[0] + it.box[2]) / 2, y: (it.box[1] + it.box[3]) / 2 };
+        }
+        return null;
+      });
+      if (hit) {
+        await page.keyboard.press('x');
+        const cbT = await (await page.$('#pad canvas')).boundingBox();
+        await page.mouse.click(cbT.x + hit.x, cbT.y + hit.y); await wait(250);
+        const alt = await page.$$eval('#fixpop .cand[aria-pressed="false"]', bs => { const l = bs.map(b => b.dataset.label); return l.find(x => /^[0-9a-z]$/i.test(x)) || l[0]; });
+        await page.click(`#fixpop .cand[data-label="${alt.replace(/\\/g, '\\\\')}"]`); await wait(300); await settled();
+        await page.keyboard.press('Escape'); await wait(100);
+        R = await T();
+        const now = await page.evaluate(() => document.getElementById('pad').pad.result.parts[0].result.latex);
+        const r1 = R[0] || {};
+        ok(R.length === 1 && r1.key === r0.key && r1.latex === now && r1.latex !== r0.latex && r1.symbols.some(s => s.label === alt), `a Fix (${hit.label} -> ${alt}) replaces the record with the corrected reading: ${r0.latex} -> ${r1.latex}`);
+        ok(r1.fixed && r1.fixed.length === 1 && r1.fixed[0].label === alt && r1.fixed[0].strokes.length >= 1 && r1.fixed[0].strokes.every(i => i >= 0 && i < info.n), 'and "fixed" has the correction: ' + JSON.stringify(r1.fixed));
+        await page.evaluate(() => Nib.memory.clear());
+      } else ok(false, 'a digit with another reading among its candidates, to fix');
+      // a second expression on the page, then the page is left at once: it is kept on the way out
+      await write(e2, [0.15, 0.55, 0.3, 0.12]); await wait(600); await sameReadX();
+      ok((await T()).length === 1, 'a second expression, just read: not kept yet');
+      await page.click('#newpage'); await wait(300);
+      R = await T();
+      ok(R.length === 2 && R[1].latex === '5+6=' && R[1].strokes.length === e2.strokes.length, `changing page keeps it straight away (${R.map(r => r.latex).join(', ')})`);
+      await page.click('#prev'); await wait(600); await sameReadX(); await wait(4500);
+      ok((await T()).length === 2, 'back on the page, the same writing is not kept again');
+      // Clear keeps what is on the page too
+      {
+        const e3 = findX('8-2=');
+        if (e3) {
+          await write(e3, [0.55, 0.15, 0.3, 0.12]); await wait(600); await sameReadX();
+          await page.click('#clear'); await wait(300);
+          R = await T();
+          ok(R.length === 3 && R[2].latex === '8-2=', 'Clear keeps what was on the page first (' + R.map(r => r.latex).join(', ') + ')');
+          await page.click('#undo'); await wait(600); await sameReadX(); await wait(4500);
+          ok((await T()).length === 3, 'and Undo brings it back without keeping it twice');
+          await page.keyboard.press('e');
+          const b3 = await page.evaluate(() => { const P = document.getElementById('pad').pad, k = P.strokes.length - 1, s = P.strokes[k]; return s[Math.floor(s.length / 2)]; });
+          const cbE = await (await page.$('#pad canvas')).boundingBox();
+          await page.mouse.move(cbE.x + b3[0], cbE.y + b3[1]); await page.mouse.down(); await page.mouse.move(cbE.x + b3[0] + 2, cbE.y + b3[1], { steps: 2 }); await page.mouse.up();
+          await page.keyboard.press('e');
+          await page.waitForFunction(() => { const p = document.getElementById('pad').pad; return p.result && p.resultStrokes.length === p.strokes.length; }, { timeout: 20000 }).catch(() => {});
+          await page.click('#undo'); await wait(600); await sameReadX(); await wait(4500);
+          ok((await T()).length === 3, 'nor after part of it is rubbed out and put back');
+        } else console.log('    (no writer read 8-2= right; skipped)');
+      }
+      // a reload: the log and the count are still there
+      await wait(800);
+      await page.reload({ waitUntil: 'load' }); await wait(600); await sameReadX();
+      R = await T();
+      const nR = R.length, nC = R.filter(r => r.fixed.length).length;
+      ok(nR >= 2 && await stored() === nR && R.map(r => r.latex).includes('5+6='), `after a reload the log is still there (${nR} records)`);
+      ok(await sw() === 'true' && await page.evaluate(() => document.getElementById('pad').train), 'and the switch is still on');
+      const cl = await countLine();
+      ok(cl === `${nR} expressions kept · ${nC} corrected`, 'the count line is right: ' + cl);
+      await closeSettings(); await wait(4500);
+      ok((await T()).length === nR, 'the writing put back on the board is not kept again');
+      // Save training: a file in the right shape
+      await page.evaluate(() => { window.__dl = null; window.__aclick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl = { name: this.download, href: this.href }; else window.__aclick.call(this); }; });
+      await page.click('#gear'); await wait(150);
+      await page.click('#savetrain'); await wait(500);
+      const dl = await page.evaluate(async () => { const d = window.__dl; if (!d) return null; const b = await (await fetch(d.href)).blob(); return { name: d.name, type: b.type, text: await b.text() }; });
+      await page.evaluate(() => { HTMLAnchorElement.prototype.click = window.__aclick; });
+      let F = null; try { F = JSON.parse(dl.text); } catch (e) { F = null; }
+      const ver = await page.evaluate(() => Nib.version);
+      ok(dl && /^Nib-training-\d{4}-\d{2}-\d{2}\.json$/.test(dl.name) && dl.type === 'application/json', 'Save training downloads Nib-training-<date>.json: ' + (dl && dl.name));
+      ok(F && F.format === 'nib-training' && F.version === 1 && !isNaN(Date.parse(F.exported)) && /T/.test(F.exported) && F.engine === ver && Array.isArray(F.records) && F.records.length === nR,
+        `{format: 'nib-training', version: 1, exported, engine: ${F && F.engine}, records: ${F && F.records.length}}`);
+      ok(F && JSON.stringify(Object.keys(F.records[0]).sort()) === JSON.stringify(['answered', 'confidence', 'fixed', 'key', 'latex', 'strokes', 'symbols', 't', 'types', 'view', 'w', 'h'].sort()), 'each record has exactly the fields of the format: ' + (F && Object.keys(F.records[0]).join(',')));
+      // the converter on the saved file
+      if (F) {
+        const dir = path.join(out, 'downloads'); fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, dl.name), jl = path.join(dir, 'board-training.jsonl');
+        fs.writeFileSync(file, dl.text);
+        const run = require('child_process').spawnSync('python3', ['-I', path.join(__dirname, '..', 'tools', 'training_to_jsonl.py'), file, jl], { encoding: 'utf8' });
+        const rowsJ = run.status === 0 ? fs.readFileSync(jl, 'utf8').trim().split('\n').map(JSON.parse) : [];
+        const nS = F.records.reduce((n, r) => n + r.strokes.length, 0);
+        ok(run.status === 0 && new RegExp(`${nR} records, ${nS} strokes, \\d+ symbols, ${nC} fixed`).test(run.stdout), 'the converter runs and prints its counts: ' + (run.stdout || run.stderr).trim());
+        const byLatex = new Map(F.records.map(r => [r.latex, r]));
+        ok(rowsJ.length === nR && rowsJ.every(w => {
+          const r = byLatex.get(w.latex);
+          return r && w.source === 'board' && w.fixed === (r.fixed.length > 0) && typeof w.id === 'string' && w.truth === '$' + r.latex + '$' &&
+            JSON.stringify(w.strokes) === JSON.stringify(r.strokes.map(s => s.map(p => [p[0], p[1]]))) && JSON.stringify(w.types) === JSON.stringify(r.types) &&
+            w.symbols.length === r.symbols.length && w.symbols.every((s, i) => s.label === r.symbols[i].label && JSON.stringify(s.strokes) === JSON.stringify(r.symbols[i].strokes.slice().sort((a, b) => a - b))) && w.orphans.length === 0;
+        }), `it writes one trainer row per record: id, strokes as [x, y] (y down, as kept), symbols, latex, source, types, fixed (${rowsJ.map(w => w.latex + (w.fixed ? ' fixed' : '')).join(', ')})`);
+      }
+      // Forget, with a confirm on the page
+      await page.click('#forgettrain'); await wait(150);
+      ok(!(await page.$eval('#forgetask', e => e.hidden)) && new RegExp(`Forget the ${nR} expressions`).test(await page.$eval('#forgetq', e => e.textContent)) && (await T()).length === nR, '"Forget training" asks first, on the page');
+      await page.click('#forgetno'); await wait(100);
+      ok(await page.$eval('#forgetask', e => e.hidden) && (await T()).length === nR, '"Keep it" keeps it');
+      await page.click('#forgettrain'); await wait(100); await page.click('#forgetyes'); await wait(300);
+      ok((await T()).length === 0 && await stored() === null && await page.$eval('#traincount', e => e.textContent) === '0 expressions kept · 0 corrected' && await page.$eval('#savetrain', e => e.disabled), 'Forget empties the log, its storage and the count');
+      await closeSettings(); await wait(4500);
+      ok((await T()).length === 0, 'and the writing still on the board is not kept again');
+      await page.click('#gear'); await wait(150); await page.click('#train'); await wait(100); await closeSettings();
+      ok(await sw() === 'false', 'switched off again');
+    } else ok(false, 'writers for 3 + 4 = and 5 + 6 =');
+    await page.click('#next'); await wait(300);
+    await page.click('#gear'); await wait(100); await page.click('#delpage'); await wait(100); await page.click('#delyes'); await wait(500);
   }
 
   console.log('settings, rails and themes');

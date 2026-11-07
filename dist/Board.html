@@ -139,6 +139,20 @@ nib-pad {
 .opt.danger { color: var(--coral); border-color: var(--coral); }
 .opt.solid { background: var(--coral); border-color: var(--coral); color: #fff; }
 .confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.settings .sect { border-top: 1px solid var(--rule); padding-top: 12px; }
+.switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; box-sizing: border-box; padding: 0 4px 0 0;
+  font: 500 14px/1.25 var(--f-body); color: var(--ink); background: transparent; border: 0; cursor: pointer; text-align: left;
+}
+.switch .track { flex: none; position: relative; width: 46px; height: 28px; border-radius: 999px; background: var(--rule); }
+.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--board); box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.switch[aria-checked="true"] .track { background: var(--gold); }
+.switch[aria-checked="true"] .track::after { left: 21px; }
+.switch:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 10px; }
+@media (prefers-reduced-motion: no-preference) { .switch .track, .switch .track::after { transition: background .15s, left .15s; } }
+.count { margin: 4px 0 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.opt:disabled { opacity: .4; cursor: default; }
 .confirm p { margin: 0 0 4px; flex-basis: 100%; }
 .diag {
   position: absolute; left: 8px; top: 8px; z-index: 5; margin: 0; padding: 8px 10px; max-width: calc(100% - 16px); box-sizing: border-box; overflow: hidden;
@@ -189,7 +203,7 @@ nib-pad {
     <input type="file" id="file" accept=".json,application/json" hidden>
   </header>
   <div class="surface" id="surface">
-    <nib-pad id="pad" view="ink" stroke-width="3.5" separate times="false" reveal fit aria-label="Board"></nib-pad>
+    <nib-pad id="pad" view="ink" stroke-width="3.5" settle="2500" separate times="false" reveal fit aria-label="Board"></nib-pad>
     <div class="fixlayer" id="fixlayer" hidden></div>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
     <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
@@ -204,8 +218,14 @@ nib-pad {
         <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
       <div class="row"><p class="lab" id="lab-reveal">Reveal answers on tap</p><div class="seg" role="radiogroup" aria-labelledby="lab-reveal" data-set="reveal">
         <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
-      <div class="row" id="delrow"><button type="button" class="opt danger" id="delpage">Delete this page</button></div>
-      <div class="row confirm" id="delask" hidden><p id="delq">Delete this page and its writing?</p><button type="button" class="opt solid" id="delyes">Delete</button><button type="button" class="opt" id="delno">Keep it</button></div>
+      <div class="row sect" role="group" aria-labelledby="lab-train"><p class="lab" id="lab-train">Training</p>
+        <button type="button" class="switch" id="train" role="switch" aria-checked="false"><span>Keep writing for training</span><span class="track" aria-hidden="true"></span></button>
+        <p class="count" id="traincount" aria-live="polite">0 expressions kept · 0 corrected</p>
+        <div class="btns" id="trainbtns"><button type="button" class="opt" id="savetrain" title="Save what has been kept as a file">Save training</button><button type="button" class="opt danger" id="forgettrain">Forget training</button></div>
+        <div class="confirm" id="forgetask" hidden><p id="forgetq">Forget everything kept for training?</p><button type="button" class="opt solid" id="forgetyes">Forget</button><button type="button" class="opt" id="forgetno">Keep it</button></div>
+      </div>
+      <div class="row sect" id="delrow"><button type="button" class="opt danger" id="delpage">Delete this page</button></div>
+      <div class="row sect confirm" id="delask" hidden><p id="delq">Delete this page and its writing?</p><button type="button" class="opt solid" id="delyes">Delete</button><button type="button" class="opt" id="delno">Keep it</button></div>
     </div>
     <div class="latexbox" id="latexbox" hidden><textarea id="latexout" rows="3" readonly aria-label="LaTeX"></textarea></div>
     <div class="note" id="note" role="status" hidden><p id="notetext"></p><button type="button" class="notebtn" id="noteact" hidden></button><button type="button" class="notebtn quiet" id="noteclose">OK</button></div>
@@ -1284,7 +1304,8 @@ function takeRoots(units, ref, opts) {
     for (const u of units) { // index: small, up and to the left, above the overline's start
       if (u === R || used.has(u)) continue;
       const bb = u.full || u.box, [cx, cy] = cxy(bb), uw = bb[2] - bb[0], uh = bb[3] - bb[1];
-      if (cx < vx + 0.2 * h && cx > b[0] - 0.3 * h && bb[2] > b[0] - 0.05 * h && cy < b[1] + 0.3 * h && bb[3] < b[1] + 0.55 * h &&
+      // (it may stand a little clear of the tick: up to 0.3 of the root's height to its left)
+      if (cx < vx + 0.2 * h && cx > b[0] - 0.45 * h && bb[2] > b[0] - 0.3 * h && cy < b[1] + 0.3 * h && bb[3] < b[1] + 0.55 * h &&
         cy > b[1] - 0.8 * h && uh < 0.6 * h && uw < 0.6 * h + 0.2 * w && !(u.k === 's' && (u.type === T_OP || u.type === T_PAREN))) idx.push(u);
     }
     let xr = b[2], yr = b[3], changed = true;
@@ -4044,6 +4065,7 @@ const PAD_DEFAULTS = {
   width: 3,             // stroke width in CSS px
   auto: true,           // recognise automatically after the pen rests
   delay: 450,           // ms of rest before recognising
+  settle: 0,            // ms of rest before read ink changes into its tidy / handwritten / typeset form (the answers do not wait)
   penOnly: false,       // ignore touch and mouse (stylus-only boards)
   boxes: false,         // draw recognised symbol boxes over the ink
   smooth: 0,            // smooth shaky ink along its path before reading (sigma as a share of the writing size)
@@ -4055,6 +4077,7 @@ const PAD_DEFAULTS = {
   reveal: false,        // with solve: each answer waits behind a gold "?" chip until the chip is tapped
   fit: false,           // when the pad is resized and the ink no longer fits, shrink and move it in (undoable)
   times: true,          // × can be a times sign; false: every cross is the letter x (multiply with · or brackets)
+  train: false,         // keep each piece of writing read (strokes, reading, corrections) in pad.training, for fine-tuning
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
@@ -4134,6 +4157,9 @@ class Pad {
     this.parts = new Map(); this.recs = new WeakMap(); this.optsVersion = 0;
     this._handChanged = () => { if (this.o.view === 'hand' || this.o.solve) this._replan(true); };
     this.answers = [];
+    this.info = new WeakMap();      // stroke -> {type, width}: the pointer that wrote it
+    this.training = []; this._trainIdx = new Map(); this._trainBytes = new Map(); this._trainSkip = new Set();
+    this._seen = new Map(); this._trainTimer = null; this._hashes = new WeakMap(); this._answered = new WeakMap();
     if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
     c.addEventListener('pointerdown', this._down);
@@ -4152,8 +4178,9 @@ class Pad {
   }
 
   setOptions(o) {
-    const before = this.o.view, hb = this.o.hand, sb = !!this.o.solve, rb = !!this.o.reveal, rk = this._readKey();
+    const before = this.o.view, hb = this.o.hand, sb = !!this.o.solve, rb = !!this.o.reveal, rk = this._readKey(), tb = !!this.o.train;
     Object.assign(this.o, o || {});
+    if (!!this.o.train !== tb) { if (this.o.train) this._trainSee(); else { clearTimeout(this._trainTimer); this._trainTimer = null; this._seen.clear(); } }
     if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
     // only options that change the reading read the ink again; a view, colour or pen width just redraws
     const reread = this._readKey() !== rk;
@@ -4162,7 +4189,7 @@ class Pad {
     if (this.strokes.length && this.o.auto && (reread || (this.resultStrokes || []).length !== this.strokes.length)) this._schedule(0);
   }
   _readKey() {
-    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'auto', 'solve', 'reveal', 'fit', 'onResult', 'onChange']);
+    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange']);
     return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
   }
 
@@ -4173,6 +4200,13 @@ class Pad {
   // contact (a palm) never draws, and a touch stroke only just begun is dropped when a pen comes down.
   get active() { return this.ptrs.size ? this.ptrs.keys().next().value : null; }
   get cur() { for (const P of this.ptrs.values()) if (P.cur) return P.cur; return null; }
+  _contact(e) { const w = Math.max(+e.width || 0, +e.height || 0); return w > 1 && isFinite(w) ? w : 0; }   // 0: not known
+  // what wrote a finished stroke (a stroke, or its index): {type: 'pen' | 'touch' | 'mouse' | null, width: contact px or null}
+  strokeInfo(s) {
+    if (typeof s === 'number') s = this.strokes[s];
+    const i = s && this.info.get(s);
+    return { type: i ? i.type : null, width: i ? i.width : null };
+  }
   _wide(e) { return (+e.width || 0) >= 28 || (+e.height || 0) >= 28; }   // 0 or 1: the browser does not say
   _young(P, now) { return now - P.t0 < 350 || (P.cur ? P.cur.length : 0) < 6; }
   _down(e) {
@@ -4191,7 +4225,7 @@ class Pad {
     if (type === 'mouse' && e.button !== 0) { this.why = 'ignored: button'; return; }
     e.preventDefault();
     const eraser = type === 'pen' && ((e.buttons & 32) !== 0 || e.button === 5);    // the pen turned round
-    const P = { id: e.pointerId, type, mode: eraser || this.mode === 'erase' ? 'erase' : 'draw', eraser, t0: now, last: now, cur: null, erased: [], hid: [], at: null, r: 0, base: 0, chip: null };
+    const P = { id: e.pointerId, type, mode: eraser || this.mode === 'erase' ? 'erase' : 'draw', eraser, t0: now, last: now, cur: null, erased: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e) };
     this.ptrs.set(e.pointerId, P);
     this.why = P.mode + (eraser ? ' (eraser end)' : '');
     try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* ok */ }
@@ -4211,6 +4245,7 @@ class Pad {
     if (!P) return;
     e.preventDefault();
     P.last = now;
+    P.w = Math.max(P.w, this._contact(e));
     if (P.type === 'touch' && P.mode === 'draw' && this._wide(e) && this._young(P, now)) { this._drop(P); return; }  // a palm settling
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     for (const ev of (evs.length ? evs : [e])) {
@@ -4245,6 +4280,7 @@ class Pad {
       if (Math.hypot(q[0] - s[0][0], q[1] - s[0][1]) <= 10 && performance.now() - P.t0 <= 400 && this._inChip(P.chip, q)) { this._reveal(P.chip.key); return; }
     }
     if (!s || !s.length) return;
+    this.info.set(s, { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null });
     this.strokes.push(s);
     this._push({ add: s });
     this._changed();
@@ -4488,7 +4524,7 @@ class Pad {
     const res = this.result, at = this.resultStrokes || [];
     let plan = null;
     const reveal = !!(this.o.solve && this.o.reveal);
-    this.answers = [];
+    this.answers = []; this._answered = new WeakMap();
     if (res && res.tree && res.tree.length && at.length && (style !== 'ink' || this.o.solve)) {
       const items = [];
       let li = 0, sample = null;
@@ -4499,7 +4535,16 @@ class Pad {
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
       const R = refSize(at), done = [];
+      // writing still fresh is left as written: it changes into its view once the writer has rested
+      const settle = style !== 'ink' ? Math.max(0, +this.o.settle || 0) : 0, now = performance.now();
+      let holdUntil = 0;
       for (const part of res.parts || [{ strokes: at, result: res }]) {
+        let fresh = false;
+        if (settle) {
+          let end = 0;
+          for (const s of part.strokes) { const q = s[s.length - 1]; if (q && q.length > 2 && q[2] > end) end = q[2]; }
+          if (end > 0 && end > now - settle) { fresh = true; holdUntil = Math.max(holdUntil, end + settle); }   // (restored strokes carry no time)
+        }
         const pr = part.result;
         if (!pr || !pr.lines || !pr.lines.length) continue;
         // answers belong to the expression they are in: "x = 5" sets x for the lines below it, here only; an "x ="
@@ -4535,6 +4580,7 @@ class Pad {
           done.push({ box, eqs: (answers && answers.eqs) || [], lastRow, lastBox: rowBox(pr.tree[pr.tree.length - 1]),
             endsOp: ['+', '-', '\\times', '\\div', '\\cdot', '\\pm'].includes(lab(lastRow[lastRow.length - 1])) });
         }
+        this._answered.set(pr, !!(answers && answers.some(Boolean)));
         if (answers) answers.forEach((a, k) => { if (a) this.answers.push({ line: li + k, latex: a.latex, text: a.text, kind: a.kind, exact: a.exact, value: a.value }); });
         li += pr.tree.length;
         if (style === 'ink' && !(answers && answers.some(Boolean))) continue;
@@ -4550,6 +4596,7 @@ class Pad {
           return ids;
         });
         for (const it of out.items) {
+          if (fresh) continue;                             // nothing of a fresh part moves yet, its answer included
           if (it.answer) {
             it.from = []; it.eqFrom = (it.eq || []).map(i => part.strokes[i]).filter(Boolean);
             if (!it.eqFrom.length) continue;
@@ -4573,6 +4620,8 @@ class Pad {
       }
       this._fitAnswers(items);
       plan = { style, items, chips: this._chips(items) };
+      clearTimeout(this.settleTimer);
+      if (holdUntil) this.settleTimer = setTimeout(() => { if (this.result === res) this._replan(true); }, holdUntil - now + 30);
       if (style === 'typeset') typeFontsReady().then(ok => { if (ok && this.plan === plan) this.redraw(); });
     }
     this.plan = plan && plan.items.length ? plan : style === 'ink' ? null : plan;
@@ -4721,6 +4770,7 @@ class Pad {
     this.result = res;
     this.resultStrokes = res ? this.strokes.slice() : [];
     this._replan(true);
+    if (this.o.train) this._trainSee();
     if (this.o.boxes) this.redraw();
     if (this.o.onResult) this.o.onResult(res, this);
     this.el.dispatchEvent(new CustomEvent('nib:result', { detail: res, bubbles: true }));
@@ -4798,7 +4848,10 @@ class Pad {
         memLearn(classifyGroup(g, ref).hidden, label === '\\cdot' ? '.' : label);   // a dot is a dot; where it sits says which
       } catch (e) { /* ok */ }
     }
-    return this.recognize();
+    const res = this.recognize();
+    // a correction is the most useful thing to keep: the piece it is in is kept (again) at once, with it
+    if (this.o.train) for (const p of this._trainParts()) if (p.strokes.some(s => ss.includes(s))) { const k = this._trainKey(p.strokes); this._trainSkip.delete(k); this._trainRecord(p, k); }
+    return res;
   }
   // one step of history, done (back = false) or undone (back = true)
   _apply(h, back) {
@@ -4818,7 +4871,7 @@ class Pad {
     if (h.reveal) for (const k of h.reveal) { if (back) this.revealed.delete(k); else this.revealed.add(k); }
     if (h.move) {
       for (const [s, was, now] of h.move) { const src = back ? was : now; s.length = 0; for (const p of src) s.push(p.slice()); }
-      this.parts.clear();
+      this.parts.clear(); this._hashes = new WeakMap();
       this._movePlan(h.t, back);
     }
     if (h.hide || h.reveal || h.clear) this._syncHidden();
@@ -4835,6 +4888,7 @@ class Pad {
   }
   clear() {
     if (!this.strokes.length) return;
+    this.trainFlush();
     const h = { erase: this.strokes.map((s, i) => ({ i, s })).reverse(), clear: true, fixes: this.fixes.slice(), revealed: [...this.revealed] };
     this._apply(h, false);
     this._push(h); this._changed();
@@ -4850,7 +4904,7 @@ class Pad {
       .map(s => (s.length ? s : null));
   }
   setStrokes(strokes) {
-    this._dropAll();
+    this._dropAll(); this.trainFlush();
     this.strokes = this._cleanStrokes(strokes).filter(Boolean);
     this.history = []; this.future = []; this.fixes = []; this.revealed = new Set(); this._changed();
     if (this.strokes.length && this.o.auto) this._schedule(0);   // no need to wait for a pen to rest
@@ -4867,12 +4921,14 @@ class Pad {
       const cut = key.indexOf('|'), ids = key.slice(0, cut).split(',').filter(Boolean).map(x => bySid.get(x));
       if (ids.length && ids.every(i => i !== undefined)) revealed.push({ strokes: ids, answer: key.slice(cut + 1) });
     }
-    return { strokes, fixes, revealed };
+    return { strokes, fixes, revealed, types: this.strokes.map(s => this.strokeInfo(s).type) };
   }
   setState(st) {
     st = st || {};
-    this._dropAll();
+    this._dropAll(); this.trainFlush();
     const all = this._cleanStrokes(st.strokes), at = i => (Number.isInteger(i) && all[i]) || null;
+    const types = Array.isArray(st.types) ? st.types : [];
+    all.forEach((s, i) => { if (s && ['pen', 'touch', 'mouse'].includes(types[i])) this.info.set(s, { type: types[i], width: null }); });
     this.strokes = all.filter(Boolean);
     this.fixes = (Array.isArray(st.fixes) ? st.fixes : []).map(f => f && Array.isArray(f.strokes) && typeof f.label === 'string' ? { strokes: f.strokes.map(at), label: f.label } : null)
       .filter(f => f && f.strokes.length && f.strokes.every(Boolean));
@@ -4893,14 +4949,123 @@ class Pad {
   // the page as it is right now, history and all (for a page that is put away and taken out again)
   snapshot() { return { strokes: this.strokes.slice(), fixes: this.fixes.slice(), revealed: new Set(this.revealed), history: this.history.slice(), future: this.future.slice() }; }
   restore(snap) {
-    this._dropAll();
+    this._dropAll(); this.trainFlush();
     this.strokes = snap.strokes.slice(); this.fixes = snap.fixes.slice(); this.revealed = new Set(snap.revealed);
     this.history = snap.history.slice(); this.future = snap.future.slice();
     if (!this._fitHere()) this._changed();
     if (this.strokes.length && this.o.auto) this._schedule(0);
   }
+  // ---------------------------------------------------------------- the training log (train on)
+  // Each piece of writing (a part of the board: one expression) that has been read and then left alone for 4 s, or
+  // that is on a page being left, is kept once in this.training as a record (see docs/HANDOFF.md, "Training log").
+  // Its key is its strokes' ids: a hash of each stroke's points at 0.1 px, so the same writing has the same key
+  // after a reload or on a page taken out again; keeping the same key again replaces the record (a later Fix).
+  _sidHash(s) {
+    let h = this._hashes.get(s);
+    if (h) return h;
+    let a = 0x811c9dc5;
+    for (const p of s) for (const v of [Math.round(p[0] * 10), Math.round(p[1] * 10)]) { a ^= v & 0xffff; a = Math.imul(a, 16777619); a ^= (v >>> 16) & 0xffff; a = Math.imul(a, 16777619); }
+    h = (a >>> 0).toString(36) + '.' + s.length;
+    this._hashes.set(s, h);
+    return h;
+  }
+  _trainKey(st) { return st.map(s => this._sidHash(s)).sort().join(','); }
+  // the pieces of the latest reading (a pad that is not a board is one piece)
+  _trainParts() {
+    const res = this.result;
+    if (!res) return [];
+    return (res.parts || [{ strokes: this.resultStrokes || [], result: res }]).filter(p => p.result && p.result.lines && p.result.lines.length && p.strokes.length);
+  }
+  _trainDone(k) { return this._trainIdx.has(k) || this._trainSkip.has(k); }
+  // new writing (not read yet, or being written) close enough to join this piece
+  _trainReached(st, fresh) {
+    if (!fresh.length) return false;
+    const b = st.map(sbox).reduce(ubox), R = refSize(st), mx = 1.6 * R, my = 1.7 * R;
+    return fresh.some(f => f[0] < b[2] + mx && f[2] > b[0] - mx && f[1] < b[3] + my && f[3] > b[1] - my);
+  }
+  // a reading arrived: each piece is timed from when it was first read as it is now
+  _trainSee() {
+    const now = Date.now(), keep = new Map();
+    for (const p of this._trainParts()) { const k = this._trainKey(p.strokes); keep.set(k, this._seen.has(k) ? this._seen.get(k) : now); }
+    this._seen = keep;
+    this._trainTick();
+  }
+  _trainTick() {
+    clearTimeout(this._trainTimer); this._trainTimer = null;
+    if (!this.o.train) return;
+    const now = Date.now(), live = new Set(this.strokes), fresh = this._fresh();
+    let wait = Infinity;
+    for (const p of this._trainParts()) {
+      const k = this._trainKey(p.strokes), at = this._seen.get(k);
+      if (at === undefined || this._trainDone(k)) continue;
+      if (now - at < 4000) { wait = Math.min(wait, at + 4000 - now); continue; }
+      if (!p.strokes.every(s => live.has(s))) continue;                    // erased in: the next reading times it again
+      if (this._trainReached(p.strokes, fresh)) { wait = Math.min(wait, 1000); continue; }   // being added to
+      this._trainRecord(p, k);
+    }
+    if (wait < Infinity) this._trainTimer = setTimeout(() => this._trainTick(), wait + 20);
+  }
+  // the page is being left (another page, Clear, deleted, the tab closed): keep every piece read on it now
+  trainFlush() {
+    if (!this.o.train) return 0;
+    const live = new Set(this.strokes), fresh = this._fresh();
+    let n = 0;
+    for (const p of this._trainParts()) {
+      const k = this._trainKey(p.strokes);
+      if (this._trainDone(k) || !p.strokes.every(s => live.has(s)) || this._trainReached(p.strokes, fresh)) continue;
+      this._trainRecord(p, k); n++;
+    }
+    return n;
+  }
+  _trainRecord(p, key) {
+    const st = p.strokes, r = p.result, r1 = v => Math.round(v * 10) / 10;
+    let x0 = Infinity, y0 = Infinity, t0 = Infinity;
+    for (const s of st) for (const q of s) { if (q[0] < x0) x0 = q[0]; if (q[1] < y0) y0 = q[1]; if ((q[2] || 0) < t0) t0 = q[2] || 0; }
+    const d = this.dpr || 1;
+    const rec = {
+      key, t: Date.now(), w: Math.round(this.canvas.width / d), h: Math.round(this.canvas.height / d), view: this.o.view,
+      strokes: st.map(s => s.map(q => [r1(q[0] - x0), r1(q[1] - y0), Math.round((q[2] || 0) - t0)])),
+      types: st.map(s => this.strokeInfo(s).type),
+      latex: r.latex,
+      symbols: r.symbols.map(sy => ({ label: sy.label, strokes: sy.strokes.slice() })),
+      fixed: this.fixes.filter(f => f.strokes.length && f.strokes.every(x => st.includes(x))).map(f => ({ strokes: f.strokes.map(x => st.indexOf(x)), label: f.label })),
+      answered: !!this._answered.get(r),
+      confidence: Math.round((r.confidence || 0) * 1000) / 1000,
+    };
+    this._trainPut(rec);
+    this.el.dispatchEvent(new CustomEvent('nib:train', { detail: rec, bubbles: true }));
+    return rec;
+  }
+  // newest last; the same key replaces; at most 3,000 records and about 4 MB, the oldest go first
+  _trainPut(rec) {
+    if (this._trainIdx.has(rec.key)) { const i = this.training.indexOf(this._trainIdx.get(rec.key)); if (i >= 0) this.training.splice(i, 1); }
+    this.training.push(rec); this._trainIdx.set(rec.key, rec);
+    let size = 0;
+    try { size = JSON.stringify(rec).length; } catch (e) { size = 0; }
+    this._trainBytes.set(rec.key, size);
+    let total = 0; for (const v of this._trainBytes.values()) total += v;
+    while (this.training.length > 1 && (this.training.length > 3000 || total > 4e6)) {
+      const old = this.training.shift();
+      total -= this._trainBytes.get(old.key) || 0; this._trainIdx.delete(old.key); this._trainBytes.delete(old.key);
+    }
+  }
+  // put back a saved log (records as kept before, oldest first); returns how many were taken
+  trainLoad(records) {
+    let n = 0;
+    for (const rec of Array.isArray(records) ? records : []) {
+      if (!rec || typeof rec !== 'object' || typeof rec.key !== 'string' || !Array.isArray(rec.strokes) || !rec.strokes.length) continue;
+      this._trainPut(rec); n++;
+    }
+    return n;
+  }
+  // forget the log; what is on the page now is not kept again unless it changes
+  trainForget() {
+    this.training.length = 0; this._trainIdx.clear(); this._trainBytes.clear();
+    clearTimeout(this._trainTimer); this._trainTimer = null;
+    for (const p of this._trainParts()) this._trainSkip.add(this._trainKey(p.strokes));
+  }
   destroy() {
-    clearTimeout(this.timer); this.gen++; this.anim = null; this.ptrs.clear();
+    clearTimeout(this.timer); clearTimeout(this._trainTimer); this.gen++; this.anim = null; this.ptrs.clear();
     if (this._raf) cancelAnimationFrame(this._raf);
     if (typeof window !== 'undefined') window.removeEventListener('nib:hand', this._handChanged);
     if (this.ro) this.ro.disconnect();
@@ -4913,7 +5078,7 @@ class Pad {
 // <nib-pad symbols="school" delay="450" ink="#1b2a4a" stroke-width="3" boxes></nib-pad>
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
-    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit']; }
+    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'settle', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit', 'train']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -4922,6 +5087,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         ink: a('ink') || null,
         width: has('stroke-width') ? +a('stroke-width') : 3,
         delay: has('delay') ? +a('delay') : 450,
+        settle: has('settle') ? +a('settle') : 0,
         auto: a('auto') !== 'false',
         boxes: has('boxes'),
         penOnly: has('pen-only'),
@@ -4935,6 +5101,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         times: a('times') !== 'false',
         reveal: has('reveal') && a('reveal') !== 'false',
         fit: has('fit') && a('fit') !== 'false',
+        train: has('train') && a('train') !== 'false',
       };
     }
     connectedCallback() {
@@ -4980,6 +5147,11 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     setState(st) { if (this.pad) this.pad.setState(st); else this._saved = st && st.strokes; }
     get reveal() { return this.pad ? !!this.pad.o.reveal : this.hasAttribute('reveal') && this.getAttribute('reveal') !== 'false'; }
     set reveal(v) { if (v) this.setAttribute('reveal', ''); else this.removeAttribute('reveal'); }
+    // the training log (with the train attribute): [{key, t, w, h, view, strokes, types, latex, symbols, fixed, answered, confidence}]
+    get training() { return this.pad ? this.pad.training : []; }
+    get train() { return this.pad ? !!this.pad.o.train : this.hasAttribute('train') && this.getAttribute('train') !== 'false'; }
+    set train(v) { if (v) this.setAttribute('train', ''); else this.removeAttribute('train'); }
+    strokeInfo(s) { return this.pad ? this.pad.strokeInfo(s) : { type: null, width: null }; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
     set mode(v) { if (this.pad) this.pad.mode = v === 'erase' ? 'erase' : 'draw'; }
     recognize() { return this.pad && this.pad.recognize(); }
@@ -5068,7 +5240,7 @@ global.Nib = Nib;
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
-  const pad = $('pad'), board = $('board'), KEY = 'nib-board-v1';
+  const pad = $('pad'), board = $('board'), KEY = 'nib-board-v1', TKEY = 'nib-train-v1';
   const VIEWS = ['ink', 'tidy', 'hand', 'typeset'], RAILS = ['top', 'bottom', 'left', 'right'], THEMES = ['light', 'dark', 'system'];
   const PENS = { thin: 2.5, medium: 3.5, thick: 5 };
   // the board survives a reload: its pages, view and settings are kept in this browser (one key)
@@ -5083,10 +5255,12 @@ global.Nib = Nib;
     rail: pick(saved.rail, RAILS, 'top'),
     theme: pick(saved.theme, THEMES, 'system'),
     pen: pick(saved.pen, Object.keys(PENS), 'medium'),
+    train: saved.train === true,          // keep writing for training: off until the teacher turns it on
+    trainNoted: saved.trainNoted === true,
   };
   // pages: each its own strokes, corrections and shown answers (a board saved before pages is page 1)
   const blank = () => ({ strokes: [], fixes: [], revealed: [] });
-  const okPage = p => (p && typeof p === 'object' && Array.isArray(p.strokes) ? { strokes: p.strokes, fixes: Array.isArray(p.fixes) ? p.fixes : [], revealed: Array.isArray(p.revealed) ? p.revealed : [] } : null);
+  const okPage = p => (p && typeof p === 'object' && Array.isArray(p.strokes) ? { strokes: p.strokes, fixes: Array.isArray(p.fixes) ? p.fixes : [], revealed: Array.isArray(p.revealed) ? p.revealed : [], types: Array.isArray(p.types) ? p.types : [] } : null);
   let pages = Array.isArray(saved.pages) ? saved.pages.map(okPage).filter(Boolean) : Array.isArray(saved.strokes) ? [okPage(saved)] : [];
   if (!pages.length) pages = [blank()];
   let cur = Number.isInteger(saved.page) ? Math.max(0, Math.min(pages.length - 1, saved.page)) : 0;
@@ -5105,14 +5279,28 @@ global.Nib = Nib;
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
+  // the training log: its own key, saved 0.5 s after each record and at once when the page goes
+  let trainTimer = null, trainWarned = false;
+  function writeTrain() {
+    clearTimeout(trainTimer); trainTimer = null;
+    if (!pad.pad) return;
+    try {
+      if (pad.pad.training.length) localStorage.setItem(TKEY, JSON.stringify({ v: 1, records: pad.pad.training }));
+      else localStorage.removeItem(TKEY);
+    } catch (e) { if (!trainWarned) { trainWarned = true; note("The writing kept for training can't be stored in this browser. Save training to keep it."); } }
+  }
+  const persistTrain = () => { clearTimeout(trainTimer); trainTimer = setTimeout(writeTrain, 500); };
+  window.addEventListener('pagehide', () => { if (pad.pad) pad.pad.trainFlush(); if (trainTimer) writeTrain(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && trainTimer) writeTrain(); });
+
   // ---------------------------------------------------------------- notes
   let noteAction = null, noteTimer = null;
-  function note(text, action, label) {
+  function note(text, action, label, stay) {
     $('notetext').textContent = text; $('note').hidden = false;
     noteAction = action || null; $('noteact').hidden = !action; if (action) $('noteact').textContent = label;
     // a note that only tells something goes away by itself; one that asks for something (or holds the LaTeX) stays
     clearTimeout(noteTimer);
-    if (!action) noteTimer = setTimeout(() => { if ($('latexbox').hidden && $('notetext').textContent === text) $('note').hidden = true; }, 6000);
+    if (!action && !stay) noteTimer = setTimeout(() => { if ($('latexbox').hidden && $('notetext').textContent === text) $('note').hidden = true; }, 6000);
   }
   $('noteact').onclick = () => { const a = noteAction; $('note').hidden = true; if (a) a(); };
   $('noteclose').onclick = () => { $('note').hidden = true; };
@@ -5184,8 +5372,8 @@ global.Nib = Nib;
   }
   function openSettings(on) {
     $('settings').hidden = !on; $('gear').setAttribute('aria-expanded', String(on));
-    askDelete(false);
-    if (on) { closePop(); marks(); placeSettings(); }
+    askDelete(false); askForget(false);
+    if (on) { closePop(); marks(); trainLine(); placeSettings(); }
   }
   $('gear').onclick = () => openSettings($('settings').hidden);
   // a tap anywhere else closes it (and, on the board, writes nothing)
@@ -5201,6 +5389,41 @@ global.Nib = Nib;
   $('delpage').onclick = () => askDelete(true);
   $('delno').onclick = () => askDelete(false);
   $('delyes').onclick = () => { openSettings(false); deletePage(); };
+
+  // ---------------------------------------------------------------- training: keep the writing, to fine-tune Nib
+  const records = () => (pad.pad ? pad.pad.training : []);
+  function trainLine() {
+    const R = records(), n = R.length, c = R.filter(r => r.fixed && r.fixed.length).length;
+    $('traincount').textContent = `${n} expression${n === 1 ? '' : 's'} kept · ${c} corrected`;
+    $('savetrain').disabled = !n; $('forgettrain').disabled = !n;
+    if (!n) askForget(false);
+  }
+  function setTrain(on, quiet) {
+    S.train = on; pad.train = on; $('train').setAttribute('aria-checked', String(on)); persist();
+    if (on && !S.trainNoted && !quiet) {
+      S.trainNoted = true; persist();
+      note('Nib keeps what is written on this board — the strokes and how they were read — on this computer only, until you save it. Nothing else is kept.', null, null, true);
+    }
+  }
+  $('train').onclick = () => setTrain(!S.train);
+  pad.addEventListener('nib:train', () => { trainLine(); persistTrain(); });
+  function askForget(on) {
+    $('forgetask').hidden = !on; $('trainbtns').hidden = on;
+    if (on) { const n = records().length; $('forgetq').textContent = `Forget the ${n} expression${n === 1 ? '' : 's'} kept for training?`; }
+  }
+  $('forgettrain').onclick = () => askForget(true);
+  $('forgetno').onclick = () => askForget(false);
+  $('forgetyes').onclick = () => {
+    if (pad.pad) pad.pad.trainForget();
+    askForget(false); writeTrain(); trainLine();
+    note('The writing kept for training is forgotten.');
+  };
+  $('savetrain').onclick = async () => {
+    const R = records(); if (!R.length) return;
+    const file = { format: 'nib-training', version: 1, exported: new Date().toISOString(), engine: Nib.version, records: R };
+    const name = `Nib-training-${today()}.json`;
+    if (await offer(name, new Blob([JSON.stringify(file)], { type: 'application/json' }))) note(`Saved ${name} (${R.length} expression${R.length === 1 ? '' : 's'}).`);
+  };
 
   // ---------------------------------------------------------------- pages
   function goPage(i) {
@@ -5343,6 +5566,7 @@ global.Nib = Nib;
   // ---------------------------------------------------------------- save image
   // Published on claude.ai the page cannot download by itself: it asks the viewer through the downloads capability.
   let saver = null;
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   try { if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { saver = d; }, () => {}); } catch (e) { /* not in a viewer */ }
   async function offer(name, blob) {
     if (saver) {
@@ -5359,8 +5583,7 @@ global.Nib = Nib;
     if (!c) return;
     const blob = await new Promise(r => c.toBlob(r, 'image/png'));
     if (!blob) { note('The picture could not be made.'); return; }
-    const d = new Date(), day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    const name = `Nib-board-${cur + 1}-${day}.png`;
+    const name = `Nib-board-${cur + 1}-${today()}.png`;
     if (await offer(name, blob)) note('Saved ' + name + '.');
   };
 
@@ -5415,9 +5638,12 @@ global.Nib = Nib;
   });
 
   // ---------------------------------------------------------------- start
-  setRail(S.rail); setTheme(S.theme); setPen(S.pen); setReveal(S.reveal); setSolve(S.solve, true);
+  setRail(S.rail); setTheme(S.theme); setPen(S.pen); setReveal(S.reveal); setSolve(S.solve, true); setTrain(S.train, true);
   customElements.whenDefined('nib-pad').then(() => {
     setView(S.view, true);
+    // the training log first, so writing put back on the board is known and not kept twice
+    try { const T = JSON.parse(localStorage.getItem(TKEY) || 'null'); if (T && Array.isArray(T.records)) pad.pad.trainLoad(T.records); } catch (e) { /* none, or storage blocked */ }
+    trainLine();
     const p = pages[cur];
     if (p && p.strokes.length) pad.setState(p);
     ready = true;

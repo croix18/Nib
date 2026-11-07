@@ -131,6 +131,20 @@ nib-pad {
 .opt.danger { color: var(--coral); border-color: var(--coral); }
 .opt.solid { background: var(--coral); border-color: var(--coral); color: #fff; }
 .confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.settings .sect { border-top: 1px solid var(--rule); padding-top: 12px; }
+.switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; box-sizing: border-box; padding: 0 4px 0 0;
+  font: 500 14px/1.25 var(--f-body); color: var(--ink); background: transparent; border: 0; cursor: pointer; text-align: left;
+}
+.switch .track { flex: none; position: relative; width: 46px; height: 28px; border-radius: 999px; background: var(--rule); }
+.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--board); box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.switch[aria-checked="true"] .track { background: var(--gold); }
+.switch[aria-checked="true"] .track::after { left: 21px; }
+.switch:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 10px; }
+@media (prefers-reduced-motion: no-preference) { .switch .track, .switch .track::after { transition: background .15s, left .15s; } }
+.count { margin: 4px 0 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.opt:disabled { opacity: .4; cursor: default; }
 .confirm p { margin: 0 0 4px; flex-basis: 100%; }
 .diag {
   position: absolute; left: 8px; top: 8px; z-index: 5; margin: 0; padding: 8px 10px; max-width: calc(100% - 16px); box-sizing: border-box; overflow: hidden;
@@ -179,7 +193,7 @@ nib-pad {
     <input type="file" id="file" accept=".json,application/json" hidden>
   </header>
   <div class="surface" id="surface">
-    <nib-pad id="pad" view="ink" stroke-width="3.5" separate times="false" reveal fit aria-label="Board"></nib-pad>
+    <nib-pad id="pad" view="ink" stroke-width="3.5" settle="2500" separate times="false" reveal fit aria-label="Board"></nib-pad>
     <div class="fixlayer" id="fixlayer" hidden></div>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
     <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
@@ -194,8 +208,14 @@ nib-pad {
         <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
       <div class="row"><p class="lab" id="lab-reveal">Reveal answers on tap</p><div class="seg" role="radiogroup" aria-labelledby="lab-reveal" data-set="reveal">
         <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
-      <div class="row" id="delrow"><button type="button" class="opt danger" id="delpage">Delete this page</button></div>
-      <div class="row confirm" id="delask" hidden><p id="delq">Delete this page and its writing?</p><button type="button" class="opt solid" id="delyes">Delete</button><button type="button" class="opt" id="delno">Keep it</button></div>
+      <div class="row sect" role="group" aria-labelledby="lab-train"><p class="lab" id="lab-train">Training</p>
+        <button type="button" class="switch" id="train" role="switch" aria-checked="false"><span>Keep writing for training</span><span class="track" aria-hidden="true"></span></button>
+        <p class="count" id="traincount" aria-live="polite">0 expressions kept · 0 corrected</p>
+        <div class="btns" id="trainbtns"><button type="button" class="opt" id="savetrain" title="Save what has been kept as a file">Save training</button><button type="button" class="opt danger" id="forgettrain">Forget training</button></div>
+        <div class="confirm" id="forgetask" hidden><p id="forgetq">Forget everything kept for training?</p><button type="button" class="opt solid" id="forgetyes">Forget</button><button type="button" class="opt" id="forgetno">Keep it</button></div>
+      </div>
+      <div class="row sect" id="delrow"><button type="button" class="opt danger" id="delpage">Delete this page</button></div>
+      <div class="row sect confirm" id="delask" hidden><p id="delq">Delete this page and its writing?</p><button type="button" class="opt solid" id="delyes">Delete</button><button type="button" class="opt" id="delno">Keep it</button></div>
     </div>
     <div class="latexbox" id="latexbox" hidden><textarea id="latexout" rows="3" readonly aria-label="LaTeX"></textarea></div>
     <div class="note" id="note" role="status" hidden><p id="notetext"></p><button type="button" class="notebtn" id="noteact" hidden></button><button type="button" class="notebtn quiet" id="noteclose">OK</button></div>
@@ -208,7 +228,7 @@ nib-pad {
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
-  const pad = $('pad'), board = $('board'), KEY = 'nib-board-v1';
+  const pad = $('pad'), board = $('board'), KEY = 'nib-board-v1', TKEY = 'nib-train-v1';
   const VIEWS = ['ink', 'tidy', 'hand', 'typeset'], RAILS = ['top', 'bottom', 'left', 'right'], THEMES = ['light', 'dark', 'system'];
   const PENS = { thin: 2.5, medium: 3.5, thick: 5 };
   // the board survives a reload: its pages, view and settings are kept in this browser (one key)
@@ -223,10 +243,12 @@ nib-pad {
     rail: pick(saved.rail, RAILS, 'top'),
     theme: pick(saved.theme, THEMES, 'system'),
     pen: pick(saved.pen, Object.keys(PENS), 'medium'),
+    train: saved.train === true,          // keep writing for training: off until the teacher turns it on
+    trainNoted: saved.trainNoted === true,
   };
   // pages: each its own strokes, corrections and shown answers (a board saved before pages is page 1)
   const blank = () => ({ strokes: [], fixes: [], revealed: [] });
-  const okPage = p => (p && typeof p === 'object' && Array.isArray(p.strokes) ? { strokes: p.strokes, fixes: Array.isArray(p.fixes) ? p.fixes : [], revealed: Array.isArray(p.revealed) ? p.revealed : [] } : null);
+  const okPage = p => (p && typeof p === 'object' && Array.isArray(p.strokes) ? { strokes: p.strokes, fixes: Array.isArray(p.fixes) ? p.fixes : [], revealed: Array.isArray(p.revealed) ? p.revealed : [], types: Array.isArray(p.types) ? p.types : [] } : null);
   let pages = Array.isArray(saved.pages) ? saved.pages.map(okPage).filter(Boolean) : Array.isArray(saved.strokes) ? [okPage(saved)] : [];
   if (!pages.length) pages = [blank()];
   let cur = Number.isInteger(saved.page) ? Math.max(0, Math.min(pages.length - 1, saved.page)) : 0;
@@ -245,14 +267,28 @@ nib-pad {
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
+  // the training log: its own key, saved 0.5 s after each record and at once when the page goes
+  let trainTimer = null, trainWarned = false;
+  function writeTrain() {
+    clearTimeout(trainTimer); trainTimer = null;
+    if (!pad.pad) return;
+    try {
+      if (pad.pad.training.length) localStorage.setItem(TKEY, JSON.stringify({ v: 1, records: pad.pad.training }));
+      else localStorage.removeItem(TKEY);
+    } catch (e) { if (!trainWarned) { trainWarned = true; note("The writing kept for training can't be stored in this browser. Save training to keep it."); } }
+  }
+  const persistTrain = () => { clearTimeout(trainTimer); trainTimer = setTimeout(writeTrain, 500); };
+  window.addEventListener('pagehide', () => { if (pad.pad) pad.pad.trainFlush(); if (trainTimer) writeTrain(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && trainTimer) writeTrain(); });
+
   // ---------------------------------------------------------------- notes
   let noteAction = null, noteTimer = null;
-  function note(text, action, label) {
+  function note(text, action, label, stay) {
     $('notetext').textContent = text; $('note').hidden = false;
     noteAction = action || null; $('noteact').hidden = !action; if (action) $('noteact').textContent = label;
     // a note that only tells something goes away by itself; one that asks for something (or holds the LaTeX) stays
     clearTimeout(noteTimer);
-    if (!action) noteTimer = setTimeout(() => { if ($('latexbox').hidden && $('notetext').textContent === text) $('note').hidden = true; }, 6000);
+    if (!action && !stay) noteTimer = setTimeout(() => { if ($('latexbox').hidden && $('notetext').textContent === text) $('note').hidden = true; }, 6000);
   }
   $('noteact').onclick = () => { const a = noteAction; $('note').hidden = true; if (a) a(); };
   $('noteclose').onclick = () => { $('note').hidden = true; };
@@ -324,8 +360,8 @@ nib-pad {
   }
   function openSettings(on) {
     $('settings').hidden = !on; $('gear').setAttribute('aria-expanded', String(on));
-    askDelete(false);
-    if (on) { closePop(); marks(); placeSettings(); }
+    askDelete(false); askForget(false);
+    if (on) { closePop(); marks(); trainLine(); placeSettings(); }
   }
   $('gear').onclick = () => openSettings($('settings').hidden);
   // a tap anywhere else closes it (and, on the board, writes nothing)
@@ -341,6 +377,41 @@ nib-pad {
   $('delpage').onclick = () => askDelete(true);
   $('delno').onclick = () => askDelete(false);
   $('delyes').onclick = () => { openSettings(false); deletePage(); };
+
+  // ---------------------------------------------------------------- training: keep the writing, to fine-tune Nib
+  const records = () => (pad.pad ? pad.pad.training : []);
+  function trainLine() {
+    const R = records(), n = R.length, c = R.filter(r => r.fixed && r.fixed.length).length;
+    $('traincount').textContent = `${n} expression${n === 1 ? '' : 's'} kept · ${c} corrected`;
+    $('savetrain').disabled = !n; $('forgettrain').disabled = !n;
+    if (!n) askForget(false);
+  }
+  function setTrain(on, quiet) {
+    S.train = on; pad.train = on; $('train').setAttribute('aria-checked', String(on)); persist();
+    if (on && !S.trainNoted && !quiet) {
+      S.trainNoted = true; persist();
+      note('Nib keeps what is written on this board — the strokes and how they were read — on this computer only, until you save it. Nothing else is kept.', null, null, true);
+    }
+  }
+  $('train').onclick = () => setTrain(!S.train);
+  pad.addEventListener('nib:train', () => { trainLine(); persistTrain(); });
+  function askForget(on) {
+    $('forgetask').hidden = !on; $('trainbtns').hidden = on;
+    if (on) { const n = records().length; $('forgetq').textContent = `Forget the ${n} expression${n === 1 ? '' : 's'} kept for training?`; }
+  }
+  $('forgettrain').onclick = () => askForget(true);
+  $('forgetno').onclick = () => askForget(false);
+  $('forgetyes').onclick = () => {
+    if (pad.pad) pad.pad.trainForget();
+    askForget(false); writeTrain(); trainLine();
+    note('The writing kept for training is forgotten.');
+  };
+  $('savetrain').onclick = async () => {
+    const R = records(); if (!R.length) return;
+    const file = { format: 'nib-training', version: 1, exported: new Date().toISOString(), engine: Nib.version, records: R };
+    const name = `Nib-training-${today()}.json`;
+    if (await offer(name, new Blob([JSON.stringify(file)], { type: 'application/json' }))) note(`Saved ${name} (${R.length} expression${R.length === 1 ? '' : 's'}).`);
+  };
 
   // ---------------------------------------------------------------- pages
   function goPage(i) {
@@ -483,6 +554,7 @@ nib-pad {
   // ---------------------------------------------------------------- save image
   // Published on claude.ai the page cannot download by itself: it asks the viewer through the downloads capability.
   let saver = null;
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   try { if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { saver = d; }, () => {}); } catch (e) { /* not in a viewer */ }
   async function offer(name, blob) {
     if (saver) {
@@ -499,8 +571,7 @@ nib-pad {
     if (!c) return;
     const blob = await new Promise(r => c.toBlob(r, 'image/png'));
     if (!blob) { note('The picture could not be made.'); return; }
-    const d = new Date(), day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    const name = `Nib-board-${cur + 1}-${day}.png`;
+    const name = `Nib-board-${cur + 1}-${today()}.png`;
     if (await offer(name, blob)) note('Saved ' + name + '.');
   };
 
@@ -555,9 +626,12 @@ nib-pad {
   });
 
   // ---------------------------------------------------------------- start
-  setRail(S.rail); setTheme(S.theme); setPen(S.pen); setReveal(S.reveal); setSolve(S.solve, true);
+  setRail(S.rail); setTheme(S.theme); setPen(S.pen); setReveal(S.reveal); setSolve(S.solve, true); setTrain(S.train, true);
   customElements.whenDefined('nib-pad').then(() => {
     setView(S.view, true);
+    // the training log first, so writing put back on the board is known and not kept twice
+    try { const T = JSON.parse(localStorage.getItem(TKEY) || 'null'); if (T && Array.isArray(T.records)) pad.pad.trainLoad(T.records); } catch (e) { /* none, or storage blocked */ }
+    trainLine();
     const p = pages[cur];
     if (p && p.strokes.length) pad.setState(p);
     ready = true;

@@ -629,7 +629,8 @@ function takeRoots(units, ref, opts) {
     for (const u of units) { // index: small, up and to the left, above the overline's start
       if (u === R || used.has(u)) continue;
       const bb = u.full || u.box, [cx, cy] = cxy(bb), uw = bb[2] - bb[0], uh = bb[3] - bb[1];
-      if (cx < vx + 0.2 * h && cx > b[0] - 0.3 * h && bb[2] > b[0] - 0.05 * h && cy < b[1] + 0.3 * h && bb[3] < b[1] + 0.55 * h &&
+      // (it may stand a little clear of the tick: up to 0.3 of the root's height to its left)
+      if (cx < vx + 0.2 * h && cx > b[0] - 0.45 * h && bb[2] > b[0] - 0.3 * h && cy < b[1] + 0.3 * h && bb[3] < b[1] + 0.55 * h &&
         cy > b[1] - 0.8 * h && uh < 0.6 * h && uw < 0.6 * h + 0.2 * w && !(u.k === 's' && (u.type === T_OP || u.type === T_PAREN))) idx.push(u);
     }
     let xr = b[2], yr = b[3], changed = true;

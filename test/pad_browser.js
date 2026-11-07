@@ -234,6 +234,30 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   ok(seg === 0, 'a long straight stroke (two points, 400 px apart) is erased by touching its middle');
   await page.evaluate(() => { a.removeAttribute('auto'); a.clear(); a.mode = 'draw'; });
 
+  console.log('what wrote each stroke (strokeInfo)');
+  const info = await page.evaluate(() => {
+    a.setAttribute('auto', 'false'); a.clear(); a.mode = 'draw'; a.pad.penUntil = 0;
+    line(a, 'mouse', 1, 20, 20, 120, 30);
+    line(a, 'touch', 61, 20, 60, 120, 70, { width: 12, height: 9 });
+    line(a, 'touch', 62, 20, 100, 120, 110, { width: 1, height: 1 });
+    line(a, 'pen', 63, 20, 140, 120, 150, { width: 1, height: 1 });
+    const P = a.pad, s = P.strokes;
+    const r = { got: s.map(x => P.strokeInfo(x)), byIndex: P.strokeInfo(1), el: a.strokeInfo(0), unknown: P.strokeInfo([[0, 0, 0]]),
+      plain: s.every(x => Object.keys(x).length === x.length && x.every(p => Array.isArray(p) && p.length === 3)), json: JSON.stringify(a.strokes).slice(0, 2) };
+    const st = a.getState(); a.clear(); a.setState(st);
+    r.types = st.types; r.kept = a.pad.strokes.map(x => a.pad.strokeInfo(x).type);
+    a.strokes = [[[10, 10], [20, 20]]]; r.setter = a.pad.strokeInfo(0);
+    a.removeAttribute('auto'); a.clear(); a.pad.penUntil = 0;
+    return r;
+  });
+  const I = info.got;
+  ok(I.length === 4 && I[0].type === 'mouse' && I[0].width === null, `a mouse stroke: ${JSON.stringify(I[0])}`);
+  ok(I[1].type === 'touch' && I[1].width === 12 && I[2].type === 'touch' && I[2].width === null, `touch strokes, with their contact width when the browser gives one: ${JSON.stringify(I[1])}, ${JSON.stringify(I[2])}`);
+  ok(I[3].type === 'pen' && JSON.stringify(info.byIndex) === JSON.stringify(I[1]) && JSON.stringify(info.el) === JSON.stringify(I[0]), 'a pen stroke; by index too, and on the element');
+  ok(info.unknown.type === null && info.unknown.width === null && info.setter.type === null, 'a stroke the pad did not see written (or set as data) is {type: null, width: null}');
+  ok(info.plain && info.json === '[[', 'strokes stay plain arrays of [x, y, t] (nothing added to them)');
+  ok(JSON.stringify(info.types) === '["mouse","touch","touch","pen"]' && JSON.stringify(info.kept) === JSON.stringify(info.types), `getState keeps each stroke's pointer type and setState puts it back (${JSON.stringify(info.types)})`);
+
   console.log('history, state');
   const hist = await page.evaluate(() => { a.setAttribute('auto', 'false'); for (let i = 0; i < 620; i++) line(a, 'mouse', 1, 20 + (i % 50) * 9, 20 + Math.floor(i / 50) * 15, 25 + (i % 50) * 9, 26 + Math.floor(i / 50) * 15, {}, 2); const h = a.pad.history.length; a.clear(); return h; });
   ok(hist === 500, `undo history is capped at 500 steps (${hist})`);
