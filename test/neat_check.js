@@ -280,5 +280,35 @@ section('9. signs');
   ok(near((bx(pv)[0] + bx(pv)[2]) / 2, (bx(ph)[0] + bx(ph)[2]) / 2) && near((bx(ph)[1] + bx(ph)[3]) / 2, (bx(pv)[1] + bx(pv)[3]) / 2), '+: upright and bar cross in their middles');
 }
 
+// ------------------------------------------------------------------ 10. answers: radicals, ± in a fraction, a comma, letters
+section('10. answers drawn: (−3 ± √5)/2, −3, −2 and −2/3 x + 4 after "x ="');
+{
+  const { compose } = require('./compose.js');
+  let e = null, res = null;
+  for (let k = 0; k < 20 && !e; k++) { const c = compose('x='), r = new Nib.Recognizer().recognize(c.strokes, { times: false }); if (r.latex.replace(/\s/g, '') === 'x=') { e = c; res = r; } }
+  const nodesOf = tex => I.solveRows(I.latexRows(tex), { times: false }).pop().nodes;
+  const rad = nodesOf('x^{2}+3x+1=0 \\\\ x='), two = nodesOf('x^{2}+5x+6=0 \\\\ x='), lit = nodesOf('2y+3x=12 \\\\ x=');
+  if (!e) console.log('    (x= misread every time; skipped)');
+  else for (const [name, nodes, need] of [['(-3±√5)/2', rad, ['-', '3', '\\pm', '\\sqrt', '5', '2']], ['-3, -2', two, ['-', '3', ',', '2']], ['-2/3 y + 4', lit, ['-', '2', '3', 'y', '+', '4']]]) {
+    for (const [style, extra] of [['tidy', {}], ['hand', { hand }], ['typeset', {}], ['tidy', { sample: l => I.DEFAULT_GLYPHS[l] || null }]]) {
+      const opts = Object.assign({ result: res, answers: [nodes] }, extra);
+      const t = style === 'typeset' ? Nib.typeset(e.strokes, opts) : Nib.neaten(e.strokes, Object.assign({ style }, opts));
+      const A = t.items.filter(it => it.answer), eq = t.items.find(it => !it.answer && it.label === '=');
+      const label = `${style}${extra.sample ? ' (built-in hand only)' : ''}: ${name}`;
+      ok(A.length && need.every(l => A.some(it => it.label === l)) && A.every(it => it.parts.length && it.box.every(isFinite) && it.box[0] > eq.box[2]), `${label} drawn after the = (${A.map(it => it.label).join(' ')})`);
+      if (nodes === rad) {
+        // the bar spans the top, the 2 under it, √ over the 5 with ± before it, all of the top above the bar
+        const bars = A.filter(it => it.label === '-'), bar = bars.reduce((a, b) => (b.box[2] - b.box[0] > a.box[2] - a.box[0] ? b : a));
+        const top = A.filter(it => it !== bar && it.box[3] <= bar.box[1] + 1), den = A.filter(it => it.box[1] >= bar.box[3] - 1 && it !== bar);
+        const root = A.find(it => it.label === '\\sqrt'), five = A.find(it => it.label === '5'), pm = A.find(it => it.label === '\\pm');
+        ok(top.length === 5 && den.length === 1 && den[0].label === '2' && top.every(it => it.box[0] >= bar.box[0] - 1 && it.box[2] <= bar.box[2] + 1),
+          `${label}: a fraction, -3 ± √5 over its bar and 2 under it`);
+        ok(root && five && pm && root.box[0] <= five.box[0] && root.box[2] >= five.box[2] - 1 && root.box[1] < five.box[1] && pm.box[2] <= root.box[0] + 1, `${label}: the root covers the 5, ± before it`);
+      }
+      if (nodes === two) { const c = A.find(it => it.label === ','), d = A.filter(it => it.label === '3' || it.label === '2'); ok(c && d.length === 2 && d[0].box[2] <= c.box[0] + 1 && c.box[2] <= d[1].box[0], `${label}: the comma between the two roots`); }
+    }
+  }
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

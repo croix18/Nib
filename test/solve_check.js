@@ -285,14 +285,14 @@ for (const [t, w] of [
   ['1.5x-0.25=2 \\\\ x=', '1.5'], ['\\frac{x}{2}+3=7 \\\\ x=', '8'], ['\\frac{x+4}{3}=5 \\\\ x=', '11'], ['25\\%x=20 \\\\ x=', '80'],
   ['x^{2}=49 \\\\ x=', '\\pm 7'], ['x^{2}=\\frac{9}{16} \\\\ x=', '\\pm\\frac{3}{4}'], ['x^{2}=2.25 \\\\ x=', '\\pm 1.5'], ['2x^{2}=50 \\\\ x=', '\\pm 5'],
   ['x^{2}+1=50 \\\\ x=', '\\pm 7'], ['x^{2}=50 \\\\ x=', '\\pm 7.071\\ldots'], ['x^{2}=0 \\\\ x=', '0'], ['x^{3}=-8 \\\\ x=', '-2'], ['x^{3}=64 \\\\ x=', '4'],
-  ['x^{3}=10 \\\\ x=', '2.154\\ldots'], ['x^{2}=-4 \\\\ x=', null], ['x+1=x+2 \\\\ x=', null], ['2x=2x \\\\ x=', null], ['x^{2}+5x+6=0 \\\\ x=', null],
+  ['x^{3}=10 \\\\ x=', '2.154\\ldots'], ['x^{2}=-4 \\\\ x=', null], ['x+1=x+2 \\\\ x=', null], ['2x=2x \\\\ x=', null], ['x^{2}+5x+6=0 \\\\ x=', '-3,\\;-2'],
   ['\\pi x=10 \\\\ x=', '3.183\\ldots'], ['a+3=10 \\\\ a=', '7'], ['3n=12 \\\\ n=', '4'],
   // the nearest equation with the letter in it, and the working under it
   ['2x+3=11 \\\\ 2x=8 \\\\ x=', '4'], ['2x+3=11 \\\\ 5x-1=9 \\\\ x=', null], ['3x=12 \\\\ x=4 \\\\ y+2=7 \\\\ y=', '5'],
   ['2x+3=11 \\\\ x', null], ['x=', null], ['2x+3 \\\\ x=', null],
   // two or three letters: the equations that pin them down
   ['x+y=10 \\\\ x-y=2 \\\\ x=', '6'], ['x+y=10 \\\\ x-y=2 \\\\ y=', '4'], ['y=2x+1 \\\\ x=3 \\\\ y=', '7'], ['2x+y=7 \\\\ y=3 \\\\ x=', '2'],
-  ['x+y=10 \\\\ x-y=2 \\\\ x=6 \\\\ y=', '4'], ['a+b+c=6 \\\\ a-b=1 \\\\ c=2 \\\\ a=', '\\frac{5}{2}'], ['x+y=10 \\\\ y=', null], ['x+y=1 \\\\ 2x+2y=2 \\\\ x=', null],
+  ['x+y=10 \\\\ x-y=2 \\\\ x=6 \\\\ y=', '4'], ['a+b+c=6 \\\\ a-b=1 \\\\ c=2 \\\\ a=', '\\frac{5}{2}'], ['x+y=10 \\\\ y=', '-x+10'], ['x+y=1 \\\\ 2x+2y=2 \\\\ x=', '-y+1'],
   ['y=2x+1 \\\\ y=', null], ['xy=6 \\\\ x=2 \\\\ y=', '3'],
   // inequalities: the number only when the sign written is the right one
   ['2x+3<11 \\\\ x<', '4'], ['2x+3<11 \\\\ x>', null], ['2x+3<11 \\\\ x=', null], ['-3x\\ge 12 \\\\ x\\le', '-4'], ['-3x\\ge 12 \\\\ x\\ge', null],
@@ -479,6 +479,112 @@ section('19. a real board: the strokes of Croix\'s screenshot of 4 Nov, piece by
   ok(worse.length === 0, 'a ½ too lopsided to read is never answered as something else (7 + −2 = 5)' + (worse.length ? ': ' + worse.join('; ') : ''));
   // a minus is not a fraction bar for what sits beside it, nor for writing on the lines above and below
   sol('7-12=', '-5', X);
+}
+
+section('20. Algebra 1: quadratics, rearranging formulas, slope, repeating decimals, the Pythagorean theorem, scientific notation');
+for (const [t, w] of [
+  // quadratics with "x =" under them: rational roots smallest first, a repeated root once, roots that are not
+  // rational in simplest radical form, no real roots no answer
+  ['x^{2}+5x+6=0 \\\\ x=', '-3,\\;-2'], ['x^{2}=-5x-6 \\\\ x=', '-3,\\;-2'], ['2x^{2}=8x \\\\ x=', '0,\\;4'], ['x(x-3)=10 \\\\ x=', '-2,\\;5'],
+  ['(x+1)(x-2)=4 \\\\ x=', '-2,\\;3'], ['x^{2}-4x+4=0 \\\\ x=', '2'], ['x^{2}+3x+1=0 \\\\ x=', '\\frac{-3\\pm\\sqrt{5}}{2}'],
+  ['x^{2}+4x+2=0 \\\\ x=', '-2\\pm\\sqrt{2}'], ['x^{2}-2x-11=0 \\\\ x=', '1\\pm 2\\sqrt{3}'], ['2x^{2}+2x-1=0 \\\\ x=', '\\frac{-1\\pm\\sqrt{3}}{2}'],
+  ['x^{2}+x-1=0 \\\\ x=', '\\frac{-1\\pm\\sqrt{5}}{2}'], ['3x^{2}-2x-2=0 \\\\ x=', '\\frac{1\\pm\\sqrt{7}}{3}'],
+  ['x^{2}+2x+5=0 \\\\ x=', null], ['x^{2}+x+1=0 \\\\ x=', null], ['2x^{2}+x-1=0 \\\\ x=', '-1,\\;\\frac{1}{2}'], ['4x^{2}-1=0 \\\\ x=', '\\pm\\frac{1}{2}'],
+  ['x^{2}-0.5x-0.5=0 \\\\ x=', '-0.5,\\;1'], ['0.5x^{2}+x-4=0 \\\\ x=', '-4,\\;2'], ['\\frac{1}{2}x^{2}-\\frac{1}{2}=0 \\\\ x=', '\\pm 1'],
+  ['x^{2}+6x=-9 \\\\ x=', '-3'], ['m^{2}-m=6 \\\\ m=', '-2,\\;3'], ['x+\\frac{6}{x}=5 \\\\ x=', '2,\\;3'], ['\\frac{x^{2}-1}{x-1}=0 \\\\ x=', null],
+  // the working under it must agree, and two different quadratics are not one
+  ['x^{2}+5x+6=0 \\\\ (x+2)(x+3)=0 \\\\ x=', '-3,\\;-2'], ['x^{2}+5x+6=0 \\\\ (x+2)(x-3)=0 \\\\ x=', null],
+  // still no answer: an inequality, a cube, a quadratic with no "x =" under it, π in it
+  ['x^{2}+5x+6<0 \\\\ x<', null], ['x^{3}+x=2 \\\\ x=', null], ['x^{2}+5x+6=', null], ['x^{2}+\\pi x=0 \\\\ x=', null],
+  // x² = p as before: ± and a decimal when it does not come out
+  ['x^{2}=49 \\\\ x=', '\\pm 7'], ['x^{2}=50 \\\\ x=', '\\pm 7.071\\ldots'],
+  // rearranging: the asked letter to the first power, never underneath; a number to divide by gives a polynomial, letters
+  // a single fraction
+  ['2x+3y=12 \\\\ y=', '-\\frac{2}{3}x+4'], ['y-3=2(x-1) \\\\ y=', '2x+1'], ['A=lw \\\\ w=', '\\frac{A}{l}'], ['P=2l+2w \\\\ l=', '\\frac{1}{2}P-w'],
+  ['d=rt \\\\ t=', '\\frac{d}{r}'], ['y=mx+b \\\\ x=', '\\frac{y-b}{m}'], ['y=mx+b \\\\ b=', '-mx+y'], ['A=\\frac{1}{2}bh \\\\ h=', '\\frac{2A}{b}'],
+  ['I=prt \\\\ r=', '\\frac{I}{pt}'], ['A=\\frac{1}{2}(b_{1}+b_{2})h \\\\ h=', '\\frac{2A}{b_{1}+b_{2}}'], ['y=2x+1 \\\\ x=', '\\frac{1}{2}y-\\frac{1}{2}'],
+  ['x+y=10 \\\\ y=', '-x+10'], ['3x-y=7 \\\\ y=', '3x-7'], ['0.5x+y=2 \\\\ y=', '-0.5x+2'], ['xy=6 \\\\ y=', '\\frac{6}{x}'],
+  ['A=lw \\\\ l=5 \\\\ w=', '\\frac{1}{5}A'], ['A=lw \\\\ l=5 \\\\ A=', null],
+  // working that rearranges step by step must agree; equations side by side that disagree are a system, not working
+  ['2x+3y=12 \\\\ 3y=-2x+12 \\\\ y=', '-\\frac{2}{3}x+4'], ['2x+3y=12 \\\\ 3y=-2x+10 \\\\ y=', null], ['xy=6 \\\\ x+y=5 \\\\ y=', null],
+  ['x+y=1 \\\\ 2x+2y=2 \\\\ x=', '-y+1'], ['x+y=10 \\\\ x-y=2 \\\\ y=', '4'], ['x+y+z=6 \\\\ x-z=2 \\\\ y=', null],
+  // no answer: already solved for it, squared, underneath, nothing else to write it with, a bottom that might cancel
+  ['y=2x+1 \\\\ y=', null], ['x^{2}+y^{2}=25 \\\\ y=', null], ['A=\\pi r^{2} \\\\ r=', null], ['\\frac{1}{x}+y=2 \\\\ x=', null], ['xy=0 \\\\ y=', null],
+  ['(a+b)y=a^{2}-b^{2} \\\\ y=', null], ['ay+by=a+b \\\\ y=', null], ['C=2\\pi r \\\\ r=', null], ['x+y<3 \\\\ x<', null],
+  // slope: the formula, point-slope, slope-intercept with x given, subscripted letters given above
+  ['m=\\frac{5-1}{3-1} \\\\ m=', '2'], ['y=\\frac{1}{2}x+3 \\\\ x=4 \\\\ y=', '5'], ['y=-\\frac{2}{3}x+4 \\\\ x=6 \\\\ y=', '0'],
+  ['x_{1}=1 \\\\ y_{1}=3 \\\\ x_{2}=4 \\\\ y_{2}=9 \\\\ m=\\frac{y_{2}-y_{1}}{x_{2}-x_{1}} \\\\ m=', '2'],
+  ['x_{1}=1 \\\\ y_{1}=3 \\\\ x_{2}=4 \\\\ y_{2}=9 \\\\ \\frac{y_{2}-y_{1}}{x_{2}-x_{1}}=', '2'], ['x_{1}=-2 \\\\ y_{1}=1 \\\\ x_{2}=4 \\\\ y_{2}=-3 \\\\ \\frac{y_{2}-y_{1}}{x_{2}-x_{1}}=', '-\\frac{2}{3}'],
+  ['y_{1}=3 \\\\ y_{2}=9 \\\\ y_{2}-y_{1}=', '6'],
+  // the Pythagorean theorem: c² = 25 says c = ±5, so that is the answer; √25 is 5
+  ['a^{2}+b^{2}=c^{2} \\\\ a=3 \\\\ b=4 \\\\ c=', '\\pm 5'], ['c^{2}=25 \\\\ c=', '\\pm 5'], ['\\sqrt{25}=', '5'], ['a=3 \\\\ b=4 \\\\ \\sqrt{a^{2}+b^{2}}=', '5'],
+  ['a^{2}+b^{2}=c^{2} \\\\ a=5 \\\\ c=13 \\\\ b=', '\\pm 12'],
+]) sol(t, w, X);
+// repeating decimals (a bar over the digits that repeat) and scientific notation, × a times sign as usual
+table([
+  ['0.\\overline{3}=', '\\frac{1}{3}'], ['0.1\\overline{6}=', '\\frac{1}{6}'], ['2.\\overline{45}=', '2\\frac{5}{11}'], ['0.\\overline{9}=', '1'],
+  ['.\\overline{6}=', '\\frac{2}{3}'], ['-0.\\overline{3}=', '-\\frac{1}{3}'], ['0.\\overline{142857}=', '\\frac{1}{7}'], ['1.2\\overline{3}=', '1\\frac{7}{30}'],
+  ['0.\\overline{3}+0.\\overline{3}=', '0.\\overline{6}'], ['0.\\overline{3}\\times 3=', '1'], ['\\overline{3}=', null], ['3\\overline{3}=', null],
+  ['0.\\overline{x}=', null], ['0.\\overline{3}4=', null],
+  ['3.2\\times 10^{4}=', '32000'], ['(3\\times 10^{4})(2\\times 10^{3})=', '60000000'], ['\\frac{6\\times 10^{5}}{3\\times 10^{2}}=', '2000'],
+  ['4.5\\times 10^{-3}=', '0.0045'], ['(3\\cdot 10^{4})(2\\cdot 10^{3})=', '60000000'], ['(2.5\\times 10^{3})\\times(4\\times 10^{-5})=', '0.1'],
+]);
+lines('0.\\overline{3}=\\frac{1}{3} \\\\ 0.\\overline{6}=', [null, '\\frac{2}{3}']);
+{
+  const q = Nib.solve('x^{2}+5x+6=0 \\\\ x=')[1], r = Nib.solve('x^{2}+3x+1=0 \\\\ x=')[1], l = Nib.solve('y=mx+b \\\\ x=')[1];
+  ok(q.kind === 'roots' && q.text === '-3, -2' && q.exact && r.kind === 'radical' && r.text === '(-3±√5)/2' && r.exact && l.kind === 'expression' && l.text === '(y-b)/m',
+    `the kinds and text of the new answers (${q.kind} ${q.text}; ${r.kind} ${r.text}; ${l.kind} ${l.text})`);
+  ok(Nib.solve('x^{2}+5x+6=0 \\\\ x=', X)[1].latex === '-3,\\;-2' && Nib.solve('0.\\overline{3}=')[0].kind === 'fraction', 'the same with x a letter; a repeating decimal is a fraction');
+}
+{
+  // written by hand: whenever the writing is read right, the answer is the one for the LaTeX
+  const strip = s => s.replace(/\s+/g, '').replace(/^\\begin\{gathered\}|\\end\{gathered\}$/g, '');
+  const HW = ['x^{2}+5x+6=0 \\\\ x=', 'x^{2}-4x+4=0 \\\\ x=', 'x^{2}+3x+1=0 \\\\ x=', 'x(x-3)=10 \\\\ x=', '2x+3y=12 \\\\ y=', 'y-3=2(x-1) \\\\ y=', 'd=rt \\\\ t=', 'A=lw \\\\ w='];
+  let read = 0, wrong = [];
+  for (const p of HW) for (let k = 0; k < 6; k++) {
+    const e = compose(p), r = new Nib.Recognizer().recognize(e.strokes, X), a = Nib.solve(r, X).pop(), want = Nib.solve(p, X).pop();
+    if (strip(r.latex) !== strip(p)) continue;
+    read++;
+    if (!a || !want || a.latex !== want.latex) wrong.push(p + ' -> ' + (a ? a.latex : 'none'));
+  }
+  ok(wrong.length === 0 && read >= 0.6 * 6 * HW.length, `quadratics and rearranging by hand: right whenever read right (${read} of ${6 * HW.length} read right${wrong.length ? '; wrong: ' + wrong.join(', ') : ''})`);
+}
+{
+  // the new answers drawn in every view: a radical over a number with ± in a fraction, a list with a comma, letters
+  ok([',', ...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'].every(ch => { const g = I.DEFAULT_GLYPHS[ch]; return g && g.length && g.every(s => s.length >= 2 && s.every(p => isFinite(p[0]) && isFinite(p[1]))); }),
+    'the built-in hand has a comma and every letter');
+  const inkX = (st, res) => {
+    const plan = I.planOf(res, st, I.tidyProvider(), { answers: I.solveRows(res.tree, X).map(a => a && a.nodes), answersOnly: true, sample: I.sampleBook(res, st, null) });
+    return I.drawablesOf(plan).map(it => I.unlevel(it, plan.t || 0, plan.c0 || 0));
+  };
+  const drawn = (p, need) => {
+    for (let k = 0; k < 30; k++) {
+      const e = compose(p), res = new Nib.Recognizer().recognize(e.strokes, X);
+      if (res.latex.replace(/\s/g, '') !== '\\begin{gathered}' + p.replace(/\s/g, '') + '\\end{gathered}') continue;
+      for (const style of ['tidy', 'hand', 'typeset', 'ink']) {
+        const items = style === 'ink' ? inkX(e.strokes, res)
+          : style === 'typeset' ? Nib.typeset(e.strokes, { result: res, solve: true, times: false }).items : Nib.neaten(e.strokes, { style, result: res, solve: true, times: false }).items;
+        const A = items.filter(it => it.answer), eq = items.filter(it => !it.answer && it.label === '=').pop();
+        const fine = A.length && A.every(it => it.parts.length && it.box.every(isFinite)) && need.every(l => A.some(it => it.label === l)) && (!eq || A.every(it => it.box[0] > eq.box[2] - 1));
+        ok(fine, `${style}: ${p} is drawn after its "=" with ${need.join(' ')} (${A.map(it => it.label).join(' ')})`);
+      }
+      return;
+    }
+    console.log(`    (no writer read ${p} right; skipped)`);
+  };
+  drawn('x^{2}+3x+1=0 \\\\ x=', ['\\pm', '\\sqrt', '-', '3', '5', '2']);
+  drawn('x^{2}+5x+6=0 \\\\ x=', [',', '-', '3', '2']);
+  drawn('2x+3y=12 \\\\ y=', ['-', 'x', '4']);
+  // a letter the board has no clear instance of comes from the built-in hand: the answer is still drawn
+  const e = compose('y='), res = new Nib.Recognizer().recognize(e.strokes, X);
+  const nodes = I.solveRows(I.latexRows('2x+3y=12 \\\\ y=')).map(a => a && a.nodes)[1], rad = I.solveRows(I.latexRows('x^{2}+3x+1=0 \\\\ x=')).map(a => a && a.nodes)[1];
+  if (res.latex.replace(/\s/g, '') === 'y=') {
+    for (const [nm, ns] of [['-2/3 x + 4', nodes], ['(-3 ± √5)/2', rad]]) for (const style of ['tidy', 'hand', 'typeset']) {
+      const opts = { result: res, answers: [ns], sample: l => I.DEFAULT_GLYPHS[l] || null };
+      const t = style === 'typeset' ? Nib.typeset(e.strokes, opts) : Nib.neaten(e.strokes, Object.assign({ style }, opts)), A = t.items.filter(it => it.answer);
+      ok(A.length >= 5 && A.every(it => it.parts.length && it.box.every(isFinite)), `${style}: ${nm} drawn with only the built-in hand (${A.map(it => it.label).join(' ')})`);
+    }
+  } else console.log('    (y= misread: ' + res.latex + ')');
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

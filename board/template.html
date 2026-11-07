@@ -1,5 +1,7 @@
 <title>Nib Board</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#f3eddc">
+<meta name="mobile-web-app-capable" content="yes">
 <!--FONT_LINK-->
 <style>
 /*FONT_FACES*/
@@ -14,7 +16,7 @@
   --gold: #c9a227;
   --gold-ink: #8a6a10;
   --gold-wash: #f4e7bd;
-  --answer: #a9801a;    /* answers after "=": gold deep enough for a pen line on cream */
+  --answer: #8a6a10;    /* answers after "=": gold deep enough for a pen line on cream */
   --coral: #d9654f;
   --f-display: "DM Serif Display", Georgia, "Times New Roman", serif;
   --f-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -31,42 +33,78 @@
   --gold: #d6b04a; --gold-ink: #e2c36a; --gold-wash: #2c2a22; --answer: #e0b84f; --coral: #ef8a73; color-scheme: dark;
 }
 [hidden] { display: none !important; }
-html, body { height: 100%; }
+html, body { height: 100%; overscroll-behavior: none; }
 body { margin: 0; background: var(--board); color: var(--ink); font-family: var(--f-body); font-size: 14px; overflow: hidden; -webkit-font-smoothing: antialiased; }
 .board { position: fixed; inset: 0; display: flex; flex-direction: column; }
+.board[data-rail="bottom"] { flex-direction: column-reverse; }
+.board[data-rail="left"] { flex-direction: row; }
+.board[data-rail="right"] { flex-direction: row-reverse; }
+.rail, .fixpop, .settings, .note, .diag { touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .rail {
-  display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; background: var(--rail); border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; background: var(--rail); border-bottom: 1px solid var(--rule); flex: none;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: calc(8px + env(safe-area-inset-top, 0px)) 8px;
+  padding-block: calc(6px + env(safe-area-inset-top, 0px)) 6px;
 }
-.mark { font: 400 24px/1 var(--f-display); margin: 0 6px 0 0; letter-spacing: .01em; }
+.board[data-rail="bottom"] .rail { border-bottom: 0; border-top: 1px solid var(--rule); padding-block: 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
+.mark { font: 400 24px/1 var(--f-display); margin: 0 6px 0 0; letter-spacing: .01em; cursor: default; }
 .mark span { color: var(--gold); }
 .seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--board); border: 1px solid var(--rule); gap: 2px; }
-.seg button { font: 500 13px/1 var(--f-body); color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 8px 13px; cursor: pointer; }
+.seg button { font: 500 13px/1 var(--f-body); color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 0 13px; min-height: 34px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .seg button[aria-checked="true"] { background: var(--ink); color: var(--board); }
+.seg .vi { display: none; width: 18px; height: 18px; }
 .sp { flex: 1; }
 .tool {
-  display: inline-flex; align-items: center; gap: 7px; font: 500 13px/1 var(--f-body); color: var(--ink); background: transparent;
-  border: 1px solid transparent; border-radius: 9px; padding: 8px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: 500 13px/1 var(--f-body); color: var(--ink); background: transparent;
+  border: 1px solid transparent; border-radius: 9px; padding: 0 10px; min-height: 40px; min-width: 40px; box-sizing: border-box; cursor: pointer;
 }
 .tool svg { width: 18px; height: 18px; flex: none; }
 .tool:hover:not(:disabled) { background: var(--board); }
 .tool:disabled { opacity: .35; cursor: default; }
-.tool[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
-.seg button:focus-visible, .tool:focus-visible, .notebtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.surface { position: relative; flex: 1; min-height: 0; }
+.tool[aria-pressed="true"], .tool[aria-expanded="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
+.seg button:focus-visible, .tool:focus-visible, .notebtn:focus-visible, .opt:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.pages { display: inline-flex; align-items: center; gap: 0; }
+.pages .tool { padding: 0; }
+.pageno { font: 500 13px/1 var(--f-body); color: var(--muted); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* rails on a side: one column of icons (two when the screen is short), the labels as titles */
+.board.side .rail {
+  display: grid; grid-template-columns: 44px; grid-auto-rows: min-content; justify-items: center; align-content: start; gap: 4px;
+  border-bottom: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 6px calc(8px + env(safe-area-inset-bottom, 0px));
+}
+.board.side .rail::-webkit-scrollbar { display: none; }
+.board[data-rail="left"] .rail { border-right: 1px solid var(--rule); padding-left: max(6px, env(safe-area-inset-left, 0px)); }
+.board[data-rail="right"] .rail { border-left: 1px solid var(--rule); padding-right: max(6px, env(safe-area-inset-right, 0px)); }
+.board.side .mark { font-size: 21px; margin: 2px 0 4px; }
+.board.side .sp { display: none; }
+.board.side .seg { flex-direction: column; border-radius: 14px; }
+.board.side .seg button { padding: 0; width: 38px; min-height: 38px; border-radius: 10px; }
+.board.side .seg .vi { display: block; }
+.board.side .seg .vt { display: none; }
+.board.side .tool { padding: 0; width: 44px; height: 44px; }
+.board.side .tool .t { display: none; }
+.board.side .pages { flex-direction: column; }
+.board.side .pageno { min-width: 0; padding: 2px 0; }
+@media (max-height: 919px) {
+  .board.side .rail { grid-template-columns: 44px 44px; }
+  .board.side .rail > .mark, .board.side .rail > .seg, .board.side .rail > .pages { grid-column: 1 / -1; }
+  .board.side .seg { display: grid; grid-template-columns: 38px 38px; }
+  .board.side .pages { display: grid; grid-template-columns: 44px 44px; grid-template-areas: "p n" "l l" "a a"; justify-items: center; }
+  .board.side #prev { grid-area: p; } .board.side #next { grid-area: n; } .board.side .pageno { grid-area: l; } .board.side #newpage { grid-area: a; }
+}
+.surface { position: relative; flex: 1; min-height: 0; min-width: 0; }
 nib-pad {
-  position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--gold); --nib-answer: var(--answer);
+  position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--gold); --nib-answer: var(--answer); --nib-paper: var(--board);
   background-image: radial-gradient(var(--dot) 1.2px, transparent 1.4px); background-size: 28px 28px; background-position: 14px 14px;
 }
 .note {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-  max-width: min(560px, calc(100% - 32px)); box-sizing: border-box; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  max-width: min(560px, calc(100% - 32px)); width: max-content; box-sizing: border-box; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--rail); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 12px 10px 14px; color: var(--ink);
-  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .5); font-size: 14px;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .5); font-size: 14px; z-index: 3;
 }
-.note p { margin: 0; flex: 1; min-width: 200px; }
-.notebtn { font: 500 13px/1 var(--f-body); color: var(--board); background: var(--ink); border: 0; border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+.board[data-rail="bottom"] .note { bottom: 18px; }
+.note p { margin: 0; flex: 1; min-width: min(200px, 100%); }
+.notebtn { font: 500 13px/1 var(--f-body); color: var(--board); background: var(--ink); border: 0; border-radius: 8px; padding: 0 14px; min-height: 40px; cursor: pointer; }
 .notebtn.quiet { color: var(--ink); background: transparent; border: 1px solid var(--rule); }
 .fixlayer { position: absolute; inset: 0; cursor: pointer; touch-action: none; }
 .fixpop {
@@ -80,41 +118,88 @@ nib-pad {
 .cand[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); }
 .cand:hover:not([aria-pressed="true"]) { border-color: var(--ink); }
 .cand:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.latexbox { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); top: 10px; }
-.latexbox textarea { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--rail); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; resize: none; }
-@media (max-width: 1379px) { .tool .t2 { display: none; } }
-@media (max-width: 1119px) { .tool .t3 { display: none; } }
-@media (max-width: 720px) { .tool .t { display: none; } .tool { padding: 8px; } .mark { display: none; } .seg button { padding: 8px 10px; } }
+.settings {
+  position: absolute; z-index: 4; width: min(340px, calc(100% - 16px)); box-sizing: border-box; max-height: calc(100% - 16px); overflow-y: auto;
+  background: var(--rail); border: 1px solid var(--rule); border-radius: 16px; padding: 14px 16px 16px; box-shadow: 0 18px 40px -20px rgba(0, 0, 0, .6);
+}
+.settings h2 { font: 400 20px/1.1 var(--f-display); margin: 0 0 10px; }
+.settings .row { margin: 0 0 12px; }
+.settings .lab { font: 600 12px/1 var(--f-body); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; margin: 0 0 6px; }
+.settings .seg { display: flex; width: 100%; box-sizing: border-box; }
+.settings .seg button { flex: 1; min-height: 44px; padding: 0 6px; font-size: 14px; }
+.opt { font: 500 14px/1 var(--f-body); min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--rule); background: var(--board); color: var(--ink); cursor: pointer; }
+.opt.danger { color: var(--coral); border-color: var(--coral); }
+.opt.solid { background: var(--coral); border-color: var(--coral); color: #fff; }
+.confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.confirm p { margin: 0 0 4px; flex-basis: 100%; }
+.diag {
+  position: absolute; left: 8px; top: 8px; z-index: 5; margin: 0; padding: 8px 10px; max-width: calc(100% - 16px); box-sizing: border-box; overflow: hidden;
+  font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--rail); border: 1px solid var(--rule); border-radius: 10px; opacity: .94; pointer-events: none; white-space: pre;
+}
+.latexbox { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); top: 10px; z-index: 3; }
+.latexbox textarea { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--rail); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; resize: none; user-select: text; -webkit-user-select: text; }
+/* the top or bottom rail stays one row as the screen narrows: labels go first, then the views become icons */
+@media (max-width: 1659px) { .tool .t2 { display: none; } }
+@media (max-width: 1479px) { .tool .t3 { display: none; } }
+@media (max-width: 1179px) { .tool .t { display: none; } .tool { padding: 0; } }
+@media (max-width: 1079px) {
+  .rail { gap: 4px 2px; padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px)); }
+  .mark { display: none; } .seg .vi { display: block; } .seg .vt { display: none; } .seg button { padding: 0 9px; } .pageno { min-width: 34px; }
+}
 @media (prefers-reduced-motion: no-preference) { .tool, .seg button { transition: background .15s, color .15s, border-color .15s; } }
 </style>
 
-<div class="board">
-  <header class="rail">
-    <h1 class="mark">Nib<span>.</span></h1>
+<div class="board" id="board" data-rail="top">
+  <header class="rail" id="rail">
+    <h1 class="mark" id="mark" title="Nib">Nib<span>.</span></h1>
     <div class="seg" role="radiogroup" aria-label="How writing is shown" id="views">
-      <button type="button" role="radio" data-view="ink" aria-checked="false">Ink</button>
-      <button type="button" role="radio" data-view="tidy" aria-checked="true">Tidy</button>
-      <button type="button" role="radio" data-view="hand" aria-checked="false">My hand</button>
-      <button type="button" role="radio" data-view="typeset" aria-checked="false">Typeset</button>
+      <button type="button" role="radio" data-view="ink" aria-checked="true" title="Ink: as written (1)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15c2.5-6 4.5-6 6 0s3.5 6 6 0 3.5-6 6 0"/></svg><span class="vt">Ink</span></button>
+      <button type="button" role="radio" data-view="tidy" aria-checked="false" title="Tidy (2)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg><span class="vt">Tidy</span></button>
+      <button type="button" role="radio" data-view="hand" aria-checked="false" title="My hand (3)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="vt">My hand</span></button>
+      <button type="button" role="radio" data-view="typeset" aria-checked="false" title="Typeset (4)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg><span class="vt">Typeset</span></button>
     </div>
     <button type="button" class="tool" id="solve" aria-label="Solve" aria-pressed="false" title="Answers after =, and x = under an equation (S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h10"/><path d="M4 15h10"/><path d="M19 4v5"/><path d="M16.5 6.5h5"/><path d="M18 14.5v3"/><path d="M16.5 16h3"/></svg><span class="t">Solve</span></button>
     <span class="sp"></span>
+    <div class="pages" role="group" aria-label="Pages">
+      <button type="button" class="tool" id="prev" aria-label="Previous page" title="Previous page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+      <span class="pageno" id="pageno" aria-live="polite">1 / 1</span>
+      <button type="button" class="tool" id="next" aria-label="Next page" title="Next page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+      <button type="button" class="tool" id="newpage" aria-label="New page" title="New page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+    </div>
     <button type="button" class="tool" id="erase" aria-label="Erase" aria-pressed="false" title="Erase (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg><span class="t">Erase</span></button>
     <button type="button" class="tool" id="fix" aria-label="Fix" aria-pressed="false" title="Fix a misread symbol (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/><path d="m16 20 2 2 4-4"/></svg><span class="t">Fix</span></button>
     <button type="button" class="tool" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span class="t t2">Undo</span></button>
     <button type="button" class="tool" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg><span class="t t2">Redo</span></button>
-    <button type="button" class="tool" id="clear" aria-label="Clear" title="Clear the board (undo brings it back)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg><span class="t t3">Clear</span></button>
+    <button type="button" class="tool" id="clear" aria-label="Clear" title="Clear this page (undo brings it back)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg><span class="t t3">Clear</span></button>
+    <button type="button" class="tool" id="saveimg" aria-label="Save image" title="Save this page as a picture"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 13-4.5-4.5L7 17"/><path d="M12 21h7"/></svg><span class="t t3">Save image</span></button>
     <button type="button" class="tool" id="hand" aria-label="My handwriting" title="Open the handwriting you saved from Replicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="t t3">My handwriting</span></button>
-    <button type="button" class="tool" id="copy" aria-label="Copy LaTeX" title="Copy the LaTeX of everything on the board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="t t3">Copy LaTeX</span></button>
+    <button type="button" class="tool" id="copy" aria-label="Copy LaTeX" title="Copy the LaTeX of everything on this page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="t t3">Copy LaTeX</span></button>
     <button type="button" class="tool" id="full" aria-label="Full screen" title="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="t t2">Full screen</span></button>
+    <button type="button" class="tool" id="gear" aria-label="Settings" aria-expanded="false" aria-controls="settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
     <input type="file" id="file" accept=".json,application/json" hidden>
   </header>
-  <div class="surface">
-    <nib-pad id="pad" view="tidy" stroke-width="3.5" separate times="false" aria-label="Board"></nib-pad>
+  <div class="surface" id="surface">
+    <nib-pad id="pad" view="ink" stroke-width="3.5" separate times="false" reveal fit aria-label="Board"></nib-pad>
     <div class="fixlayer" id="fixlayer" hidden></div>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
+    <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
+      <h2>Settings</h2>
+      <div class="row"><p class="lab" id="lab-rail">Tools</p><div class="seg" role="radiogroup" aria-labelledby="lab-rail" data-set="rail">
+        <button type="button" role="radio" data-v="top">Top</button><button type="button" role="radio" data-v="bottom">Bottom</button><button type="button" role="radio" data-v="left">Left</button><button type="button" role="radio" data-v="right">Right</button></div></div>
+      <div class="row"><p class="lab" id="lab-theme">Theme</p><div class="seg" role="radiogroup" aria-labelledby="lab-theme" data-set="theme">
+        <button type="button" role="radio" data-v="light">Light</button><button type="button" role="radio" data-v="dark">Dark</button><button type="button" role="radio" data-v="system">System</button></div></div>
+      <div class="row"><p class="lab" id="lab-pen">Pen</p><div class="seg" role="radiogroup" aria-labelledby="lab-pen" data-set="pen">
+        <button type="button" role="radio" data-v="thin">Thin</button><button type="button" role="radio" data-v="medium">Medium</button><button type="button" role="radio" data-v="thick">Thick</button></div></div>
+      <div class="row"><p class="lab" id="lab-solve">Answers</p><div class="seg" role="radiogroup" aria-labelledby="lab-solve" data-set="solve">
+        <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
+      <div class="row"><p class="lab" id="lab-reveal">Reveal answers on tap</p><div class="seg" role="radiogroup" aria-labelledby="lab-reveal" data-set="reveal">
+        <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
+      <div class="row" id="delrow"><button type="button" class="opt danger" id="delpage">Delete this page</button></div>
+      <div class="row confirm" id="delask" hidden><p id="delq">Delete this page and its writing?</p><button type="button" class="opt solid" id="delyes">Delete</button><button type="button" class="opt" id="delno">Keep it</button></div>
+    </div>
     <div class="latexbox" id="latexbox" hidden><textarea id="latexout" rows="3" readonly aria-label="LaTeX"></textarea></div>
     <div class="note" id="note" role="status" hidden><p id="notetext"></p><button type="button" class="notebtn" id="noteact" hidden></button><button type="button" class="notebtn quiet" id="noteclose">OK</button></div>
+    <pre class="diag" id="diag" hidden></pre>
   </div>
 </div>
 
@@ -123,18 +208,42 @@ nib-pad {
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
-  const pad = $('pad'), KEY = 'nib-board-v1';
-  // the board survives a reload: the view and the ink are kept in this browser
+  const pad = $('pad'), board = $('board'), KEY = 'nib-board-v1';
+  const VIEWS = ['ink', 'tidy', 'hand', 'typeset'], RAILS = ['top', 'bottom', 'left', 'right'], THEMES = ['light', 'dark', 'system'];
+  const PENS = { thin: 2.5, medium: 3.5, thick: 5 };
+  // the board survives a reload: its pages, view and settings are kept in this browser (one key)
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { /* first visit or storage blocked */ }
-  const VIEWS = ['ink', 'tidy', 'hand', 'typeset'];
-  let view = saved && VIEWS.includes(saved.view) ? saved.view : 'tidy';
-  let solve = saved && typeof saved.solve === 'boolean' ? saved.solve : true;
-  let saveTimer = null;
-  const persist = () => {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify({ view, solve, strokes: pad.strokes.map(s => s.map(p => [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10])) })); } catch (e) { /* full or blocked */ } }, 500);
+  if (!saved || typeof saved !== 'object') saved = {};
+  const pick = (v, list, d) => (list.includes(v) ? v : d);
+  const S = {
+    view: pick(saved.view, VIEWS, 'ink'),
+    solve: typeof saved.solve === 'boolean' ? saved.solve : true,
+    reveal: typeof saved.reveal === 'boolean' ? saved.reveal : true,
+    rail: pick(saved.rail, RAILS, 'top'),
+    theme: pick(saved.theme, THEMES, 'system'),
+    pen: pick(saved.pen, Object.keys(PENS), 'medium'),
   };
+  // pages: each its own strokes, corrections and shown answers (a board saved before pages is page 1)
+  const blank = () => ({ strokes: [], fixes: [], revealed: [] });
+  const okPage = p => (p && typeof p === 'object' && Array.isArray(p.strokes) ? { strokes: p.strokes, fixes: Array.isArray(p.fixes) ? p.fixes : [], revealed: Array.isArray(p.revealed) ? p.revealed : [] } : null);
+  let pages = Array.isArray(saved.pages) ? saved.pages.map(okPage).filter(Boolean) : Array.isArray(saved.strokes) ? [okPage(saved)] : [];
+  if (!pages.length) pages = [blank()];
+  let cur = Number.isInteger(saved.page) ? Math.max(0, Math.min(pages.length - 1, saved.page)) : 0;
+  const snaps = [];                       // each page's undo history while the board is open
+  let ready = false, saveTimer = null, warned = false;
+  function write() {
+    clearTimeout(saveTimer); saveTimer = null;
+    if (!ready) return;
+    pages[cur] = pad.getState();
+    try { localStorage.setItem(KEY, JSON.stringify(Object.assign({ v: 2 }, S, { page: cur, pages }))); }
+    catch (e) { if (!warned) { warned = true; note("The board can't be saved in this browser. Save an image to keep it."); } }
+  }
+  // nothing is written until the board has been put back and something changes (a reload never re-saves what it read)
+  const persist = () => { if (!ready) return; clearTimeout(saveTimer); saveTimer = setTimeout(write, 500); };
+  const flush = () => { if (saveTimer) write(); };
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
   // ---------------------------------------------------------------- notes
   let noteAction = null, noteTimer = null;
@@ -150,7 +259,7 @@ nib-pad {
 
   // ---------------------------------------------------------------- views
   function setView(v, quiet) {
-    view = v; pad.view = v; persist(); closePop();
+    S.view = v; pad.view = v; persist(); closePop();
     document.querySelectorAll('#views button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.view === v)));
     if (v === 'hand' && !Nib.hand.size && !quiet) note('Your handwriting is not on this computer yet. Open the file you saved from Replicator; until then the board shows your writing tidied.', () => $('file').click(), 'Open handwriting');
     else if (!quiet) $('note').hidden = true;
@@ -162,34 +271,114 @@ nib-pad {
   // ---------------------------------------------------------------- tools
   function tools() {
     $('undo').disabled = !(pad.pad && pad.pad.canUndo); $('redo').disabled = !(pad.pad && pad.pad.canRedo);
-    $('clear').disabled = !pad.strokes.length; $('copy').disabled = !pad.latex;
+    $('clear').disabled = !pad.strokes.length; $('copy').disabled = !pad.latex; $('saveimg').disabled = !pad.strokes.length;
     const any = !!(pad.result && pad.result.symbols.length);
     $('fix').disabled = !any; if (!any && fixing) fixMode(false);
+    $('pageno').textContent = (cur + 1) + ' / ' + pages.length;
+    $('pageno').title = 'Page ' + (cur + 1) + ' of ' + pages.length;
+    $('prev').disabled = cur === 0; $('next').disabled = cur === pages.length - 1;
   }
   pad.addEventListener('nib:change', () => { closePop(); tools(); persist(); });
-  pad.addEventListener('change', () => { closePop(); tools(); if (!$('latexbox').hidden) $('latexout').value = solve ? pad.solved : pad.latex; });
+  pad.addEventListener('change', () => { closePop(); tools(); persist(); if (!$('latexbox').hidden) $('latexout').value = S.solve ? pad.solved : pad.latex; });
 
   // ---------------------------------------------------------------- answers after "="
   function setSolve(on, quiet) {
-    solve = on; pad.solve = on; persist();
+    S.solve = on; pad.solve = on; persist(); marks();
     $('solve').setAttribute('aria-pressed', String(on));
     if (!$('latexbox').hidden) $('latexout').value = on ? pad.solved : pad.latex;
-    if (!quiet) note(on ? 'End a problem with = to see its answer. Under an equation, write x = to solve it.' : 'Answers are hidden.');
+    if (!quiet) note(!on ? 'Answers are hidden.' : S.reveal ? 'End a problem with = and tap the gold ? to see its answer. Under an equation, write x = to solve it.' : 'End a problem with = to see its answer. Under an equation, write x = to solve it.');
   }
-  $('solve').onclick = () => setSolve(!solve);
-  setSolve(solve, true);
+  function setReveal(on) { S.reveal = on; pad.reveal = on; persist(); marks(); }
+  $('solve').onclick = () => setSolve(!S.solve);
   const erase = on => { pad.mode = on ? 'erase' : 'draw'; $('erase').setAttribute('aria-pressed', String(on)); if (on && fixing) fixMode(false); };
 
+  // ---------------------------------------------------------------- settings
+  function setRail(r) {
+    S.rail = r; board.dataset.rail = r; board.classList.toggle('side', r === 'left' || r === 'right'); persist(); marks();
+    if (!$('settings').hidden) placeSettings();
+  }
+  function setTheme(t) {
+    S.theme = t; persist(); marks();
+    if (t === 'system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--rail').trim() || '#f3eddc');
+  }
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (S.theme === 'system') setTheme('system'); }); } catch (e) { /* ok */ }
+  function setPen(p) { S.pen = p; pad.setAttribute('stroke-width', String(PENS[p])); persist(); marks(); }
+  function marks() {
+    const val = { rail: S.rail, theme: S.theme, pen: S.pen, solve: S.solve ? 'on' : 'off', reveal: S.reveal ? 'on' : 'off' };
+    document.querySelectorAll('#settings .seg').forEach(g => g.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.v === val[g.dataset.set]))));
+  }
+  const SETTERS = { rail: setRail, theme: setTheme, pen: setPen, solve: v => setSolve(v === 'on', true), reveal: v => setReveal(v === 'on') };
+  document.querySelectorAll('#settings .seg').forEach(g => g.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (b && b.dataset.v) SETTERS[g.dataset.set](b.dataset.v);
+  }));
+  function placeSettings() {
+    const el = $('settings'), Sf = $('surface').getBoundingClientRect(), G = $('gear').getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight, m = 8;
+    let left, top;
+    if (S.rail === 'left') { left = m; top = G.top - Sf.top; }
+    else if (S.rail === 'right') { left = Sf.width - w - m; top = G.top - Sf.top; }
+    else { left = G.right - Sf.left - w; top = S.rail === 'top' ? m : Sf.height - h - m; }
+    el.style.left = Math.max(m, Math.min(Sf.width - w - m, left)) + 'px';
+    el.style.top = Math.max(m, Math.min(Sf.height - h - m, top)) + 'px';
+  }
+  function openSettings(on) {
+    $('settings').hidden = !on; $('gear').setAttribute('aria-expanded', String(on));
+    askDelete(false);
+    if (on) { closePop(); marks(); placeSettings(); }
+  }
+  $('gear').onclick = () => openSettings($('settings').hidden);
+  // a tap anywhere else closes it (and, on the board, writes nothing)
+  document.addEventListener('pointerdown', e => {
+    if ($('settings').hidden || $('settings').contains(e.target) || $('gear').contains(e.target)) return;
+    openSettings(false);
+    if ($('surface').contains(e.target)) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  function askDelete(on) {
+    $('delask').hidden = !on; $('delrow').hidden = on;
+    if (on) $('delq').textContent = pages.length > 1 ? `Delete page ${cur + 1} and its writing?` : 'Delete the writing on this page?';
+  }
+  $('delpage').onclick = () => askDelete(true);
+  $('delno').onclick = () => askDelete(false);
+  $('delyes').onclick = () => { openSettings(false); deletePage(); };
+
+  // ---------------------------------------------------------------- pages
+  function goPage(i) {
+    if (i < 0 || i >= pages.length || i === cur) return;
+    if (fixing) fixMode(false);
+    pages[cur] = pad.getState(); snaps[cur] = pad.pad.snapshot();
+    cur = i;
+    if (snaps[i]) pad.pad.restore(snaps[i]); else pad.setState(pages[i]);
+    tools(); persist();
+  }
+  function newPage() {
+    pages[cur] = pad.getState(); snaps[cur] = pad.pad.snapshot();
+    pages.push(blank()); goPage(pages.length - 1);
+    note(`Page ${cur + 1}. The arrows go back to the others.`);
+  }
+  function deletePage() {
+    if (fixing) fixMode(false);
+    if (pages.length === 1) { pages = [blank()]; snaps.length = 0; pad.setState(pages[0]); tools(); persist(); note('The page is empty now.'); return; }
+    const gone = cur + 1;
+    pages.splice(cur, 1); snaps.splice(cur, 1);
+    cur = Math.min(cur, pages.length - 1);
+    if (snaps[cur]) pad.pad.restore(snaps[cur]); else pad.setState(pages[cur]);
+    tools(); persist(); note(`Page ${gone} deleted.`);
+  }
+  $('prev').onclick = () => goPage(cur - 1);
+  $('next').onclick = () => goPage(cur + 1);
+  $('newpage').onclick = newPage;
+
   // ---------------------------------------------------------------- fix a misread symbol: tap it, pick what it is
-  const SHOW = { '-': '\u2212', '\\times': '\u00d7', '\\div': '\u00f7', '\\pm': '\u00b1', '\\le': '\u2264', '\\ge': '\u2265', '\\ne': '\u2260',
-    '\\cdot': '\u22c5', '\\pi': '\u03c0', '\\theta': '\u03b8', '\\alpha': '\u03b1', '\\beta': '\u03b2', '\\gamma': '\u03b3', '\\lambda': '\u03bb',
-    '\\mu': '\u03bc', '\\sigma': '\u03c3', '\\phi': '\u03d5', '\\Delta': '\u0394', '\\sqrt': '\u221a', '\\infty': '\u221e', '\\rightarrow': '\u2192',
-    '\\in': '\u2208', '\\circ': '\u00b0', '\\prime': '\u2032', '\\{': '{', '\\}': '}', '\\ldots': '\u2026', '\\sum': '\u2211', '\\int': '\u222b',
-    '\\forall': '\u2200', '\\exists': '\u2203', '\\lim': 'lim', '\\log': 'log', '\\sin': 'sin', '\\cos': 'cos', '\\tan': 'tan' };
+  const SHOW = { '-': '−', '\\times': '×', '\\div': '÷', '\\pm': '±', '\\le': '≤', '\\ge': '≥', '\\ne': '≠',
+    '\\cdot': '⋅', '\\pi': 'π', '\\theta': 'θ', '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\lambda': 'λ',
+    '\\mu': 'μ', '\\sigma': 'σ', '\\phi': 'ϕ', '\\Delta': 'Δ', '\\sqrt': '√', '\\infty': '∞', '\\rightarrow': '→',
+    '\\in': '∈', '\\circ': '°', '\\prime': '′', '\\{': '{', '\\}': '}', '\\ldots': '…', '\\sum': '∑', '\\int': '∫',
+    '\\forall': '∀', '\\exists': '∃', '\\lim': 'lim', '\\log': 'log', '\\sin': 'sin', '\\cos': 'cos', '\\tan': 'tan' };
   const shownAs = l => SHOW[l] || l;
-  let fixing = false, popFor = null;
+  let fixing = false, popFor = null, emptyTaps = 0;
   function fixMode(on) {
-    fixing = on; $('fix').setAttribute('aria-pressed', String(on)); $('fixlayer').hidden = !on; closePop();
+    fixing = on; emptyTaps = 0; $('fix').setAttribute('aria-pressed', String(on)); $('fixlayer').hidden = !on; closePop();
     if (on) {
       if (pad.mode === 'erase') erase(false);
       try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
@@ -227,7 +416,7 @@ nib-pad {
       b.type = 'button'; b.className = 'cand'; b.textContent = shownAs(l); b.dataset.label = l;
       b.setAttribute('aria-pressed', String(l === sym.label)); b.setAttribute('aria-label', l === sym.label ? 'Keep ' + l : 'Make it ' + l);
       b.onclick = () => {
-        fixMode(false);                                  // back to writing
+        closePop();                                      // Fix stays on for the next symbol
         if (l === sym.label) return;
         pad.relabel(sym, l);
         note(`Changed to ${shownAs(l)}. Nib will read this shape better from now on.`);
@@ -236,19 +425,26 @@ nib-pad {
     }
     pop.hidden = false; popFor = sym;
     // just below the symbol, or above it when there is no room; always inside the board
-    const S = pop.parentNode.getBoundingClientRect(), C = pad.querySelector('canvas').getBoundingClientRect();
-    const ox = C.left - S.left, oy = C.top - S.top, w = pop.offsetWidth, h = pop.offsetHeight;
+    const Sf = pop.parentNode.getBoundingClientRect(), C = pad.querySelector('canvas').getBoundingClientRect();
+    const ox = C.left - Sf.left, oy = C.top - Sf.top, w = pop.offsetWidth, h = pop.offsetHeight;
     let left = ox + (hit.box[0] + hit.box[2]) / 2 - w / 2, top = oy + hit.box[3] + 12;
-    if (top + h > S.height - 8) top = oy + hit.box[1] - h - 12;
-    pop.style.left = Math.max(8, Math.min(S.width - w - 8, left)) + 'px';
-    pop.style.top = Math.max(8, Math.min(S.height - h - 8, top)) + 'px';
+    if (top + h > Sf.height - 8) top = oy + hit.box[1] - h - 12;
+    pop.style.left = Math.max(8, Math.min(Sf.width - w - 8, left)) + 'px';
+    pop.style.top = Math.max(8, Math.min(Sf.height - h - 8, top)) + 'px';
     const alt = pop.querySelector('.cand[aria-pressed="false"]'); (alt || pop.firstChild).focus();
   }
   $('fix').onclick = () => fixMode(!fixing);
   $('fixlayer').addEventListener('click', e => {
     const C = pad.querySelector('canvas').getBoundingClientRect();
     const hit = symbolAt(e.clientX - C.left, e.clientY - C.top);
-    if (!hit) { closePop(); note('Tap a symbol to fix how it was read.'); return; }
+    if (!hit) {
+      closePop();
+      // empty space twice in a row: done fixing
+      if (++emptyTaps >= 2) { fixMode(false); return; }
+      note('Tap a symbol to fix how it was read. Tap empty space again to stop.');
+      return;
+    }
+    emptyTaps = 0;
     if (popFor === hit.sym) { closePop(); return; }
     $('note').hidden = true;
     openPop(hit);
@@ -256,7 +452,7 @@ nib-pad {
   $('erase').onclick = () => erase(pad.mode !== 'erase');
   $('undo').onclick = () => pad.undo();
   $('redo').onclick = () => pad.redo();
-  $('clear').onclick = () => { pad.clear(); note('Board cleared. Undo brings it back.'); };
+  $('clear').onclick = () => { pad.clear(); note(pages.length > 1 ? 'Page cleared. Undo brings it back.' : 'Board cleared. Undo brings it back.'); };
   $('hand').onclick = () => $('file').click();
   $('file').onchange = () => {
     const f = $('file').files[0]; $('file').value = '';
@@ -268,13 +464,47 @@ nib-pad {
       note(`Your handwriting is ready: ${n} characters${Nib.hand.name ? ' from ' + Nib.hand.name : ''}. It stays in this browser.`);
     });
   };
+  let lastPointer = 'mouse';
+  document.addEventListener('pointerdown', e => { lastPointer = e.pointerType || 'mouse'; }, true);
   $('copy').onclick = () => {
-    const t = solve ? pad.solved : pad.latex; if (!t) return;
-    const done = () => note('LaTeX copied.');
-    const manual = () => { $('latexbox').hidden = false; $('latexout').value = t; $('latexout').focus(); $('latexout').select(); note('Press Ctrl+C to copy the LaTeX.'); };
+    const t = S.solve ? pad.solved : pad.latex; if (!t) return;
+    const done = () => { $('latexbox').hidden = true; note('LaTeX copied.'); };
+    const manual = () => {
+      $('latexbox').hidden = false; $('latexout').value = t; $('latexout').focus(); $('latexout').select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      if (ok) { done(); return; }
+      note(lastPointer === 'touch' || lastPointer === 'pen' ? 'Long-press the text to copy.' : 'Press Ctrl+C to copy the LaTeX.');
+    };
     try { navigator.clipboard.writeText(t).then(done, manual); } catch (e) { manual(); }
   };
   $('noteclose').addEventListener('click', () => { $('latexbox').hidden = true; });
+
+  // ---------------------------------------------------------------- save image
+  // Published on claude.ai the page cannot download by itself: it asks the viewer through the downloads capability.
+  let saver = null;
+  try { if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { saver = d; }, () => {}); } catch (e) { /* not in a viewer */ }
+  async function offer(name, blob) {
+    if (saver) {
+      try { await saver.save({ filename: name, data: new Uint8Array(await blob.arrayBuffer()) }); return true; }
+      catch (e) { if (e && e.code === 'declined') return false; }
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    return true;
+  }
+  $('saveimg').onclick = async () => {
+    const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim();
+    const c = pad.image({ scale: 2, background: v('--board'), dots: { color: v('--dot'), spacing: 28, offset: 0, radius: 1.3 } });
+    if (!c) return;
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    if (!blob) { note('The picture could not be made.'); return; }
+    const d = new Date(), day = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const name = `Nib-board-${cur + 1}-${day}.png`;
+    if (await offer(name, blob)) note('Saved ' + name + '.');
+  };
+
+  // ---------------------------------------------------------------- full screen, keys
   const canFull = !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false);
   $('full').hidden = !canFull;
   const toggleFull = () => { if (!canFull) return; (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); };
@@ -285,19 +515,52 @@ nib-pad {
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? pad.redo() : pad.undo(); return; }
     if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); pad.redo(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (k === 'escape') { if (!$('fixpop').hidden) closePop(); else if (fixing) fixMode(false); return; }
+    if (k === 'escape') { if (!$('settings').hidden) openSettings(false); else if (!$('fixpop').hidden) closePop(); else if (fixing) fixMode(false); return; }
     if (e.target && e.target.classList && e.target.classList.contains('cand') && (k === ' ' || k === 'enter')) return;
     if (k === 'e') erase(pad.mode !== 'erase');
-    else if (k === 's') setSolve(!solve);
+    else if (k === 's') setSolve(!S.solve);
     else if (k === 'x') { if (!$('fix').disabled || fixing) fixMode(!fixing); }
     else if (k === 'f') toggleFull();
     else if (k >= '1' && k <= '4') setView(VIEWS[+k - 1]);
   });
+  // a long press is for writing, not for the browser's menu (the LaTeX box keeps its own, to copy from)
+  document.addEventListener('contextmenu', e => { if (!(e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT'))) e.preventDefault(); });
+
+  // ---------------------------------------------------------------- what the panel sends (hold the "Nib." mark)
+  const log = [];
+  let diagOn = false, diagRaf = 0, pressTimer = null;
+  const showDiag = () => {
+    diagRaf = 0; if (!diagOn) return;
+    $('diag').textContent = 'Pointer events (hold Nib. to close)\n' + (log.length ? log.map(r => r.join('  ')).join('\n') : 'Touch or write on the board.');
+  };
+  const rec = e => {
+    const P = pad.pad, onPad = e.target === pad.querySelector('canvas');
+    log.unshift([e.type.replace('pointer', '').padEnd(6), (e.pointerType || '?').padEnd(5), 'w ' + (+e.width || 0).toFixed(1), 'h ' + (+e.height || 0).toFixed(1),
+      'p ' + (+e.pressure || 0).toFixed(2), 'b ' + e.buttons, e.isPrimary ? 'primary' : 'second', e.type === 'pointerdown' && onPad && P ? P.why : '']);
+    if (log.length > 14) log.length = 14;
+    if (diagOn && !diagRaf) diagRaf = requestAnimationFrame(showDiag);
+  };
+  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) document.addEventListener(t, rec);
+  const unpress = () => { clearTimeout(pressTimer); pressTimer = null; };
+  $('mark').addEventListener('pointerdown', e => {
+    unpress();
+    const x = e.clientX, y = e.clientY;
+    pressTimer = setTimeout(() => { pressTimer = null; diagOn = !diagOn; $('diag').hidden = !diagOn; showDiag(); }, 600);
+    const mv = ev => { if (Math.hypot(ev.clientX - x, ev.clientY - y) > 10) unpress(); };
+    $('mark').addEventListener('pointermove', mv);
+    const end = () => { unpress(); $('mark').removeEventListener('pointermove', mv); };
+    $('mark').addEventListener('pointerup', end, { once: true });
+    $('mark').addEventListener('pointercancel', end, { once: true });
+    $('mark').addEventListener('pointerleave', end, { once: true });
+  });
 
   // ---------------------------------------------------------------- start
+  setRail(S.rail); setTheme(S.theme); setPen(S.pen); setReveal(S.reveal); setSolve(S.solve, true);
   customElements.whenDefined('nib-pad').then(() => {
-    setView(view, true);
-    if (saved && Array.isArray(saved.strokes) && saved.strokes.length) pad.strokes = saved.strokes.filter(s => Array.isArray(s) && s.length);
+    setView(S.view, true);
+    const p = pages[cur];
+    if (p && p.strokes.length) pad.setState(p);
+    ready = true;
     tools();
   });
 })();

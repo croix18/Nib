@@ -6,9 +6,16 @@
 // same piece of work, gave them a value ("x = 5"). The answer takes the form the question was asked in (decimals give
 // decimals, fractions give fractions, mixed numbers give mixed numbers), and a lone number is turned into its other
 // form (3/4 → 0.75, 0.75 → 3/4, 5 1/3 → 16/3, 16/3 → 5 1/3, 75% → 0.75).
+// A repeating decimal written with a bar over its repeating digits (LaTeX \overline) is that exact fraction.
 // Equations: "x =" (or "x <", "x ≥", …) on the line under an equation or inequality solves the nearest one above with
 // x in it: one-step to multi-step, letters on both sides, fractions and decimals, x² = p and x³ = q, inequalities
-// (answered only when the sign written is the right one), and two or three equations together.
+// (answered only when the sign written is the right one), and two or three equations together. Quadratics in x (any
+// form that is ax² + bx + c = 0 once everything is on one side): rational roots smallest first ("−3, −2"), a repeated
+// root once, roots that are not rational in simplest radical form ((−3 ± √5)/2, −2 ± √2), no real roots no answer.
+// Rearranging: "y =" under an equation in several letters that does not pin y down writes y in terms of the others
+// when y appears only to the first power and never underneath: a polynomial when y's coefficient is a number
+// (2x + 3y = 12 gives −2/3 x + 4; P = 2l + 2w gives 1/2 P − w), else one fraction in lowest terms (A = lw gives A/l,
+// y = mx + b gives (y − b)/m).
 // Anything that could be read two ways, or is not maths (units, words), gets no answer rather than a guess.
 // Each answer is LaTeX, plain text and reading-tree nodes, so it can be drawn like writing.
 
@@ -135,6 +142,14 @@ function qOfText(t) {
   return Q(BigInt((a || '0') + b), 10n ** BigInt(b.length));
 }
 
+// "0.1" with "6" repeating after it -> 1/6: (016 − 01) / (10 × (10 − 1)); "2." with "45" -> 27/11
+function qOfRepeating(t, rep) {
+  const [a, b = ''] = t.split('.');
+  if (!/^\d*$/.test(a) || !/^\d*$/.test(b) || !/^\d+$/.test(rep)) sfail('number');
+  const all = BigInt((a || '0') + b + rep), head = BigInt((a || '0') + b);
+  return Q(all - head, 10n ** BigInt(b.length) * (10n ** BigInt(rep.length) - 1n));
+}
+
 // ------------------------------------------------------------------ polynomials: Map(monomial key -> coefficient)
 // A key lists letters with powers in order, "x^2*y"; "" is the number part.
 function mkey(m) {
@@ -212,13 +227,19 @@ function tokensOf(row, options) {
     if (u.doubt) sfail('two symbols one above the other, read side by side');
     if (u.k === 'frac') out.push({ t: 'frac', num: tokensOf(u.num, options), den: tokensOf(u.den, options) });
     else if (u.k === 'root') out.push({ t: 'root', body: tokensOf(u.body, options), idx: u.idx && u.idx.length ? tokensOf(u.idx, options) : null });
-    else if (u.k !== 's') sfail('unknown');
+    else if (u.k === 'over') {
+      // a repeating decimal: a bar over the digits that repeat, straight after the point or the digits after it
+      // (0.3 with a bar over the 3, 0.16 with a bar over the 6); a bar over anything else is not arithmetic
+      const n = lastNum(), ds = (u.body || []).map(x => (x.k === 's' && /^[0-9]$/.test(x.label) && !x.sup && !x.sub ? x.label : null));
+      if (!n || !n.v.includes('.') || !ds.length || ds.length > 12 || ds.includes(null)) sfail('a bar over that');
+      n.rep = ds.join(''); n.closed = true;
+    } else if (u.k !== 's') sfail('unknown');
     else {
       const l = u.label, n = lastNum();
       if (/^[0-9]$/.test(l)) { if (n) n.v += l; else out.push({ t: 'num', v: l }); }
       else if (l === '.') {
         if (n && !n.v.includes('.')) n.v += '.';
-        else if (!n && nx && nx.k === 's' && /^[0-9]$/.test(nx.label)) out.push({ t: 'num', v: '.' });
+        else if (!n && nx && ((nx.k === 's' && /^[0-9]$/.test(nx.label)) || nx.k === 'over')) out.push({ t: 'num', v: '.' });
         else sfail('a stray point');
       } else if (l === ',') {
         // 1,000: a thousands comma; anything else is not arithmetic, nor is a list in brackets after a letter (f(2,300))
@@ -352,7 +373,7 @@ function solveParse(tokens) {
     if (tk.t === 'num') {
       const f = peek();                               // 5 1/3: a whole number with a fraction of whole numbers after it
       if (/^\d+$/.test(tk.v) && f && f.t === 'frac' && intLit(f.num) && intLit(f.den)) { next(); return { t: 'mixed', whole: tk.v, num: f.num[0].v, den: f.den[0].v }; }
-      return { t: 'num', text: tk.v };
+      return tk.rep ? { t: 'num', text: tk.v, rep: tk.rep } : { t: 'num', text: tk.v };
     }
     if (tk.t === 'var') return { t: 'var', name: tk.v };
     if (tk.t === 'pi') return { t: 'pi' };
@@ -377,7 +398,7 @@ function solveParse(tokens) {
 function solveEval(ast, env, info) {
   const ev = a => solveEval(a, env, info);
   switch (ast.t) {
-    case 'num': if (ast.text.includes('.')) info.dec = true; return pc(qOfText(ast.text));
+    case 'num': if (ast.text.includes('.')) info.dec = true; return pc(ast.rep ? qOfRepeating(ast.text, ast.rep) : qOfText(ast.text));
     case 'mixed': info.frac = info.mixed = true; return pc(cadd(Q(BigInt(ast.whole)), Q(BigInt(ast.num), BigInt(ast.den))));
     case 'frac': info.frac = true; return pdiv(ev(ast.a), ev(ast.b));
     case 'neg': return pneg(ev(ast.a));
@@ -426,6 +447,17 @@ SolveOut.prototype.frac = function (n, d) {
   this.tex += '\\frac{' + n + '}{' + d + '}'; this.text += (this.text && /[0-9]$/.test(this.text) ? ' ' : '') + n + '/' + d;
 };
 SolveOut.prototype.over = function (s) { this.nodes.push({ k: 'over', body: digitNodes(s) }); this.tex += '\\overline{' + s + '}'; this.text += '(' + s + ')'; };
+SolveOut.prototype.root = function (s) { this.nodes.push({ k: 'root', body: digitNodes(s) }); this.tex += '\\sqrt{' + s + '}'; this.text += '√' + s; };
+// a list of answers (x = −3, −2): a comma and a space
+SolveOut.prototype.comma = function () { this.nodes.push({ k: 's', label: ',' }); this.tex += ',\\;'; this.text += ', '; };
+SolveOut.prototype.append = function (o) { this.nodes.push(...o.nodes); this.tex += o.tex; this.text += o.text; };
+// a fraction of two answers written out (−3 ± √5 over 2, A over l)
+SolveOut.prototype.fracOf = function (N, D) {
+  const top = /^.[^+\-±]*$/.test(N.text) ? N.text : '(' + N.text + ')';
+  const under = /^[0-9.]+$|^[A-Za-z](_[0-9A-Za-z]+)?$/.test(D.text) ? D.text : '(' + D.text + ')';
+  this.nodes.push({ k: 'frac', num: N.nodes, den: D.nodes });
+  this.tex += '\\frac{' + N.tex + '}{' + D.tex + '}'; this.text += top + '/' + under;
+};
 SolveOut.prototype.ellipsis = function () { for (let i = 0; i < 3; i++) this.nodes.push({ k: 's', label: '.' }); this.tex += '\\ldots'; this.text += '...'; };
 SolveOut.prototype.letter = function (name, power) {
   const m = /^(.*?)_(?:\{(.*)\}|(.))$/.exec(name), label = m ? m[1] : name, sub = m ? m[2] || m[3] : null;
@@ -560,7 +592,7 @@ function simplified(ast, how) {
     if (factors[0].t === 'neg') factors[0] = factors[0].a;              // -5a: the sign is on the 5
     let k = 0;
     if (factors[0].t === 'num' || (factors[0].t === 'frac' && literalOf(factors[0]) === 'frac')) {
-      const z = factors[0].t === 'num' && /^0*\.?0*$/.test(factors[0].text), u = factors[0].t === 'num' && /^0*1(\.0*)?$/.test(factors[0].text);
+      const z = factors[0].t === 'num' && !factors[0].rep && /^0*\.?0*$/.test(factors[0].text), u = factors[0].t === 'num' && !factors[0].rep && /^0*1(\.0*)?$/.test(factors[0].text);
       if (factors.length > 1 && (z || u)) return false;                // 1x, 0x
       if (factors.length === 1 && z && terms.length > 1) return false;  // x + 0
       k = 1;
@@ -592,9 +624,15 @@ function polyOrder(p) {
     return 0;
   });
 }
-function putPoly(o, p, info, kind) {
+// lead: a term with a plus sign goes first among those of the highest power (y − b, not −b + y)
+function putPoly(o, p, info, kind, lead) {
   const style = info.dec || info.pct ? 'dec' : 'frac';
-  polyOrder(p).forEach((k, i) => {
+  const order = polyOrder(p);
+  if (lead && order.length > 1 && csign(p.get(order[0])) < 0) {
+    const j = order.findIndex(k => mdeg(k) === mdeg(order[0]) && csign(p.get(k)) > 0);
+    if (j > 0) order.unshift(order.splice(j, 1)[0]);
+  }
+  order.forEach((k, i) => {
     let c = p.get(k);
     if (isFl(c)) sfail('approximate letters');
     const neg = c.n < 0n;
@@ -765,9 +803,103 @@ function settle(rec, v, env) {
     const r = croot(q, 2);
     return ok(r) && ok(cneg(r)) ? { rel: '=', vals: [r, cneg(r)], pm: true, info } : null;
   }
+  // a·v² + b·v + c = 0 with b not 0 (x² + 5x + 6 = 0, x(x − 3) = 10): exact numbers only
+  const k2 = v + '^2';
+  if (P.has(k2) && P.has(v) && keys.every(k => k === '' || k === v || k === k2)) {
+    const a = P.get(k2), b = P.get(v);
+    if (isFl(a) || isFl(b) || isFl(c0)) return null;
+    const R = quadRoots(a, b, c0);
+    return R && R.vals.every(ok) ? { rel: '=', vals: R.vals, rad: R.rad, info } : null;
+  }
   return null;
 }
-const sameSettle = (a, b) => a.rel === b.rel && a.vals.length === b.vals.length && a.vals.every((x, i) => csame(x, b.vals[i]));
+function isqrtQ(n) { const r = iroot(n, 2); return r * r === n ? r : null; }
+// The real roots of a·v² + b·v + c = 0 (b not 0): {vals} smallest first, one value for a repeated root; for roots that
+// are not rational, {vals (approximations, for comparing), rad: {p, k, m, d}} meaning (p ± k√m) / d with m free of
+// square factors and p, k, d sharing no factor (−4 ± √8 over 2 is −2 ± √2). null when there is no real root.
+function quadRoots(a, b, c) {
+  let L = a.d / bgcd(a.d, b.d) * b.d;
+  L = L / bgcd(L, c.d) * c.d;
+  let A = a.n * (L / a.d), B = b.n * (L / b.d), C = c.n * (L / c.d);
+  const g = bgcd(bgcd(A, B), C);
+  A /= g; B /= g; C /= g;
+  if (A < 0n) { A = -A; B = -B; C = -C; }
+  const D = B * B - 4n * A * C;
+  if (D < 0n) return null;                                           // no number squared is negative
+  if (D === 0n) return { vals: [Q(-B, 2n * A)] };
+  const s = isqrtQ(D);
+  if (s !== null) return { vals: [Q(-B - s, 2n * A), Q(-B + s, 2n * A)] };
+  if (D > 10n ** 10n) sfail('too big');
+  let k = 1n, m = D;
+  for (let f = 2n; f * f <= m; f++) while (m % (f * f) === 0n) { m /= f * f; k *= f; }
+  const h = bgcd(bgcd(B, k), 2n * A), p = -B / h, kk = k / h, d = 2n * A / h;
+  const sq = Math.sqrt(Number(m)) * Number(kk);
+  return { vals: [Fraw((Number(p) - sq) / Number(d)), Fraw((Number(p) + sq) / Number(d))], rad: { p, k: kk, m, d } };
+}
+// v written in terms of the other letters: an equation in which v appears only to the first power (2x + 3y = 12, A = lw,
+// y = mx + b), never underneath. v = −B / A for P = A·v + B: a polynomial when A is a number (2x + 3y = 12 gives
+// y = −2/3 x + 4; P = 2l + 2w gives l = 1/2 P − w), else one fraction in lowest terms with whole numbers (A = lw gives
+// A/l, y = mx + b gives (y − b)/m). {poly} or {num, den}, with how the equation was written; null when there is no
+// such answer (v squared or underneath, no other letter, a bottom of several terms that might cancel with the top, or
+// v = 0 only when another letter is not 0).
+function rearrange(rec, v, env) {
+  const { P, dens, info } = eqOf(rec, env, v);
+  if (dens.some(d => pvars(d).has(v))) return null;
+  const A = new Map(), B = new Map();
+  for (const [k, c] of P) {
+    if (isFl(c)) return null;
+    const m = mparse(k), e = m.get(v) || 0;
+    if (e > 1) return null;
+    if (e === 1) { m.delete(v); pput(A, mkey(m), c); } else pput(B, k, c);
+  }
+  if (!A.size || !(pvars(A).size || pvars(B).size)) return null;
+  let num = pneg(B), den = A;
+  const c = pconst(den);
+  if (c) return { poly: pscale(num, cdiv(QONE, c)), info };
+  if (!num.size) return null;
+  if (den.size === 1) { try { return { poly: pdiv(num, den), info }; } catch (e) { if (!(e instanceof SolveError)) throw e; } }
+  let L = 1n, g = 0n;
+  for (const x of [...num.values(), ...den.values()]) L = L / bgcd(L, x.d) * x.d;
+  num = pscale(num, Q(L)); den = pscale(den, Q(L));
+  for (const x of [...num.values(), ...den.values()]) g = bgcd(g, x.n);
+  if (g > 1n) { num = pscale(num, Q(1n, g)); den = pscale(den, Q(1n, g)); }
+  if (csign(den.get(polyOrder(den)[0])) < 0) { num = pneg(num); den = pneg(den); }
+  if (den.size > 1 && [...pvars(num)].some(x => pvars(den).has(x))) return null;
+  return { num, den, info };
+}
+const sameRearranged = (a, b) => (a.poly ? !!b.poly && psame(a.poly, b.poly) : !b.poly && psame(a.num, b.num) && psame(a.den, b.den));
+const tryRearrange = (rec, v, env) => { try { return rearrange(rec, v, env); } catch (e) { if (e instanceof SolveError) return null; throw e; } };
+function rearrangedAnswer(r) {
+  const o = new SolveOut(), kind = { v: '' };
+  if (r.poly) { if (!r.poly.size) return valueAnswer(QZERO, 'frac'); putPoly(o, r.poly, r.info, kind, true); }
+  else {
+    const N = new SolveOut(), D = new SolveOut();
+    putPoly(N, r.num, r.info, kind, true); putPoly(D, r.den, r.info, kind, true);
+    o.fracOf(N, D);
+  }
+  return answerFrom(o, kind, null);
+}
+// two or more roots of a quadratic: "−3, −2" smallest first, or "(−3 ± √5) / 2"
+function rootsAnswer(S, style) {
+  const o = new SolveOut(), kind = { v: '' };
+  if (S.rad) {
+    const { p, k, m, d } = S.rad, N = d === 1n ? o : new SolveOut();
+    putInteger(N, p);
+    N.sym('\\pm', '\\pm', '±');
+    if (k !== 1n) N.digits(k.toString());
+    N.root(m.toString());
+    if (d !== 1n) { const D = new SolveOut(); D.digits(d.toString()); o.fracOf(N, D); }
+    const a = answerFrom(o, kind, null);
+    a.kind = 'radical'; a.exact = true;
+    return a;
+  }
+  S.vals.forEach((x, i) => { if (i) o.comma(); putExact(o, x, style, kind); });
+  const a = answerFrom(o, kind, null);
+  a.kind = 'roots';
+  return a;
+}
+const byValue = vals => vals.slice().sort((x, y) => cval(x) - cval(y));
+const sameSettle = (a, b) => { const x = byValue(a.vals), y = byValue(b.vals); return a.rel === b.rel && x.length === y.length && x.every((c, i) => csame(c, y[i])); };
 const trySettle = (rec, v, env) => { try { return settle(rec, v, env); } catch (e) { if (e instanceof SolveError) return null; throw e; } };
 // P (everything moved to one side) as a sum of numbers times single letters, or null
 function linearOf(P) {
@@ -865,7 +997,7 @@ function solveFor(v, ask, eqs, env) {
   if (sys && sys.bad) return null;
   if (s && sys && !sameSettle(s, sys)) return null;
   const S = s || sys;
-  if (!S) return null;
+  if (!S) return want === '=' ? rearrangedFor(v, eqs, k, env) : null;
   if (E.vars.size === 1) {
     for (let i = k - 1, l = E.line - 1; i >= 0; i--, l--) {
       const C = eqs[i];
@@ -876,7 +1008,30 @@ function solveFor(v, ask, eqs, env) {
     }
   }
   if (want === '=' ? S.rel !== '=' : S.rel !== ask) return null;
-  return valueAnswer(S.vals[0], E.solved ? styleOf(S.info) : eqStyleOf(S.info), S.pm);
+  const style = E.solved ? styleOf(S.info) : eqStyleOf(S.info);
+  if (S.vals.length > 1 && !S.pm) return rootsAnswer(S, style);
+  return valueAnswer(S.vals[0], style, S.pm);
+}
+// "y =" under an equation in several letters that does not pin y down: y in terms of the others, unless the line is
+// already "y = ..." with no y on the right. The lines written right next to it in the same piece of writing (its
+// working) must each say the same about y; a line beside it with its letters but no y, or one that could not be read,
+// means it may be one of several equations together, and gets no answer.
+function rearrangedFor(v, eqs, k, env) {
+  const E = eqs[k];
+  if (E.lone === v) return null;
+  const r = tryRearrange(E, v, env);
+  if (!r) return null;
+  const near = [];
+  for (let i = k - 1, l = E.line - 1; i >= 0 && eqs[i].src === E.src && eqs[i].line === l; i--, l--) near.push(eqs[i]);
+  for (let i = k + 1, l = E.line + 1; i < eqs.length && eqs[i].src === E.src && eqs[i].line === l; i++, l++) near.push(eqs[i]);
+  for (const C of near) {
+    if (C.block) return null;
+    if (C.solved || ![...C.vars].some(x => E.vars.has(x))) continue;
+    if (!C.vars.has(v)) return null;
+    const t = tryRearrange(C, v, env);
+    if (!t || !sameRearranged(t, r)) return null;
+  }
+  return rearrangedAnswer(r);
 }
 // every part of a chain must agree with the last before it is worked out: 2(3 + 4) = 2 · 7 = has an answer,
 // 3 + 4 = 9 + 1 = does not, nor does 1 ÷ 0 = 2 + 3 = or 3 + 4 = x + 2x =; letters before numbers (A = lw = 3 · 4 =)
@@ -955,7 +1110,7 @@ function solveRows(rows, options, above) {
       const rv = new Set([...pvars(rr.n), ...pvars(rr.d)]), vars = new Set([...pvars(lr.n), ...pvars(lr.d), ...rv]);
       if (!vars.size) return null;
       const lone = Lt.length === 1 && Lt[0].t === 'var' ? Lt[0].v : null;
-      const rec = { rel: r, L, R, vars, info, line, src: 0, solved: !!lone && !rv.size };
+      const rec = { rel: r, L, R, vars, info, line, src: 0, solved: !!lone && !rv.size, lone: lone && !rv.has(lone) ? lone : null };
       let given = null;
       if (r === '=' && lone && !rv.has(lone)) {
         try { const gi = {}, gv = solveEval(R, env, gi); if (pconst(gv)) given = { val: gv, info: gi }; } catch (e) { if (!(e instanceof SolveError)) throw e; }

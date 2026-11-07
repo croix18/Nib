@@ -25,7 +25,7 @@ def main():
     off = base.replace('/*FONT_FACES*/', font_faces()).replace('<!--FONT_LINK-->', '')
     off = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
-           + off.replace('<div class="board">', '</head>\n<body>\n<div class="board">', 1) + '\n</body>\n</html>\n')
+           + off.replace('<div class="board"', '</head>\n<body>\n<div class="board"', 1) + '\n</body>\n</html>\n')
     open(os.path.join(ROOT, 'dist', 'Board.html'), 'w').write(off)
     link = ('<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
             '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap">')
