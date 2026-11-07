@@ -114,7 +114,7 @@ Nib.hand.size; Nib.hand.name; Nib.hand.has('7'); Nib.hand.clear();
 
 ## Answers after "="
 
-Turn on **Solve** (on the Board it starts on) and any line that ends with "=" gets its answer written just after the equals sign, in gold, at the size of your writing: in your own digits where you have written them on the board, in your Replicator handwriting where you haven't, and typeset in the Typeset view. Change the problem and the answer follows it. Start writing your own answer after the "=" and the gold one steps aside; erase the "=" and it goes.
+Turn on **Solve** (on the Board it starts on) and any line that ends with "=" gets its answer written just after the equals sign, in gold, at the size of your writing: in your own digits where you have written them on the board, in your Replicator handwriting where you haven't, and typeset in the Typeset view. Change the problem and the answer follows it. Start writing your own answer after the "=" and the gold one steps aside; erase the "=" and it goes. Write the "=" right against the edge of the board and the answer is squeezed in after it, or, if it would be too small, written just under the line, ending at the edge.
 
 - Whole numbers, decimals, fractions, mixed numbers and percents are worked out exactly, with + − × · ÷ /, brackets, powers, square and cube roots, absolute value and factorials, in the usual order of operations.
 - The answer comes in the form the question was asked in: decimals give decimals (repeating ones with a bar, 1 ÷ 3 = 0.3̄; ones whose repeat is too long to show are cut and marked with "…", 1 ÷ 17 = 0.0588…), fractions give fractions (stacked or with a slash: 1/3 + 1/3 = 2/3), mixed numbers give mixed numbers, and dividing whole numbers gives a decimal.

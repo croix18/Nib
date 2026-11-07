@@ -1,5 +1,6 @@
 // Write strokes onto the Board again, as a pen would, and say what it reads and answers on every line.
 //   node tools/replay_board.js strokes.json [page=dist/Board.html] [shot.png]
+//   VIEW=1..4 (ink, tidy, my hand, typeset) and DARK=1 set how the shot looks.
 // strokes.json: {width, height, strokes} in page px, in the order written (tools/strokes_from_screenshot.py makes one
 // from a screenshot; test/fixtures/board_2026-11-04.json is one). The window is made that size, Solve is turned on.
 'use strict';
@@ -14,6 +15,7 @@ const F = JSON.parse(fs.readFileSync(file, 'utf8'));
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
+  if (process.env.DARK) await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
   await page.setViewport({ width: F.width, height: F.height });
   await page.goto('file://' + path.resolve(page_), { waitUntil: 'load' });
   await page.evaluate(() => localStorage.clear());
@@ -47,6 +49,7 @@ const F = JSON.parse(fs.readFileSync(file, 'utf8'));
     return out;
   });
   for (const l of lines) console.log(`  [${l.box.join(',')}]`.padEnd(24) + `${l.latex.padEnd(40)} ${l.answer === null ? '(no answer)' : '→ ' + l.answer}`);
+  if (process.env.VIEW) { await page.keyboard.press(String(process.env.VIEW)); await new Promise(r => setTimeout(r, 1500)); }
   if (shot) await page.screenshot({ path: shot });
   if (errors.length) console.log('page errors:', errors.join(' | '));
   await browser.close();

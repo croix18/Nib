@@ -399,6 +399,13 @@ function makeHandFile() {
     const wrong = lines.filter(l => l.answer !== null && !want.some(([tex, ans]) => l.latex === tex && l.answer === ans));
     ok(wrong.length === 0, 'and no answer on it is wrong' + (wrong.length ? ': ' + wrong.map(l => l.latex + ' → ' + l.answer).join(', ') : ''));
     ok(!lines.some(l => l.answer === '9' || l.answer === '-5' || l.answer === '2x+5'), 'none of the three wrong answers it showed comes back');
+    // 13.999 + 2 + 7 = was written against the right edge: its answer must still be on the board, whole
+    for (const v of ['1', '2', '4']) {
+      await bp.keyboard.press(v); await wait(1200);
+      const edge = await bp.evaluate(() => { const p = document.getElementById('pad'), W = p.pad.canvas.width / (p.pad.dpr || 1), H = p.pad.canvas.height / (p.pad.dpr || 1);
+        const A = p.shown.filter(s => s.answer).map(s => s.box); return { W, H, n: A.length, right: Math.max(...A.map(b => b[2])), bottom: Math.max(...A.map(b => b[3])) }; });
+      ok(edge.n > 0 && edge.right <= edge.W && edge.bottom <= edge.H, `${['', 'ink', 'tidy', '', 'typeset'][+v]}: every answer is on the board, the one at the edge too (rightmost ends at ${Math.round(edge.right)} of ${Math.round(edge.W)} px)`);
+    }
     await bp.screenshot({ path: path.join(out, 'board-replayed-2026-11-04.png') });
     await bp.close();
   }

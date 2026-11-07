@@ -4070,6 +4070,7 @@ class Pad {
         }
         for (const it of items) if (it.answer && groups.has(it.groupKey)) it.group = groups.get(it.groupKey);
       }
+      this._fitAnswers(items);
       plan = { style, items };
       if (style === 'typeset') typeFontsReady().then(ok => { if (ok && this.plan === plan) this.redraw(); });
     }
@@ -4101,6 +4102,32 @@ class Pad {
     };
     requestAnimationFrame(tick);
   }
+  // An answer that would run off the right edge of the board: squeezed to fit after its "=", or, when that would make
+  // it smaller than 0.6 of the writing, written at full size under its line, ending at the edge (where there is room
+  // below; otherwise squeezed anyway, to no less than 0.35).
+  _fitAnswers(items) {
+    const d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d, m = 10;
+    if (W < 4 * m) return;
+    const groups = new Map();
+    for (const it of items) if (it.answer && it.group) { if (!groups.has(it.groupKey)) groups.set(it.groupKey, []); groups.get(it.groupKey).push(it); }
+    for (const list of groups.values()) {
+      const b = list[0].group, w = b[2] - b[0], h = b[3] - b[1];
+      if (b[2] <= W - m || w <= 0) continue;
+      let k = (W - m - b[0]) / w, dx = 0, dy = 0;
+      if (k < 0.6 && w <= W - 2 * m && b[3] + 1.4 * h <= H - m) { k = 1; dx = W - m - b[2]; dy = 1.35 * h; }
+      else k = Math.max(0.35, k);
+      const ox = b[0], oy = b[3], X = x => ox + (x - ox) * k + dx, Y = y => oy + (y - oy) * k + dy;
+      for (const it of list) {
+        it.parts = it.parts.map(p => {
+          if (p.t === 'ink' || p.t === 'line') return Object.assign({}, p, { paths: p.paths.map(st => st.map(q => [X(q[0]), Y(q[1])])) }, p.width ? { width: p.width * k } : {}, p.dot ? { dot: p.dot * k } : {});
+          if (p.t === 'text') return Object.assign({}, p, { x: X(p.x), y: Y(p.y), size: p.size * k });
+          return Object.assign({}, p, { x: X(p.x), y: Y(p.y), w: p.w * k, h: p.h * k });
+        });
+        it.box = [X(it.box[0]), Y(it.box[1]), X(it.box[2]), Y(it.box[3])];
+        it.group = [X(b[0]), Y(b[1]), X(b[2]), Y(b[3])];
+      }
+    }
+  }
   _sid(s) { let id = this.sid.get(s); if (!id) { id = this.nsid++; this.sid.set(s, id); } return id; }
   _boxes() {
     const ctx = this.ctx, cs = getComputedStyle(this.el);
@@ -4121,8 +4148,11 @@ class Pad {
   _resize() {
     const c = this.canvas, r = c.getBoundingClientRect(), d = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
-    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    const changed = c.width !== w || c.height !== h;
+    if (changed) { c.width = w; c.height = h; }
     this.dpr = d;
+    // answers near an edge are fitted to the board's size: lay them out again for the new one
+    if (changed && this.answers && this.answers.length && this.result) this._replan(false);
     this.redraw();
   }
 
