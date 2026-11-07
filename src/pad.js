@@ -275,7 +275,7 @@ class Pad {
       if (this.o.solve) {
         // an answer is written with the clearest of each symbol anywhere on the board, then the Replicator hand
         let hand = null;
-        try { hand = this.o.hand ? handClean(this.o.hand.glyphs || this.o.hand) : handLoad(); } catch (err) { hand = null; }
+        try { hand = this.o.hand ? handClean(handOf(this.o.hand)) : handLoad(); } catch (err) { hand = null; }
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
       const R = refSize(at), done = [];

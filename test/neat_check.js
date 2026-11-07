@@ -209,6 +209,25 @@ ok(Nib.hand.size === 0, 'clear() forgets it');
   ok(again() === 'Opened file', 'newer but unusable handwriting is passed over');
   store.clear();
   ok(again() === '' && Nib.hand.size === 0, 'nothing saved: no handwriting');
+  // letters also written in sentences: the Replicator keeps their average beside the box drawings (avg)
+  const avg2 = hand.glyphs['7'], box2 = hand.glyphs['2'];
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  store.set('replicator-v1', JSON.stringify({ name: 'Sentences', saved: Date.now(), glyphs: g2, avg: { 2: avg2 } }));
+  again();
+  ok(same(Nib._internals.HAND.glyphs['2'], avg2) && same(Nib._internals.HAND.glyphs['3'], hand.glyphs['3']), 'a letter written in sentences is drawn as its average, the rest as their boxes');
+  store.set('replicator-v1', JSON.stringify({ name: 'Sentences off', saved: Date.now(), glyphs: g2, avg: { 2: avg2 }, useSamples: false }));
+  again();
+  ok(same(Nib._internals.HAND.glyphs['2'], box2), 'with sentences turned off in the Replicator, the box drawing');
+  store.set('replicator-v1', JSON.stringify({ name: 'Junk avg', saved: Date.now(), glyphs: g2, avg: { 2: 'nope', 3: [[['x']]] } }));
+  again();
+  ok(same(Nib._internals.HAND.glyphs['2'], box2) && same(Nib._internals.HAND.glyphs['3'], hand.glyphs['3']), 'a damaged average is passed over');
+  store.set('replicator-v1', JSON.stringify({ name: 'Array avg', saved: Date.now(), glyphs: g2, avg: [avg2] }));
+  ok(again() === 'Array avg' && Nib.hand.size === 2, 'an average that is not a map is ignored');
+  Nib.hand.load({ name: 'Opened with avg', glyphs: g2, avg: { 2: avg2 } });
+  ok(same(Nib._internals.HAND.glyphs['2'], avg2) && same(JSON.parse(store.get('nib-hand-v1')).glyphs['2'], avg2), 'a saved Replicator file opened in Nib uses the averages too');
+  const viaOption = Nib.neaten(rows[1].strokes, { style: 'hand', hand: { glyphs: g2, avg: { 2: avg2 } } });
+  ok(viaOption.items.length > 0, 'a hand passed as an option may carry averages');
+  store.clear(); Nib.hand.clear();
   delete global.localStorage;
 }
 

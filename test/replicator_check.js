@@ -32,6 +32,22 @@ section('1. smoothing: the shake goes, corners and stroke ends stay');
   ok(Math.hypot(apex[0] - 200, apex[1] - 400) < 6, `the point of a V stays sharp at the strongest smoothing (${apex.map(v => v.toFixed(1)).join(', ')})`);
   ok(R.smooth([[1, 2]], 6, 10).length === 1 && R.smooth([[1, 2], [3, 4]], 6, 10).length === 2 && R.smooth([], 6, 10).length === 0, 'dots and tiny strokes pass through');
   ok(JSON.stringify(R.smooth(noisy, 6, 99)) === JSON.stringify(R.smooth(noisy, 6, 10)) && R.smooth(noisy, 6, -3).length === R.smooth(noisy, 6, 0).length, 'out-of-range strengths are held to 0..10');
+  // hooks: the flick of the pen landing or lifting goes; a real flag stays
+  const down = []; for (let i = 0; i <= 60; i++) down.push([300, 650 - i * 10]);                    // a downstroke to y = 50
+  const hooked = down.concat([[304, 54], [309, 60], [313, 64]]);                                       // and a 15-unit flick back up
+  const end = s => s[s.length - 1];
+  const h4 = R.smooth(hooked, 6, 4), h0 = R.smooth(hooked, 6, 0);
+  ok(Math.hypot(end(h4)[0] - 300, end(h4)[1] - 50) < 8 && end(h0)[1] > 60, `a flick at the end of a stroke goes (ends at ${end(h4).map(v => v.toFixed(0)).join(', ')}; kept with no smoothing)`);
+  const both = [[292, 640], [296, 646], [300, 650]].concat(hooked);
+  const hb = R.smooth(both, 6, 6);
+  ok(Math.hypot(hb[0][0] - 300, hb[0][1] - 650) < 8 && Math.hypot(end(hb)[0] - 300, end(hb)[1] - 50) < 8, 'flicks at both ends go');
+  const flag = [[240, 560], [255, 590], [270, 620], [285, 650], [300, 680]].concat(down.map(p => [p[0], p[1] + 30]));   // a 1 with its flag
+  const f10 = R.smooth(flag, 6, 10);
+  ok(Math.hypot(f10[0][0] - 240, f10[0][1] - 560) < 1, 'the flag of a 1 stays at the strongest smoothing');
+  const tick = [[0, 0], [20, 0], [24, 3], [20, 6], [0, 6]];
+  ok(R.smooth(tick, 6, 10).length >= 3 && Math.abs(end(R.smooth(tick, 6, 10))[1] - 6) < 1, 'a short stroke is never cut down');
+  const zig = []; for (let i = 0; i < 40; i++) zig.push([i * 12, i % 2 ? 8 : 0]);
+  ok(R.smooth(zig, 6, 10).length > 10, 'a scribble keeps its length');
 }
 
 section('2. even sizes: letters span their guides, the pen keeps its weight');
@@ -137,13 +153,14 @@ const SENTENCES = ['The quick brown fox jumps over the lazy dog.', 'Sphinx of bl
 section('3. sentences: every stroke goes to the right letter');
 {
   // exact check with known truth: strokes tagged as they are written
-  let total = 0, right = 0, okWrong = 0, okTotal = 0;
+  let total = 0, right = 0, okWrong = 0, okTotal = 0, sentences = 0, rejected = 0;
   for (let w = 0; w < 10; w++) {
     const hand = writer(w * 11 + 5), templates = {};
     for (const [ch, st] of Object.entries(hand)) templates[ch] = [R.toLine(st)];
     for (const text of SENTENCES) {
       const t = text.replace(/[,;]/g, ''), { lines, truth } = writeSentence(hand, t);
       const res = R.alignSentence(lines, t, templates);
+      sentences++; if (!res.letters.some(L => L.ok)) rejected++;
       // which strokes each letter got, by identity
       const id = new Map(); lines.forEach((ln, li) => ln.forEach((s, si) => id.set(JSON.stringify(s.map(p => [+(p[0] + 0).toFixed(5), +p[1].toFixed(5)])), truth[li][si])));
       const chars = [...t].filter(c => c !== ' ');
@@ -163,6 +180,7 @@ section('3. sentences: every stroke goes to the right letter');
   function truthCount(truth, tag) { let n = 0; for (const ln of truth) for (const t of ln) if (t === tag) n++; return n; }
   ok(right / total > 0.9, `strokes land on the right letters (${right} of ${total}, ${(100 * right / total).toFixed(1)}%), dots and crossings added after the word included`);
   ok(okWrong / Math.max(1, okTotal) < 0.02, `a letter learned has the right strokes (${okTotal - okWrong} of ${okTotal})`);
+  ok(rejected === 0, `no sentence written as asked is turned away (${rejected} of ${sentences})`);
 }
 {
   // mistakes: a letter left out, a stray stroke, the wrong sentence
@@ -177,7 +195,29 @@ section('3. sentences: every stroke goes to the right letter');
   ok(r2.letters.filter(L => L.ok).length > 28, `a stray stroke is passed over (${r2.letters.filter(L => L.ok).length} learned)`);
   const other = writeSentence(hand, 'Pack my box with five dozen jugs.');
   const r3 = R.alignSentence(other.lines, t, templates);
-  ok(r3.letters.filter(L => L.ok).length < 8, `writing a different sentence teaches almost nothing (${r3.letters.filter(L => L.ok).length} letters)`);
+  ok(r3.letters.filter(L => L.ok).length === 0, `writing a different sentence teaches nothing (${r3.letters.filter(L => L.ok).length} letters)`);
+  // a different sentence against every other one, for every writer: nothing learned
+  let wrongLearned = 0, pairs = 0;
+  for (let w = 0; w < 6; w++) {
+    const hw = writer(w * 7 + 3), tw = {};
+    for (const [ch, st] of Object.entries(hw)) tw[ch] = [R.toLine(st)];
+    for (let a = 0; a < SENTENCES.length; a++) {
+      const b = (a + 1 + w) % SENTENCES.length, wrote = writeSentence(hw, SENTENCES[a].replace(/[,;]/g, ''));
+      wrongLearned += R.alignSentence(wrote.lines, SENTENCES[b].replace(/[,;]/g, ''), tw).letters.filter(L => L.ok).length; pairs++;
+    }
+  }
+  ok(wrongLearned <= 2, `the wrong sentence teaches nothing (${wrongLearned} letters over ${pairs} tries)`);
+  // written much less like the boxes (bigger, smaller, more slanted, shakier): still learned from
+  let away = 0, tries = 0, okL = 0, allL = 0;
+  for (let w = 0; w < 6; w++) {
+    const hw = writer(w * 13 + 2), tw = {};
+    for (const [ch, st] of Object.entries(hw)) tw[ch] = [R.toLine(st)];
+    for (const text of SENTENCES) {
+      const t = text.replace(/[,;]/g, ''), r = R.alignSentence(writeSentence(hw, t, { amt: 2.2 }).lines, t, tw);
+      tries++; const k = r.letters.filter(L => L.ok).length; if (!k) away++; okL += k; allL += r.letters.length;
+    }
+  }
+  ok(away <= 1, `sentences written far less like the boxes are still learned from (${away} of ${tries} turned away, ${(100 * okL / allL).toFixed(0)}% of letters learned)`);
   ok(R.alignSentence([], t, templates).letters.length === 0 && R.alignSentence(missing.lines, '', templates).letters.length === 0, 'nothing written, or no text: nothing learned');
   const r4 = R.alignSentence(missing.lines, t, {});
   ok(r4.letters.every(L => !L.ok), 'without box drawings to compare with, nothing is learned');

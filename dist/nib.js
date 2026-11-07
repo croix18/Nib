@@ -1,4 +1,4 @@
-/*! Nib 1.4.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+/*! Nib 1.4.1 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -1115,7 +1115,14 @@ function takeFractions(units, ref, opts) {
   for (const B of bars) {
     if (used.has(B)) continue;
     const b = B.box, w = b[2] - b[0], tol = 0.15 * w + 0.25 * Math.min(ref, w), yb = barLine(B.sym);
-    const inRange = u => { const bb = u.full || u.box, c = (bb[0] + bb[2]) / 2; return c >= b[0] - tol && c <= b[2] + tol && (bb[2] - bb[0]) <= 1.35 * w + 0.3 * ref; };
+    // over the bar: centred on it and not much wider; loosely (one side of a lopsided fraction), overlapping a good
+    // part of it
+    let loose = false;
+    const inRange = u => {
+      const bb = u.full || u.box, c = (bb[0] + bb[2]) / 2;
+      if (loose) return Math.min(bb[2], b[2]) - Math.max(bb[0], b[0]) >= 0.3 * w && (bb[2] - bb[0]) <= 2.4 * w + 0.5 * ref;
+      return c >= b[0] - tol && c <= b[2] + tol && (bb[2] - bb[0]) <= 1.35 * w + 0.3 * ref;
+    };
     const okUnit = (u, dir, y) => {
       const bb = u.full || u.box, cy = (bb[1] + bb[3]) / 2, lab = u.k === 's' ? u.sym.label : null;
       const side = dir < 0 ? y - cy : cy - y;
@@ -1172,14 +1179,25 @@ function takeFractions(units, ref, opts) {
       }
       return set;
     };
-    const up = grow(-1); if (!up.length) continue;
-    const dn = grow(1); if (!dn.length) continue;
+    loose = false;
+    let up = grow(-1), dn = grow(1);
     const span = s => { let x0 = Infinity, x1 = -Infinity; for (const u of s) { const bb = u.full || u.box; x0 = Math.min(x0, bb[0]); x1 = Math.max(x1, bb[2]); } return x1 - x0; };
-    if (w < 0.45 * Math.max(span(up), span(dn))) continue;
-    const centred = st => { let x0 = Infinity, x1 = -Infinity; for (const u of st) { const bb = u.full || u.box; x0 = Math.min(x0, bb[0]); x1 = Math.max(x1, bb[2]); }
+    const centred = (st, k) => { let x0 = Infinity, x1 = -Infinity; for (const u of st) { const bb = u.full || u.box; x0 = Math.min(x0, bb[0]); x1 = Math.max(x1, bb[2]); }
       const ov = Math.min(x1, b[2]) - Math.max(x0, b[0]);
-      return ov >= 0.5 * Math.min(w, x1 - x0) && Math.abs((x0 + x1) / 2 - (b[0] + b[2]) / 2) < 0.35 * w + 0.3 * ref; };
-    if (!centred(up) || !centred(dn)) continue;
+      return k ? ov >= 0.3 * Math.min(w, x1 - x0) && Math.abs((x0 + x1) / 2 - (b[0] + b[2]) / 2) < 0.6 * w + 0.45 * ref
+        : ov >= 0.5 * Math.min(w, x1 - x0) && Math.abs((x0 + x1) / 2 - (b[0] + b[2]) / 2) < 0.35 * w + 0.3 * ref; };
+    const fits = (u, d) => u.length && d.length && w >= 0.45 * Math.max(span(u), span(d));
+    let ok = fits(up, dn) && centred(up) && centred(dn);
+    // A lopsided fraction: one side squarely on the bar, the other written off to one side of it (a ½ whose 2 runs
+    // out past the end of a short bar, or whose 1 sits over its left end). Only the side that is off is taken loosely.
+    if (!ok && up.length && centred(up) && !(dn.length && centred(dn))) {
+      loose = true; const d2 = grow(1); loose = false;
+      if (fits(up, d2) && centred(d2, true)) { dn = d2; ok = true; }
+    } else if (!ok && dn.length && centred(dn) && !(up.length && centred(up))) {
+      loose = true; const u2 = grow(-1); loose = false;
+      if (fits(u2, dn) && centred(u2, true)) { up = u2; ok = true; }
+    }
+    if (!ok) continue;
     for (const u of up.concat(dn)) used.add(u);
     used.add(B);
     let box = b; for (const u of up.concat(dn)) box = ubox(box, u.full || u.box);
@@ -1329,7 +1347,7 @@ function layout(syms, ref, opts) {
 // ------------------------------------------------------------------ post-layout fix-ups
 // A ")" with no "(" before it takes one from the most bracket-like 1 before it, and a "(" never closed takes a ")"
 // from the most bracket-like 1 after it (the classifier's own second guess, when it is a real one).
-function balanceBrackets(row) {
+function balanceBrackets(row, script) {
   const lab = u => (u.k === 's' ? u.sym.label : null);
   const pOf = (u, l) => { const c = (u.sym.cands || []).find(x => x[0] === l); return c ? c[1] : 0; };
   const loose = u => u.k === 's' && !u.sym.fixed && (u.sym.label === '1' || u.sym.label === 'l' || u.sym.label === 'I');
@@ -1356,7 +1374,30 @@ function balanceBrackets(row) {
       if (best >= 0) turn(row[best], ')');
     }
   }
-  for (const u of row) for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) balanceBrackets(u[k]);
+  // a bracket still without a partner that may well be a 1 (the 1 of 13 + 4 written with a curve) is the 1 (not in
+  // a power or index, where a stray bracket is more likely a piece of something misread)
+  if (!script) {
+    const open = [], lone = [];
+    for (const u of row) {
+      const l = lab(u);
+      if (l === '(') open.push(u);
+      else if (l === ')') { if (open.length) open.pop(); else lone.push(u); }
+    }
+    // and stands like the digits beside it, in a number: a digit on its inside, nothing, a sign or a digit outside
+    // (a small one low down would become part of an index once it is a 1; one after a letter is no part of a number)
+    const digit = v => v && v.k === 's' && /^[0-9]$/.test(v.sym.label) && !v.sup && !v.sub;
+    const edge = v => !v || digit(v) || v.type === T_OP;
+    const tall = row.filter(digit).map(v => v.box);
+    if (tall.length) {
+      const h = median(tall.map(b => b[3] - b[1])), mid = median(tall.map(b => (b[1] + b[3]) / 2));
+      for (const u of lone.concat(open)) {
+        const b = u.box, i = row.indexOf(u), opening = lab(u) === '(';
+        if (u.sym.fixed || pOf(u, '1') < 0.15 || b[3] - b[1] < 0.8 * h || Math.abs((b[1] + b[3]) / 2 - mid) > 0.3 * h) continue;
+        if (opening ? digit(row[i + 1]) && edge(row[i - 1]) : digit(row[i - 1]) && edge(row[i + 1])) turn(u, '1');
+      }
+    }
+  }
+  for (const u of row) for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) balanceBrackets(u[k], script || k === 'sup' || k === 'sub' || k === 'idx');
 }
 // how high a dot sits against the digits and letters beside it: 0 on their baseline, 0.5 halfway up (null: none beside it)
 function dotLift(row, i, ref) {
@@ -1526,6 +1567,9 @@ function markStacked(row) {
     if (a.k !== 's' || b.k !== 's') continue;
     const A = a.box, B = b.box, across = Math.min(A[2], B[2]) - Math.max(A[0], B[0]);
     if (Math.max(B[1] - A[3], A[1] - B[3]) > 0 && across > 0.5 * Math.max(Math.min(A[2] - A[0], B[2] - B[0]), 1e-9)) a.doubt = b.doubt = true;
+    // a minus wholly above what follows it is no minus of it: a fraction bar whose numerator went to the line above
+    // (½ read as 1 over "7 + −2", which would be answered 5)
+    if (a.sym.label === '-' && b.type !== T_SMALL && (A[1] + A[3]) / 2 < B[1] - 0.1 * (B[3] - B[1])) a.doubt = b.doubt = true;
   }
   // a power or index straight above or below its base, not beside it (the 1 of a ½ with no bar read as 2¹)
   for (const u of row) {
@@ -3251,6 +3295,14 @@ function handClean(g) {
   }
   return out;
 }
+// a Replicator file's letters as its font draws them: the box drawings, with the letters also written in sentences
+// replaced by their average (kept beside them as avg); a plain {char: strokes} map is taken as it is
+function handOf(d) {
+  if (!d || typeof d !== 'object') return d;
+  if (!d.glyphs || typeof d.glyphs !== 'object') return d;
+  const avg = d.avg && typeof d.avg === 'object' && !Array.isArray(d.avg) && d.useSamples !== false ? handClean(d.avg) : null;
+  return avg && Object.keys(avg).length ? Object.assign({}, d.glyphs, avg) : d.glyphs;
+}
 // The handwriting in this browser: a file opened in Nib (kept under HAND_KEY) or the Replicator's own work, when it
 // was opened in this browser too — whichever was saved last, so letters redone in the Replicator are never hidden
 // by an older file.
@@ -3262,13 +3314,13 @@ function handLoad() {
   const when = d => (typeof d.saved === 'number' && isFinite(d.saved) ? d.saved : 0);
   const found = [read(HAND_KEY), read('replicator-v1')].filter(Boolean).sort((x, y) => when(y) - when(x));
   for (const d of found) {
-    const g = handClean(d.glyphs);
+    const g = handClean(handOf(d));
     if (Object.keys(g).length) { HAND.glyphs = g; HAND.name = typeof d.name === 'string' ? d.name : ''; break; }
   }
   return HAND.glyphs;
 }
 function handSet(data) {
-  const g = handClean(data && (data.glyphs || data));
+  const g = handClean(handOf(data));
   if (!Object.keys(g).length) throw new Error('no handwriting in that data');
   HAND.glyphs = g; HAND.name = data && typeof data.name === 'string' ? data.name : ''; HAND.loaded = true;
   try { if (typeof localStorage !== 'undefined') localStorage.setItem(HAND_KEY, JSON.stringify({ name: HAND.name, saved: Date.now(), glyphs: g })); } catch (e) { /* full or blocked: kept for this page */ }
@@ -3411,7 +3463,7 @@ function pathsOf(items) {
 function inPlace(strokes, style, options) {
   const o = Object.assign({}, options || {});
   const res = o.result || defaultRecognizer().recognize(strokes, o);
-  const g = style === 'hand' || o.solve || o.answers ? (o.hand ? handClean(o.hand.glyphs || o.hand) : handLoad()) : null;
+  const g = style === 'hand' || o.solve || o.answers ? (o.hand ? handClean(handOf(o.hand)) : handLoad()) : null;
   let P;
   if (style === 'typeset') P = typeProvider();
   else if (style === 'hand') P = handProvider(g && Object.keys(g).length ? g : null);
@@ -3824,7 +3876,7 @@ class Pad {
       if (this.o.solve) {
         // an answer is written with the clearest of each symbol anywhere on the board, then the Replicator hand
         let hand = null;
-        try { hand = this.o.hand ? handClean(this.o.hand.glyphs || this.o.hand) : handLoad(); } catch (err) { hand = null; }
+        try { hand = this.o.hand ? handClean(handOf(this.o.hand)) : handLoad(); } catch (err) { hand = null; }
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
       const R = refSize(at), done = [];
@@ -4191,7 +4243,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.4.0',
+  version: '1.4.1',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -4226,7 +4278,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;

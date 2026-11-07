@@ -35,7 +35,8 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   };
   const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const errors = [];
-  const watch = p => { p.on('pageerror', e => errors.push(String(e))); p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); };
+  // (the published page links Google Fonts, which this sandbox cannot reach: those failures are not the page's)
+  const watch = p => { p.on('pageerror', e => errors.push(String(e))); p.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource: net::ERR_(TUNNEL_CONNECTION_FAILED|NAME_NOT_RESOLVED|INTERNET_DISCONNECTED|PROXY_CONNECTION_FAILED)/.test(m.text())) errors.push(m.text()); }); };
   const page = await browser.newPage(); watch(page);
   const cdp = await page.target().createCDPSession();
   await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dl }).catch(() => cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dl }));
@@ -44,7 +45,14 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     try { new PerformanceObserver(l => { for (const e of l.getEntries()) window.__long.push(Math.round(e.duration)); }).observe({ entryTypes: ['longtask'] }); } catch (e) { /* unsupported */ }
   });
   await page.setViewport({ width: 1366, height: 900 });
-  const url = 'file://' + path.resolve(page_);
+  // the published page is wrapped in a document skeleton (with the viewport tag) when it is published: test it so
+  let file = path.resolve(page_);
+  const src = fs.readFileSync(file, 'utf8');
+  if (!/^\s*<!doctype/i.test(src)) {
+    file = path.join(out, 'published-' + path.basename(file));
+    fs.writeFileSync(file, '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + src + '</body></html>');
+  }
+  const url = 'file://' + file;
   await page.goto(url, { waitUntil: 'load' });
   await page.evaluate(() => { localStorage.clear(); });
   await page.reload({ waitUntil: 'load' });
@@ -164,6 +172,174 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     ok(/could not be opened/.test(await page.$eval('#exportNote', e => e.textContent)), 'a broken file is refused');
   }
 
+  console.log('sentences');
+  {
+    let seed = 11;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }, U = (a, b) => a + (b - a) * rnd();
+    // the same drawing written again: a little bigger or smaller, turned, slanted, each stroke nudged (as in test/replicator_check.js)
+    const again = st => {
+      const sc = U(0.93, 1.07), rot = U(-0.05, 0.05), sh = U(-0.06, 0.06);
+      return st.map(s => { const nx = U(-0.01, 0.01), ny = U(-0.01, 0.01); return s.map(p => { const x = (p[0] - 0.5) * sc, y = (p[1] - 0.6) * sc; return [0.5 + x * Math.cos(rot) - y * Math.sin(rot) + sh * y + nx, 0.6 + x * Math.sin(rot) + y * Math.cos(rot) + ny]; }); });
+    };
+    const hand = (await stored()).glyphs;
+    const other = ch => (pool[ch] && pool[ch].length ? place(ch, pool[ch][0]) : null);      // a letter not in the boxes, written anyway
+    const geo = () => page.evaluate(() => {
+      const el = document.getElementById('strip'); el.scrollIntoView({ block: 'center' });
+      const c = el.querySelector('canvas').getBoundingClientRect();
+      return { x: c.left, y: c.top, w: c.width, lines: +el.dataset.lines, rowH: +el.dataset.rowH };
+    });
+    // a sentence laid out on the ruled lines, the way it is written: [{li, s (line units)}], i/j dots and t bars sometimes after the word
+    const layout = (text, g) => {
+      const out = [], width = g.w / g.rowH - 0.3;
+      let x = 0.15, li = 0;
+      for (const word of text.split(' ')) {
+        const gl = [...word].map(ch => { const st = hand[ch] && hand[ch].length ? hand[ch] : other(ch); return { ch, st: st ? R.toLine(again(st)) : null }; });
+        const span = st => { const xs = st.flat().map(p => p[0]); return [Math.min(...xs), Math.max(...xs)]; };
+        const wordW = gl.reduce((t, q) => (q.st ? t + span(q.st)[1] - span(q.st)[0] + 0.1 : t), 0);
+        if (x + wordW > width && x > 0.2) { li++; x = 0.15; }
+        const late = [];
+        for (const q of gl) {
+          if (!q.st) continue;
+          const [a, b] = span(q.st);
+          q.st.forEach((s, si) => {
+            const p = s.map(pt => [pt[0] - a + x, pt[1]]);
+            const isLate = ((q.ch === 'i' || q.ch === 'j') && si === q.st.length - 1 && q.st.length > 1) || (q.ch === 't' && si === 1);
+            (isLate && rnd() < 0.5 ? late : out).push({ li, s: p });
+          });
+          x += b - a + U(0.07, 0.13);
+        }
+        out.push(...late);
+        x += U(0.28, 0.42);
+      }
+      return out;
+    };
+    const drawStroke = async (g, t) => {
+      const P = t.s.map(p => [g.x + p[0] * g.rowH, g.y + 4 + (t.li + p[1]) * g.rowH]);
+      await page.mouse.move(P[0][0], P[0][1]); await page.mouse.down();
+      for (let i = 1; i < P.length; i += 2) await page.mouse.move(P[i][0], P[i][1]);
+      await page.mouse.move(P[P.length - 1][0], P[P.length - 1][1]); await page.mouse.up();
+    };
+    const strokesOnLines = () => page.$eval('#strip', e => +e.dataset.strokes);
+    const learnNote = async () => {
+      await page.waitForFunction(() => /^(Learned|That did not)/.test(document.getElementById('sentNote').textContent), { timeout: 20000 }).catch(() => {});
+      return page.$eval('#sentNote', e => e.textContent);
+    };
+    const samplesIn = d => Object.values(d.samples || {}).reduce((n, l) => n + l.length, 0);
+
+    await tab('sent');
+    ok(await page.$eval('#sent', e => !e.hidden) && await page.$eval('#grid', e => e.hidden), 'the Sentences tab shows ruled lines in place of the boxes');
+    const s1 = await page.$eval('#sentText', e => e.value);
+    ok(s1 === 'The quick brown fox jumps over the lazy dog.', 'a sentence to copy is ready: ' + s1);
+    ok(await page.$eval('#sentLearn', e => e.disabled), 'nothing written yet: nothing to learn');
+    let g = await geo();
+    ok(g.lines >= 3 && g.lines <= 4 && g.rowH >= 64 && g.rowH <= 132, `${g.lines} ruled lines on a computer, room for the sentence (${g.rowH} px each)`);
+    const w1 = layout(s1, g);
+    for (const t of w1) await drawStroke(g, t);
+    ok(await strokesOnLines() === w1.length, `every stroke is on the lines (${w1.length})`);
+    const famBefore = await page.$eval('#preview', e => e.style.fontFamily);
+    await page.evaluate(() => { window.__long.length = 0; });
+    await page.click('#sentLearn');
+    const n1 = await learnNote(), m1 = n1.match(/^Learned (\d+) of (\d+) letters/);
+    const lt = await page.evaluate(() => window.__long.slice());
+    ok(m1 && +m1[2] === 36 && +m1[1] >= 27, 'most of the letters are learned (j and l have no box to match): ' + n1);
+    console.log(`        reading the sentence: longest task ${Math.max(0, ...lt)} ms`);
+    await wait(700);
+    let d = await stored();
+    const learned1 = m1 ? +m1[1] : 0;
+    ok(samplesIn(d) === learned1 && d.sentDone === 1, `the letters are kept (${samplesIn(d)}), one sentence done`);
+    ok(!d.samples.j && !d.samples.l, 'letters with no box drawing are never learned');
+    const avgN = Object.keys(d.avg || {}).length, distinct = Object.keys(d.samples).length;
+    ok(avgN >= 0.8 * distinct, `the font uses the average for the letters written (${avgN} of ${distinct})`);
+    await page.waitForFunction(f => document.getElementById('preview').style.fontFamily !== f, { timeout: 30000 }, famBefore).catch(() => {});
+    ok(await page.$eval('#preview', e => e.style.fontFamily) !== famBefore, 'the font is rebuilt with them');
+    ok((await page.$$eval('.tab', ts => ts.map(t => t.textContent))).includes('Sentences1'), 'the Sentences tab counts the sentence');
+    await page.screenshot({ path: out + '/replicator-sentences.png' });
+
+    // Undo takes the sentence back, leaving the writing to learn again
+    await page.click('#undo'); await wait(700);
+    d = await stored();
+    ok(samplesIn(d) === 0 && d.sentDone === 0 && await strokesOnLines() === w1.length && !(await page.$eval('#sentLearn', e => e.disabled)), 'Undo takes the learned letters back and leaves the writing');
+    await page.click('#sentLearn');
+    const n1b = await learnNote();
+    ok(n1b === n1, 'learning it again gives the same letters');
+    await wait(700);
+
+    // the next stroke starts the next sentence
+    g = await geo();
+    const s2 = 'Sphinx of black quartz, judge my vow.';
+    const w2 = layout(s2, g);
+    await drawStroke(g, w2[0]);
+    ok(await page.$eval('#sentText', e => e.value) === s2 && await strokesOnLines() === 1, 'writing again starts the next sentence on clear lines');
+    for (const t of w2.slice(1)) await drawStroke(g, t);
+    await drawStroke(g, { li: 2, s: [[9.2, 0.3], [9.6, 0.35], [9.9, 0.32]] });
+    await page.click('#undo'); await wait(200);
+    ok(await strokesOnLines() === w2.length, 'Undo takes back the last stroke on the lines');
+    await page.click('#sentLearn');
+    const n2 = await learnNote();
+    ok(/^Learned/.test(n2), 'the second sentence: ' + n2);
+    await wait(800);
+    d = await stored();
+    ok(d.sentDone === 2 && samplesIn(d) > learned1, `two sentences, ${samplesIn(d)} letters`);
+
+    // a sentence that is not the one written teaches nothing
+    g = await geo();
+    const w3 = layout('Pack my box with five dozen jugs.', g);
+    await drawStroke(g, w3[0]);
+    const s3 = await page.$eval('#sentText', e => e.value);
+    for (const t of w3.slice(1)) await drawStroke(g, t);
+    await page.click('#sentLearn');
+    const n3 = await learnNote();
+    ok(/^That did not line up/.test(n3), `writing a different sentence (“${s3}” asked) teaches nothing: ${n3}`);
+    await page.click('#sentClear'); await wait(700);
+    ok(await page.$eval('#sentText', e => e.value) === s3 && await strokesOnLines() === 0, 'Clear keeps the same sentence to try again');
+    d = await stored();
+    const keep = samplesIn(d);
+    ok(keep === samplesIn(await stored()) && d.sentDone === 2, 'and nothing was added');
+
+    await tab('lower');
+    const badge = await page.evaluate(() => { const b = [...document.querySelectorAll('.box')].find(x => x.querySelector('.ch').textContent === 'o'); return b ? b.querySelector('.cnt').textContent : null; });
+    ok(badge === '×' + (d.samples.o || []).length && (d.samples.o || []).length > 0, `each box shows how often its letter was written in sentences (o: ${badge})`);
+    await tab('sent');
+
+    await page.click('#useSamples'); await wait(800);
+    d = await stored();
+    ok(d.useSamples === false && d.avg === undefined && samplesIn(d) === keep, 'sentences can be left out of the font without forgetting them');
+    await page.click('#useSamples'); await wait(800);
+    ok((await stored()).useSamples === true && Object.keys((await stored()).avg || {}).length > 0, 'and put back');
+
+    await page.reload({ waitUntil: 'load' }); await wait(800);
+    d = await stored();
+    ok(samplesIn(d) === keep && await page.$eval('#sent', e => !e.hidden), 'a reload keeps the sentences and the tab');
+    ok(await page.$eval('#sentText', e => e.value) === s3, 'and the sentence still to write');
+
+    for (const f of fs.readdirSync(dl)) if (f.endsWith('.json')) fs.rmSync(path.join(dl, f));
+    await page.click('#save');
+    let sj = null;
+    for (let t = 0; t < 40 && !sj; t++) { await wait(250); sj = fs.readdirSync(dl).find(f => f.endsWith('.json')); }
+    const file = sj ? JSON.parse(fs.readFileSync(path.join(dl, sj), 'utf8')) : {};
+    ok(samplesIn(file) === keep && Object.keys(file.avg || {}).length > 0, 'Save handwriting keeps the sentences and their averages (for Nib Board)');
+    if (sj) {
+      await page.evaluate(() => { localStorage.clear(); }); await page.reload({ waitUntil: 'load' }); await wait(500);
+      await (await page.$('#file')).uploadFile(path.join(dl, sj)); await wait(2500);
+      ok(samplesIn(await stored()) === keep && (await stored()).sentDone === 2, 'and Open handwriting brings them back');
+    }
+    if (!(await page.evaluate(() => !!window.REPLICATOR_PUBLISHED)) && await page.$eval('#teach', e => !e.hidden)) {
+      await page.evaluate(() => { localStorage.removeItem('nib-memory-v1'); });
+      await page.click('#teach'); await wait(1500);
+      const taught = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('nib-memory-v1')).items.length; } catch (e) { return 0; } });
+      const boxes = Object.values((await stored()).glyphs).filter(s => s.length).length;
+      ok(taught > boxes, `Teach Nib uses the sentences too (${taught} shapes for ${boxes} characters)`);
+    }
+
+    await tab('sent');
+    await page.click('#sentForget'); await wait(100);
+    ok(/Tap again to forget all \d+ letters/.test(await page.$eval('#sentForget', e => e.textContent)) && samplesIn(await stored()) === keep, 'Forget asks for a second tap first');
+    await page.click('#sentForget'); await wait(800);
+    d = await stored();
+    ok(samplesIn(d) === 0 && d.sentDone === 0 && Object.keys(d.avg || {}).length === 0, 'and then forgets every sentence');
+    ok(strokesIn(d) > 0, 'the box drawings stay');
+  }
+
   console.log('Teach Nib');
   if (await page.evaluate(() => !!window.REPLICATOR_PUBLISHED)) {
     ok(await page.$eval('#teach', e => e.hidden), 'the published page has no Teach Nib button (its storage is its own)');
@@ -223,6 +399,11 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     const overflow = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     ok(overflow <= 0, `phone ${scheme}: no sideways scrolling (${overflow}px)`);
     await p.screenshot({ path: `${out}/replicator-phone-${scheme}.png`, fullPage: true });
+    await p.click('#tab-sent'); await wait(300);
+    const sp = await p.evaluate(() => ({ lines: +document.getElementById('strip').dataset.lines, over: document.documentElement.scrollWidth - window.innerWidth }));
+    ok(sp.lines >= 5 && sp.over <= 0, `phone ${scheme}: ${sp.lines} shorter lines for sentences, no sideways scrolling (${sp.over}px)`);
+    await p.screenshot({ path: `${out}/replicator-phone-sentences-${scheme}.png`, fullPage: true });
+    await p.click('#tab-upper'); await wait(100);
     await p.close();
   }
   await browser.close();

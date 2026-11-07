@@ -415,9 +415,10 @@ for (const [t, w] of [['5++2x=', null], ['3++4=', null], ['x+-3=', 'x-3'], ['+5+
     if (!bar) continue;
     const st = e.strokes.filter((_, i) => !bar.strokes.includes(i)), r = new Nib.Recognizer().recognize(st, X), a = Nib.solve(r, X)[0];
     tried++;
-    if (a) answered.push(r.latex + ' = ' + a.latex);
+    // (what is left may still make a ½: a 1 written with a foot long enough to be a bar is read 1 over 2 again)
+    if (a && !(r.latex === '7+\\frac{1}{2}=' && a.latex === '\\frac{15}{2}')) answered.push(r.latex + ' = ' + a.latex);
   }
-  ok(tried >= 8 && answered.length === 0, `½ with its bar taken away gets no answer (${tried} writers${answered.length ? '; answered: ' + answered.join(', ') : ''})`);
+  ok(tried >= 8 && answered.length === 0, `½ with its bar taken away is never answered as anything but 7½ (${tried} writers${answered.length ? '; answered: ' + answered.join(', ') : ''})`);
 }
 {
   // a times dot between two fractions is a times dot, not a minus
@@ -430,6 +431,54 @@ for (const [t, w] of [['5++2x=', null], ['3++4=', null], ['x+-3=', 'x-3'], ['+5+
     if (/\\frac\{2\}\{3\}-\\frac\{3\}\{4\}/.test(r.latex)) minus++;
   }
   ok(n >= 8 && minus === 0, `a dot between fractions is read as times (${minus} of ${n} read as minus)`);
+}
+
+section('19. a real board: the strokes of Croix\'s screenshot of 4 Nov, piece by piece (the Board itself: test/board_browser.js)');
+{
+  const F = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'board_2026-11-04.json'), 'utf8'));
+  // the problems the Board finds on it (its own clustering), each read on its own
+  const pieces = Nib._internals.clustersOf(F.strokes).map(g => g.map(i => F.strokes[i]));
+  const read = pieces.map(st => { const r = new Nib.Recognizer().recognize(st, X), a = Nib.solve(r, X); return { latex: r.latex, answer: a.map(x => x && x.latex) }; });
+  const has = (tex, ans) => read.some(p => p.latex === tex && p.answer.length === 1 && p.answer[0] === ans);
+  for (const [tex, ans] of [['7+7=', '14'], ['13+4=', '17'], ['7+\\frac{1}{2}=', '\\frac{15}{2}'], ['\\sqrt{14}=', '3.741\\ldots'], ['3.741^{2}=', '13.995081'], ['5x+2x=', '7x']])
+    ok(has(tex, ans), `${tex} ${ans}  (read: ${read.filter(p => p.answer.some(Boolean) || /=$/.test(p.latex)).map(p => p.latex + (p.answer[0] ? ' ' + p.answer[0] : '')).join(', ')})`.slice(0, 400));
+  ok(read.filter(p => p.latex === '14^{2}=' && p.answer[0] === '196').length === 2 && read.filter(p => p.latex === '7-7=' && p.answer[0] === '0').length === 2, 'both 14² = 196 and both 7 − 7 = 0');
+  const bad = read.filter(p => p.answer.some(a => a === '9' || a === '-5' || a === '2x+5' || a === '5'));
+  ok(bad.length === 0, 'none of the wrong answers that board showed (or 5 for 7 + ½) comes back' + (bad.length ? ': ' + bad.map(p => p.latex + ' ' + p.answer).join(', ') : ''));
+}
+{
+  // ½ written lopsided: the 2 running out past the end of a short bar, the 1 high over its left end
+  const { compose } = require('./compose.js');
+  const shift = (e, pick, dx, dy) => { const ix = new Set(pick.strokes); return e.strokes.map((s, i) => ix.has(i) ? s.map(p => [p[0] + dx, p[1] + dy]) : s); };
+  const box = (e, sy) => { let b = [Infinity, Infinity, -Infinity, -Infinity]; for (const i of sy.strokes) for (const p of e.strokes[i]) b = [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])]; return b; };
+  let tried = 0, right = 0; const other = [], worse = [];
+  const answers = st => { const r = new Nib.Recognizer().recognize(st, X); return { latex: r.latex, a: Nib.solve(r, X).filter(Boolean).map(x => x.latex) }; };
+  for (let k = 0; k < 30 && tried < 16; k++) {
+    const e = compose('7+\\frac{1}{2}=');
+    const bar = e.symbols.find(s => s.label === '-'), one = e.symbols.find(s => s.label === '1'), two = e.symbols.find(s => s.label === '2');
+    if (!bar || !one || !two) continue;
+    const bb = box(e, bar), w = bb[2] - bb[0], b1 = box(e, one), b2 = box(e, two), h1 = b1[3] - b1[1];
+    if (new Nib.Recognizer().recognize(e.strokes, X).latex !== '7+\\frac{1}{2}=') continue;     // writers read right as written
+    tried++;
+    // as on that board: the 1 over the left end of the bar, its own height above it; the 2 under the right half and
+    // past the end
+    const lift = (bb[1] - 0.9 * h1) - b1[3];
+    let st = shift(e, two, (bb[0] + 0.55 * w) - b2[0], 0);
+    st = shift({ strokes: st }, one, (bb[0] + 0.05 * w) - b1[0], lift);
+    const r = answers(st);
+    if (r.latex === '7+\\frac{1}{2}=' && r.a.length === 1 && r.a[0] === '\\frac{15}{2}') right++;
+    else if (r.a.length) other.push(r.latex + ' ' + r.a.join(', '));
+    // further still, the 2 nearly off the end of the bar: whatever is read, no answer but 15/2
+    let st2 = shift(e, two, (bb[2] - 0.12 * (b2[2] - b2[0])) - b2[0], 0);
+    st2 = shift({ strokes: st2 }, one, (bb[0] + 0.05 * w) - b1[0], lift);
+    const r2 = answers(st2);
+    if (r2.a.some(x => x !== '\\frac{15}{2}')) worse.push(r2.latex + ' ' + r2.a.join(', '));
+  }
+  ok(tried >= 10 && right >= 0.75 * tried, `a lopsided ½ is still ½: 7 + ½ = 15/2 for ${right} of ${tried} writers`);
+  ok(other.length === 0, 'and no other answer' + (other.length ? ': ' + other.join('; ') : ''));
+  ok(worse.length === 0, 'a ½ too lopsided to read is never answered as something else (7 + −2 = 5)' + (worse.length ? ': ' + worse.join('; ') : ''));
+  // a minus is not a fraction bar for what sits beside it, nor for writing on the lines above and below
+  sol('7-12=', '-5', X);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

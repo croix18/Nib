@@ -614,6 +614,14 @@ function handClean(g) {
   }
   return out;
 }
+// a Replicator file's letters as its font draws them: the box drawings, with the letters also written in sentences
+// replaced by their average (kept beside them as avg); a plain {char: strokes} map is taken as it is
+function handOf(d) {
+  if (!d || typeof d !== 'object') return d;
+  if (!d.glyphs || typeof d.glyphs !== 'object') return d;
+  const avg = d.avg && typeof d.avg === 'object' && !Array.isArray(d.avg) && d.useSamples !== false ? handClean(d.avg) : null;
+  return avg && Object.keys(avg).length ? Object.assign({}, d.glyphs, avg) : d.glyphs;
+}
 // The handwriting in this browser: a file opened in Nib (kept under HAND_KEY) or the Replicator's own work, when it
 // was opened in this browser too — whichever was saved last, so letters redone in the Replicator are never hidden
 // by an older file.
@@ -625,13 +633,13 @@ function handLoad() {
   const when = d => (typeof d.saved === 'number' && isFinite(d.saved) ? d.saved : 0);
   const found = [read(HAND_KEY), read('replicator-v1')].filter(Boolean).sort((x, y) => when(y) - when(x));
   for (const d of found) {
-    const g = handClean(d.glyphs);
+    const g = handClean(handOf(d));
     if (Object.keys(g).length) { HAND.glyphs = g; HAND.name = typeof d.name === 'string' ? d.name : ''; break; }
   }
   return HAND.glyphs;
 }
 function handSet(data) {
-  const g = handClean(data && (data.glyphs || data));
+  const g = handClean(handOf(data));
   if (!Object.keys(g).length) throw new Error('no handwriting in that data');
   HAND.glyphs = g; HAND.name = data && typeof data.name === 'string' ? data.name : ''; HAND.loaded = true;
   try { if (typeof localStorage !== 'undefined') localStorage.setItem(HAND_KEY, JSON.stringify({ name: HAND.name, saved: Date.now(), glyphs: g })); } catch (e) { /* full or blocked: kept for this page */ }
@@ -774,7 +782,7 @@ function pathsOf(items) {
 function inPlace(strokes, style, options) {
   const o = Object.assign({}, options || {});
   const res = o.result || defaultRecognizer().recognize(strokes, o);
-  const g = style === 'hand' || o.solve || o.answers ? (o.hand ? handClean(o.hand.glyphs || o.hand) : handLoad()) : null;
+  const g = style === 'hand' || o.solve || o.answers ? (o.hand ? handClean(handOf(o.hand)) : handLoad()) : null;
   let P;
   if (style === 'typeset') P = typeProvider();
   else if (style === 'hand') P = handProvider(g && Object.keys(g).length ? g : null);

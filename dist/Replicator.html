@@ -97,6 +97,19 @@ button { font-family: inherit; }
 @media (hover: hover) { .box.has .x { opacity: 0; } .box:hover .x, .box .x:focus-visible { opacity: 1; } }
 .box .x svg { width: 14px; height: 14px; }
 .box.has { border-color: color-mix(in srgb, var(--gold) 45%, var(--rule)); }
+.box .cnt { position: absolute; right: 7px; bottom: 5px; font: 500 10px/1 var(--f-mono); color: var(--gold-ink); pointer-events: none; }
+
+/* sentences: ruled lines like an exercise book, the sentence to copy above them */
+.sent { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.sentHead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sentHead input[type="text"] { flex: 1 1 260px; width: auto; font: 500 18px/1.4 var(--f-body); color: var(--ink); }
+.strip { position: relative; background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; touch-action: none; }
+.strip canvas { display: block; width: 100%; touch-action: none; cursor: crosshair; }
+.sentBar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sentBar .note { margin: 0; flex: 1 1 220px; }
+.sentMore { display: flex; flex-direction: column; gap: 10px; }
+.sentMore .status { margin: 0; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; max-width: 70ch; }
 
 .side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: calc(14px + env(safe-area-inset-top, 0px)); min-width: 0; }
 @media (max-width: 980px) { .side { position: static; } }
@@ -148,6 +161,24 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
     <section aria-label="Writing sheet">
       <div class="tabs" role="tablist" id="tabs"></div>
       <div class="grid" id="grid"></div>
+      <div class="sent" id="sent" hidden>
+        <p class="hint">Write the sentence on the lines the way you normally print, letters not joined up. Each letter is matched to the one in its box, and your font becomes the average of every time you have written it, so the odd wobble in a box drawing fades. A few sentences make a real difference; the more you write, the more it looks like you.</p>
+        <div class="sentHead">
+          <input type="text" id="sentText" aria-label="The sentence to write" maxlength="120" spellcheck="false">
+          <button type="button" class="btn" id="sentNew">Another sentence</button>
+        </div>
+        <div class="strip" id="strip"><canvas aria-label="Write the sentence here"></canvas></div>
+        <div class="sentBar">
+          <button type="button" class="btn primary" id="sentLearn" disabled>Learn from this</button>
+          <button type="button" class="btn" id="sentClear">Clear</button>
+          <p class="note" id="sentNote"></p>
+        </div>
+        <div class="card sentMore">
+          <div class="row"><label for="useSamples">Use my sentences in the font</label><input type="checkbox" class="switch" id="useSamples" checked></div>
+          <p class="status" id="sentStats"></p>
+          <div><button type="button" class="btn" id="sentForget">Forget my sentences</button></div>
+        </div>
+      </div>
     </section>
 
     <aside class="side">
@@ -162,8 +193,9 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
         <div class="row"><label for="name">Name</label><input type="text" id="name" value="My Handwriting" style="width: 190px" maxlength="40"></div>
         <div class="row"><label for="weight">Pen weight</label><input type="range" id="weight" min="40" max="150" step="5" value="80"><output id="weightV">80</output></div>
         <div class="row"><label for="spacing">Letter spacing</label><input type="range" id="spacing" min="0" max="140" step="5" value="50"><output id="spacingV">50</output></div>
-        <div class="row"><label for="smooth">Smoothing</label><input type="range" id="smooth" min="0" max="6" step="1" value="2"><output id="smoothV">2</output></div>
+        <div class="row"><label for="smooth">Smoothing</label><input type="range" id="smooth" min="0" max="10" step="1" value="5"><output id="smoothV">5</output></div>
         <div class="row"><label for="tidy">Line up with the guides</label><input type="checkbox" class="switch" id="tidy" checked></div>
+        <div class="row"><label for="even">Even out letter sizes</label><input type="checkbox" class="switch" id="even" checked></div>
         <div class="row"><label for="big">Bigger boxes</label><input type="checkbox" class="switch" id="big"></div>
       </div>
       <div class="card stack">
@@ -177,7 +209,7 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   </main>
 </div>
 
-<script>/*! Nib 1.4.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+<script>/*! Nib 1.4.1 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -1294,7 +1326,14 @@ function takeFractions(units, ref, opts) {
   for (const B of bars) {
     if (used.has(B)) continue;
     const b = B.box, w = b[2] - b[0], tol = 0.15 * w + 0.25 * Math.min(ref, w), yb = barLine(B.sym);
-    const inRange = u => { const bb = u.full || u.box, c = (bb[0] + bb[2]) / 2; return c >= b[0] - tol && c <= b[2] + tol && (bb[2] - bb[0]) <= 1.35 * w + 0.3 * ref; };
+    // over the bar: centred on it and not much wider; loosely (one side of a lopsided fraction), overlapping a good
+    // part of it
+    let loose = false;
+    const inRange = u => {
+      const bb = u.full || u.box, c = (bb[0] + bb[2]) / 2;
+      if (loose) return Math.min(bb[2], b[2]) - Math.max(bb[0], b[0]) >= 0.3 * w && (bb[2] - bb[0]) <= 2.4 * w + 0.5 * ref;
+      return c >= b[0] - tol && c <= b[2] + tol && (bb[2] - bb[0]) <= 1.35 * w + 0.3 * ref;
+    };
     const okUnit = (u, dir, y) => {
       const bb = u.full || u.box, cy = (bb[1] + bb[3]) / 2, lab = u.k === 's' ? u.sym.label : null;
       const side = dir < 0 ? y - cy : cy - y;
@@ -1351,14 +1390,25 @@ function takeFractions(units, ref, opts) {
       }
       return set;
     };
-    const up = grow(-1); if (!up.length) continue;
-    const dn = grow(1); if (!dn.length) continue;
+    loose = false;
+    let up = grow(-1), dn = grow(1);
     const span = s => { let x0 = Infinity, x1 = -Infinity; for (const u of s) { const bb = u.full || u.box; x0 = Math.min(x0, bb[0]); x1 = Math.max(x1, bb[2]); } return x1 - x0; };
-    if (w < 0.45 * Math.max(span(up), span(dn))) continue;
-    const centred = st => { let x0 = Infinity, x1 = -Infinity; for (const u of st) { const bb = u.full || u.box; x0 = Math.min(x0, bb[0]); x1 = Math.max(x1, bb[2]); }
+    const centred = (st, k) => { let x0 = Infinity, x1 = -Infinity; for (const u of st) { const bb = u.full || u.box; x0 = Math.min(x0, bb[0]); x1 = Math.max(x1, bb[2]); }
       const ov = Math.min(x1, b[2]) - Math.max(x0, b[0]);
-      return ov >= 0.5 * Math.min(w, x1 - x0) && Math.abs((x0 + x1) / 2 - (b[0] + b[2]) / 2) < 0.35 * w + 0.3 * ref; };
-    if (!centred(up) || !centred(dn)) continue;
+      return k ? ov >= 0.3 * Math.min(w, x1 - x0) && Math.abs((x0 + x1) / 2 - (b[0] + b[2]) / 2) < 0.6 * w + 0.45 * ref
+        : ov >= 0.5 * Math.min(w, x1 - x0) && Math.abs((x0 + x1) / 2 - (b[0] + b[2]) / 2) < 0.35 * w + 0.3 * ref; };
+    const fits = (u, d) => u.length && d.length && w >= 0.45 * Math.max(span(u), span(d));
+    let ok = fits(up, dn) && centred(up) && centred(dn);
+    // A lopsided fraction: one side squarely on the bar, the other written off to one side of it (a ½ whose 2 runs
+    // out past the end of a short bar, or whose 1 sits over its left end). Only the side that is off is taken loosely.
+    if (!ok && up.length && centred(up) && !(dn.length && centred(dn))) {
+      loose = true; const d2 = grow(1); loose = false;
+      if (fits(up, d2) && centred(d2, true)) { dn = d2; ok = true; }
+    } else if (!ok && dn.length && centred(dn) && !(up.length && centred(up))) {
+      loose = true; const u2 = grow(-1); loose = false;
+      if (fits(u2, dn) && centred(u2, true)) { up = u2; ok = true; }
+    }
+    if (!ok) continue;
     for (const u of up.concat(dn)) used.add(u);
     used.add(B);
     let box = b; for (const u of up.concat(dn)) box = ubox(box, u.full || u.box);
@@ -1508,7 +1558,7 @@ function layout(syms, ref, opts) {
 // ------------------------------------------------------------------ post-layout fix-ups
 // A ")" with no "(" before it takes one from the most bracket-like 1 before it, and a "(" never closed takes a ")"
 // from the most bracket-like 1 after it (the classifier's own second guess, when it is a real one).
-function balanceBrackets(row) {
+function balanceBrackets(row, script) {
   const lab = u => (u.k === 's' ? u.sym.label : null);
   const pOf = (u, l) => { const c = (u.sym.cands || []).find(x => x[0] === l); return c ? c[1] : 0; };
   const loose = u => u.k === 's' && !u.sym.fixed && (u.sym.label === '1' || u.sym.label === 'l' || u.sym.label === 'I');
@@ -1535,7 +1585,30 @@ function balanceBrackets(row) {
       if (best >= 0) turn(row[best], ')');
     }
   }
-  for (const u of row) for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) balanceBrackets(u[k]);
+  // a bracket still without a partner that may well be a 1 (the 1 of 13 + 4 written with a curve) is the 1 (not in
+  // a power or index, where a stray bracket is more likely a piece of something misread)
+  if (!script) {
+    const open = [], lone = [];
+    for (const u of row) {
+      const l = lab(u);
+      if (l === '(') open.push(u);
+      else if (l === ')') { if (open.length) open.pop(); else lone.push(u); }
+    }
+    // and stands like the digits beside it, in a number: a digit on its inside, nothing, a sign or a digit outside
+    // (a small one low down would become part of an index once it is a 1; one after a letter is no part of a number)
+    const digit = v => v && v.k === 's' && /^[0-9]$/.test(v.sym.label) && !v.sup && !v.sub;
+    const edge = v => !v || digit(v) || v.type === T_OP;
+    const tall = row.filter(digit).map(v => v.box);
+    if (tall.length) {
+      const h = median(tall.map(b => b[3] - b[1])), mid = median(tall.map(b => (b[1] + b[3]) / 2));
+      for (const u of lone.concat(open)) {
+        const b = u.box, i = row.indexOf(u), opening = lab(u) === '(';
+        if (u.sym.fixed || pOf(u, '1') < 0.15 || b[3] - b[1] < 0.8 * h || Math.abs((b[1] + b[3]) / 2 - mid) > 0.3 * h) continue;
+        if (opening ? digit(row[i + 1]) && edge(row[i - 1]) : digit(row[i - 1]) && edge(row[i + 1])) turn(u, '1');
+      }
+    }
+  }
+  for (const u of row) for (const k of ['sup', 'sub', 'num', 'den', 'body', 'idx']) if (u[k]) balanceBrackets(u[k], script || k === 'sup' || k === 'sub' || k === 'idx');
 }
 // how high a dot sits against the digits and letters beside it: 0 on their baseline, 0.5 halfway up (null: none beside it)
 function dotLift(row, i, ref) {
@@ -1705,6 +1778,9 @@ function markStacked(row) {
     if (a.k !== 's' || b.k !== 's') continue;
     const A = a.box, B = b.box, across = Math.min(A[2], B[2]) - Math.max(A[0], B[0]);
     if (Math.max(B[1] - A[3], A[1] - B[3]) > 0 && across > 0.5 * Math.max(Math.min(A[2] - A[0], B[2] - B[0]), 1e-9)) a.doubt = b.doubt = true;
+    // a minus wholly above what follows it is no minus of it: a fraction bar whose numerator went to the line above
+    // (½ read as 1 over "7 + −2", which would be answered 5)
+    if (a.sym.label === '-' && b.type !== T_SMALL && (A[1] + A[3]) / 2 < B[1] - 0.1 * (B[3] - B[1])) a.doubt = b.doubt = true;
   }
   // a power or index straight above or below its base, not beside it (the 1 of a ½ with no bar read as 2¹)
   for (const u of row) {
@@ -3430,6 +3506,14 @@ function handClean(g) {
   }
   return out;
 }
+// a Replicator file's letters as its font draws them: the box drawings, with the letters also written in sentences
+// replaced by their average (kept beside them as avg); a plain {char: strokes} map is taken as it is
+function handOf(d) {
+  if (!d || typeof d !== 'object') return d;
+  if (!d.glyphs || typeof d.glyphs !== 'object') return d;
+  const avg = d.avg && typeof d.avg === 'object' && !Array.isArray(d.avg) && d.useSamples !== false ? handClean(d.avg) : null;
+  return avg && Object.keys(avg).length ? Object.assign({}, d.glyphs, avg) : d.glyphs;
+}
 // The handwriting in this browser: a file opened in Nib (kept under HAND_KEY) or the Replicator's own work, when it
 // was opened in this browser too — whichever was saved last, so letters redone in the Replicator are never hidden
 // by an older file.
@@ -3441,13 +3525,13 @@ function handLoad() {
   const when = d => (typeof d.saved === 'number' && isFinite(d.saved) ? d.saved : 0);
   const found = [read(HAND_KEY), read('replicator-v1')].filter(Boolean).sort((x, y) => when(y) - when(x));
   for (const d of found) {
-    const g = handClean(d.glyphs);
+    const g = handClean(handOf(d));
     if (Object.keys(g).length) { HAND.glyphs = g; HAND.name = typeof d.name === 'string' ? d.name : ''; break; }
   }
   return HAND.glyphs;
 }
 function handSet(data) {
-  const g = handClean(data && (data.glyphs || data));
+  const g = handClean(handOf(data));
   if (!Object.keys(g).length) throw new Error('no handwriting in that data');
   HAND.glyphs = g; HAND.name = data && typeof data.name === 'string' ? data.name : ''; HAND.loaded = true;
   try { if (typeof localStorage !== 'undefined') localStorage.setItem(HAND_KEY, JSON.stringify({ name: HAND.name, saved: Date.now(), glyphs: g })); } catch (e) { /* full or blocked: kept for this page */ }
@@ -3590,7 +3674,7 @@ function pathsOf(items) {
 function inPlace(strokes, style, options) {
   const o = Object.assign({}, options || {});
   const res = o.result || defaultRecognizer().recognize(strokes, o);
-  const g = style === 'hand' || o.solve || o.answers ? (o.hand ? handClean(o.hand.glyphs || o.hand) : handLoad()) : null;
+  const g = style === 'hand' || o.solve || o.answers ? (o.hand ? handClean(handOf(o.hand)) : handLoad()) : null;
   let P;
   if (style === 'typeset') P = typeProvider();
   else if (style === 'hand') P = handProvider(g && Object.keys(g).length ? g : null);
@@ -4003,7 +4087,7 @@ class Pad {
       if (this.o.solve) {
         // an answer is written with the clearest of each symbol anywhere on the board, then the Replicator hand
         let hand = null;
-        try { hand = this.o.hand ? handClean(this.o.hand.glyphs || this.o.hand) : handLoad(); } catch (err) { hand = null; }
+        try { hand = this.o.hand ? handClean(handOf(this.o.hand)) : handLoad(); } catch (err) { hand = null; }
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
       const R = refSize(at), done = [];
@@ -4370,7 +4454,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.4.0',
+  version: '1.4.1',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -4405,7 +4489,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;
@@ -4454,14 +4538,14 @@ function cleanStrokes(raw) {
 // box strokes ([[x, y], ...] in 0..1) -> font units
 function toUnits(stroke) { return stroke.map(p => [p[0] * BOX.w, BOX.top - p[1] * BOX.h]); }
 
-// even out the pen's sampling, then soften the wobble (endpoints stay where they were)
-function smooth(stroke, spacing, passes) {
+// even out the pen's sampling: a point every `spacing` font units along the stroke
+function resample(stroke, spacing) {
   if (stroke.length < 3) return stroke.map(p => p.slice());
   const out = [stroke[0].slice()];
   let acc = 0;
   for (let i = 1; i < stroke.length; i++) {
     const a = stroke[i - 1], b = stroke[i];
-    let d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
     let t0 = 0;
     while (acc + d * (1 - t0) >= spacing) {
       const t = t0 + (spacing - acc) / d;
@@ -4472,16 +4556,95 @@ function smooth(stroke, spacing, passes) {
   }
   const last = stroke[stroke.length - 1];
   if (Math.hypot(last[0] - out[out.length - 1][0], last[1] - out[out.length - 1][1]) > spacing * 0.25) out.push(last.slice());
-  let pts = out;
-  for (let k = 0; k < passes; k++) {
-    const nx = pts.map(p => p.slice());
-    for (let i = 1; i + 1 < pts.length; i++) {
-      nx[i][0] = 0.25 * pts[i - 1][0] + 0.5 * pts[i][0] + 0.25 * pts[i + 1][0];
-      nx[i][1] = 0.25 * pts[i - 1][1] + 0.5 * pts[i][1] + 0.25 * pts[i + 1][1];
-    }
-    pts = nx;
+  return out;
+}
+// Smoothing 0..10 is a Gaussian along the stroke with this sigma, in font units (the cap height is 700): the shake of
+// the hand goes, corners (a turn of more than about 70°) stay sharp, and every stroke still starts and ends where it did.
+const SMOOTH_SIGMA = [0, 5, 9, 14, 20, 27, 35, 44, 54, 65, 78];
+function smooth(stroke, spacing, level) {
+  const lv = Math.max(0, Math.min(10, Math.round(+level || 0))), sigma = SMOOTH_SIGMA[lv];
+  let pts = resample(stroke, spacing);
+  if (lv) pts = dehook(pts, lv >= 3 ? 20 : 12);
+  if (!sigma || pts.length < 4) return pts;
+  const m = Math.max(2, Math.round(Math.max(15, 0.6 * sigma) / spacing));
+  const out = [];
+  let from = 0;
+  for (const c of cornersOf(pts, m).concat([pts.length - 1])) {
+    const piece = gaussPath(pts.slice(from, c + 1), sigma / spacing);
+    if (out.length) piece.shift();
+    for (const p of piece) out.push(p);
+    from = c;
   }
-  return pts;
+  return out;
+}
+// A hook: the tiny flick of a pen as it lands or lifts, a turn of more than 130° within `max` font units of a stroke's
+// end (and within an eighth of the stroke). It shows as a knot at the end of a stroke, so it goes; a real flag or serif
+// (the flag of a 1 is three times as long) stays.
+const HOOK_TURN = 130 * Math.PI / 180;
+function dehook(pts, max) {
+  const n = pts.length;
+  if (n < 6) return pts;
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const L = cum[n - 1], lim = Math.min(max, L / 8);
+  const turn = (o, k, j) => {
+    const ux = pts[k][0] - pts[o][0], uy = pts[k][1] - pts[o][1], vx = pts[j][0] - pts[k][0], vy = pts[j][1] - pts[k][1];
+    const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+    return lu > 0 && lv > 0 ? Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (lu * lv)))) : 0;
+  };
+  // the sharpest turn near each end, measured against the next 1.5·max of the stroke
+  // (a flick is at least 9 units long: one point out of line at the end is the pen's jitter, not a flick)
+  let a = 0, b = n - 1, best = HOOK_TURN;
+  for (let k = 1; k < n - 1 && cum[k] <= lim; k++) {
+    if (cum[k] < 9) continue;
+    let j = k; while (j < n - 1 && cum[j] - cum[k] < 1.5 * max) j++;
+    const t = turn(0, k, j); if (t > best) { best = t; a = k; }
+  }
+  best = HOOK_TURN;
+  for (let k = n - 2; k > 0 && L - cum[k] <= lim; k--) {
+    if (L - cum[k] < 9) continue;
+    let j = k; while (j > 0 && cum[k] - cum[j] < 1.5 * max) j--;
+    const t = turn(n - 1, k, j); if (t > best) { best = t; b = k; }
+  }
+  return b - a >= 3 && (a > 0 || b < n - 1) ? pts.slice(a, b + 1) : pts;
+}
+// where a stroke turns sharply: the turn between the m points before and the m after, at its sharpest
+function cornersOf(pts, m) {
+  const n = pts.length, ang = new Float64Array(n), out = [];
+  for (let i = m; i + m < n; i++) {
+    const ax = pts[i][0] - pts[i - m][0], ay = pts[i][1] - pts[i - m][1], bx = pts[i + m][0] - pts[i][0], by = pts[i + m][1] - pts[i][1];
+    const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+    if (la > 0 && lb > 0) ang[i] = Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / (la * lb))));
+  }
+  for (let i = m; i + m < n; i++) {
+    if (ang[i] < 1.2) continue;
+    let peak = true;
+    for (let j = i - m; j <= i + m && peak; j++) if (ang[j] > ang[i] || (ang[j] === ang[i] && j < i)) peak = false;
+    if (peak) out.push(i);
+  }
+  return out;
+}
+// Gaussian smoothing (sigma in points) with both ends held: the path is mirrored through each end, so a straight run
+// stays straight up to its end and the end point does not move
+function gaussPath(pts, s) {
+  const n = pts.length;
+  if (n < 3 || !(s > 0)) return pts.map(p => p.slice());
+  const r = Math.ceil(3 * s), w = [];
+  let tot = 0;
+  for (let k = -r; k <= r; k++) { const v = Math.exp(-k * k / (2 * s * s)); w.push(v); tot += v; }
+  const at = i => {
+    if (i < 0) { const q = pts[Math.min(n - 1, -i)]; return [2 * pts[0][0] - q[0], 2 * pts[0][1] - q[1]]; }
+    if (i >= n) { const q = pts[Math.max(0, 2 * (n - 1) - i)]; return [2 * pts[n - 1][0] - q[0], 2 * pts[n - 1][1] - q[1]]; }
+    return pts[i];
+  };
+  const out = [pts[0].slice()];
+  for (let i = 1; i < n - 1; i++) {
+    let x = 0, y = 0;
+    for (let k = -r; k <= r; k++) { const q = at(i + k); x += w[k + r] * q[0]; y += w[k + r] * q[1]; }
+    out.push([x / tot, y / tot]);
+  }
+  out.push(pts[n - 1].slice());
+  return out;
 }
 
 // ------------------------------------------------------------------ ink: strokes -> coverage raster
@@ -4599,13 +4762,36 @@ function simplify(loop, tol) {
 
 function area(loop) { let s = 0; for (let i = 0; i < loop.length; i++) { const p = loop[i], q = loop[(i + 1) % loop.length]; s += p[0] * q[1] - q[0] * p[1]; } return s / 2; }
 
+// ------------------------------------------------------------------ even sizes
+// A letter's drawing scaled (across and down alike, before the pen is applied, so the pen keeps its weight) and moved
+// so it spans its guides: the x-height for a, c, e, …; the cap height for capitals, digits and b, d, h, k, l; x-height
+// to descender for g, p, q, y. Scaling stays within 0.7–1.4. Letters whose height varies by design (i, j, t, f, J, Q)
+// and the rest only move, as "Line up with the guides" does.
+const FIT = {};
+for (const c of 'acemnorsuvwxz') FIT[c] = [GUIDE.base, GUIDE.x];
+for (const c of 'bdhkl') FIT[c] = [GUIDE.base, GUIDE.cap];
+for (const c of 'gpqy') FIT[c] = [GUIDE.desc, GUIDE.x];
+for (const c of 'ABCDEFGHIKLMNOPRSTUVWXYZ0123456789') FIT[c] = [GUIDE.base, GUIDE.cap];
+function fitToGuides(S, ch) {
+  const f = FIT[ch];
+  if (!f) return null;
+  let x0 = Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const s of S) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  if (!(y1 - y0 > 1)) return null;
+  const k = Math.max(0.7, Math.min(1.4, (f[1] - f[0]) / (y1 - y0))), down = DESCENDERS.has(ch);
+  // descending letters keep their tops on the x-height, the rest their feet on the baseline
+  return S.map(s => s.map(p => [x0 + (p[0] - x0) * k, down ? f[1] - (y1 - p[1]) * k : f[0] + (p[1] - y0) * k]));
+}
+
 // ------------------------------------------------------------------ one glyph
 // strokes: box-space strokes. Returns {contours: [[x, y]...] in font units (y up), bbox} or null when empty.
+// opts.even with opts.ch: fitted to the guides (above).
 function outline(strokes, o) {
-  const opts = Object.assign({ weight: 80, smoothing: 2 }, o || {});
+  const opts = Object.assign({ weight: 80, smoothing: 5 }, o || {});
   const unit = opts.unit || Math.max(3, opts.weight / 27);           // finer raster for thin pens
-  const S = cleanStrokes(strokes).map(s => smooth(toUnits(s), 6, opts.smoothing));
+  let S = cleanStrokes(strokes).map(s => smooth(toUnits(s), 6, opts.smoothing));
   if (!S.length) return null;
+  if (opts.even && opts.ch) S = fitToGuides(S, opts.ch) || S;
   const R = rasterize(S, opts.weight, unit);
   const loops = trace(R)
     .map(l => simplify(l, 0.35))
@@ -4787,12 +4973,13 @@ function writeTTF(font) {
 }
 
 // ------------------------------------------------------------------ the font
-const FONT_DEFAULTS = { name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 2, tidy: true, cache: null };
+const FONT_DEFAULTS = { name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 5, tidy: true, even: false, cache: null };
+const fits = (ch, opts) => !!(opts.even && FIT[ch]);
 // one glyph's outline, kept in opts.cache (a Map) while its strokes and the pen settings stay the same
 function cachedOutline(ch, st, opts) {
-  const key = JSON.stringify([st, opts.weight, opts.smoothing]);
+  const key = JSON.stringify([st, opts.weight, opts.smoothing, fits(ch, opts)]);
   let ol = opts.cache && opts.cache.get(ch);
-  if (!ol || ol.key !== key) { ol = { key, g: outline(st, opts) }; if (opts.cache) opts.cache.set(ch, ol); }
+  if (!ol || ol.key !== key) { ol = { key, g: outline(st, Object.assign({}, opts, { ch })) }; if (opts.cache) opts.cache.set(ch, ol); }
   return ol.g;
 }
 // Traces the outlines buildFont will need into opts.cache, one glyph per step, so a page can spread the work
@@ -4802,7 +4989,7 @@ function* warm(glyphs, o) {
   for (const sec of SECTIONS) for (const ch of sec.chars) {
     const st = cleanStrokes(glyphs && glyphs[ch]);
     if (!st.length) continue;
-    const key = JSON.stringify([st, opts.weight, opts.smoothing]), ol = opts.cache && opts.cache.get(ch);
+    const key = JSON.stringify([st, opts.weight, opts.smoothing, fits(ch, opts)]), ol = opts.cache && opts.cache.get(ch);
     if (ol && ol.key === key) continue;
     cachedOutline(ch, st, opts);
     yield ch;
@@ -4822,7 +5009,7 @@ function buildFont(glyphs, o) {
     const st = cleanStrokes(glyphs && glyphs[ch]);
     const g = st.length ? cachedOutline(ch, st, opts) : null;
     if (!g) { missing.push(ch); continue; }
-    const dy = tidyShift(ch, g.bbox, opts), dx = opts.spacing - g.bbox[0];
+    const dy = fits(ch, opts) ? 0 : tidyShift(ch, g.bbox, opts), dx = opts.spacing - g.bbox[0];
     const contours = g.contours.map(l => toContour(l, dx, dy)).filter(Boolean);
     if (!contours.length) { missing.push(ch); continue; }
     list.push({ codes: [ch.codePointAt(0)].concat(ALTS[ch] || []), adv: Math.max(1, Math.round(g.bbox[2] - g.bbox[0] + 2 * opts.spacing)), contours });
@@ -4834,7 +5021,237 @@ function buildFont(glyphs, o) {
   return { bytes, built, missing, metrics: { asc, desc, upm: UPM } };
 }
 
-const Replicator = { UPM, BOX, GUIDE, GUIDE_FRAC, SECTIONS, ALTS, DESCENDERS, cleanStrokes, smooth, rasterize, trace, simplify, outline, toContour, writeTTF, warm, buildFont, tidyShift };
+// ------------------------------------------------------------------ sentences: the letters written in context
+// A sentence is written on ruled lines whose guides sit where a box's do. Its strokes are given in line units: one
+// unit is the height of a box, y = 0 at the top of the line's box and 1 at its bottom (so the guides are at
+// GUIDE_FRAC), x growing to the right. A box drawing's x (0..1 of the box's width) is x · LU in line units.
+const LU = BOX.w / BOX.h;
+const toLine = st => st.map(s => s.map(p => [p[0] * LU, p[1]]));
+const toBox = st => st.map(s => s.map(p => [p[0] / LU, p[1]]));
+function plength(s) { let L = 0; for (let i = 1; i < s.length; i++) L += Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]); return L; }
+// m points spread evenly along a stroke (one point: its middle)
+function along(s, m) {
+  if (m <= 1 || s.length === 1) { const c = s.reduce((a, p) => [a[0] + p[0], a[1] + p[1]], [0, 0]); return [[c[0] / s.length, c[1] / s.length]]; }
+  const L = plength(s), out = [];
+  if (!(L > 0)) return Array.from({ length: m }, () => s[0].slice());
+  let k = 0, acc = 0;
+  for (let j = 0; j < m; j++) {
+    const want = (L * j) / (m - 1);
+    while (k + 1 < s.length - 1 && acc + Math.hypot(s[k + 1][0] - s[k][0], s[k + 1][1] - s[k][1]) < want) { acc += Math.hypot(s[k + 1][0] - s[k][0], s[k + 1][1] - s[k][1]); k++; }
+    const d = Math.hypot(s[k + 1][0] - s[k][0], s[k + 1][1] - s[k][1]) || 1e-9, t = Math.max(0, Math.min(1, (want - acc) / d));
+    out.push([s[k][0] + (s[k + 1][0] - s[k][0]) * t, s[k][1] + (s[k + 1][1] - s[k][1]) * t]);
+  }
+  return out;
+}
+// exactly n points spread over the strokes by their lengths (every stroke at least one), centred across but kept at
+// their height against the guides
+function cloud(st, n) {
+  const L = st.map(plength), tot = L.reduce((a, b) => a + b, 0);
+  const share = st.map((s, i) => (tot > 0 ? (n - st.length) * L[i] / tot : 0));
+  const m = share.map(v => 1 + Math.floor(v));
+  let left = n - m.reduce((a, b) => a + b, 0);
+  share.map((v, i) => [v - Math.floor(v), i]).sort((a, b) => b[0] - a[0]).forEach(([, i]) => { if (left > 0) { m[i]++; left--; } });
+  const pts = [];
+  st.forEach((s, i) => { if (m[i] > 0) pts.push(...along(s, m[i])); });
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+  return pts.map(p => [p[0] - cx, p[1]]);
+}
+// how far apart two clouds of the same size are: each point matched greedily to the nearest unmatched one, early
+// matches counting more (the $P recogniser's measure), the better of both directions; in line units
+function cloudDist(a, b) {
+  const one = (A, B) => {
+    const n = A.length, used = new Uint8Array(B.length), step = Math.max(1, Math.floor(Math.sqrt(n)));
+    let best = Infinity;
+    for (let start = 0; start < n; start += step) {
+      used.fill(0);
+      let sum = 0, ws = 0;
+      for (let k = 0; k < n; k++) {
+        const p = A[(start + k) % n];
+        let md = Infinity, mj = -1;
+        for (let j = 0; j < B.length; j++) if (!used[j]) { const dx = p[0] - B[j][0], dy = p[1] - B[j][1], d = dx * dx + dy * dy; if (d < md) { md = d; mj = j; } }
+        if (mj < 0) break;
+        used[mj] = 1;
+        const w = 1 - k / n;
+        sum += w * Math.sqrt(md); ws += w;
+        if (sum / ws > best) break;
+      }
+      best = Math.min(best, sum / ws);
+    }
+    return best;
+  };
+  return Math.min(one(a, b), one(b, a));
+}
+const sbox = st => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const s of st) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); } return [x0, y0, x1, y1]; };
+const SENT = { n: 24, accept: 0.085, skip: 0.4, wordGap: 0.08, letterGap: 0.33, maxGroup: 4, beam: 1.6, most: 0.35 };
+// A written sentence, matched letter by letter to its text.
+// lines: [[stroke, ...], ...] — the strokes on each ruled line in line units, in the order written.
+// text: what was written; templates: {char: [drawings in line units]} (the box drawing first).
+// Returns {letters: [{ch, strokes (line units, on its own line), line, cost, ok}], cost} where ok marks a letter close
+// enough to its own drawings to learn from; characters without a drawing are matched loosely and never ok.
+// Dots and crossings added after the rest of a word (the dot of an i, the bar of a t) are given to the letter under
+// them; a stray stroke or a letter left out is passed over.
+function alignSentence(lines, text, templates, o) {
+  const P = Object.assign({}, SENT, o || {});
+  const chars = [], spaceBefore = [];
+  let sp = false;
+  for (const ch of String(text || '')) { if (/\s/.test(ch)) { sp = chars.length > 0; continue; } chars.push(ch); spaceBefore.push(sp); sp = false; }
+  // all the lines as one long line (each next one further right), keeping writing order
+  const all = [];
+  (Array.isArray(lines) ? lines : []).forEach((ln, li) => { for (const s of cleanStrokes(ln)) all.push({ s: s.map(p => [p[0] + li * 1000, p[1]]), li, b: null }); });
+  for (const t of all) t.b = sbox([t.s]);
+  // late strokes: small marks written to the left of the stroke before them (going back to dot or cross)
+  const main = [], late = [];
+  for (const t of all) {
+    const prev = main[main.length - 1], h = t.b[3] - t.b[1], w = t.b[2] - t.b[0];
+    if (prev && t.b[2] < prev.b[0] - 0.02 && Math.max(h, w) < 0.45) late.push(t); else main.push(t);
+  }
+  const N = main.length, M = chars.length;
+  if (!M || !N) return { letters: [], cost: Infinity };
+  const tc = {}, T0 = templates && typeof templates === 'object' ? templates : {};
+  const tmpl = ch => (Array.isArray(T0[ch]) ? T0[ch] : []).map(cleanStrokes).filter(d => d.length).slice(0, 5).map(d => ({ c: cloud(d, P.n), k: d.length }));
+  for (const ch of new Set(chars)) tc[ch] = tmpl(ch);
+  // every other character's first drawing, to make sure a letter learned looks like itself more than like another
+  const others = Object.keys(T0).filter(ch => [...ch].length === 1).map(ch => [ch, tmpl(ch)[0]]).filter(([, t]) => t);
+  const reach = new Float64Array(N + 1).fill(-Infinity);                // furthest right reached by the first i strokes
+  for (let i = 0; i < N; i++) reach[i + 1] = Math.max(reach[i], main[i].b[2]);
+  const memo = new Map(), clouds = new Map();
+  const groupCost = (i, k, j) => {
+    const ch = chars[j], key = i + ',' + k + ',' + ch;
+    let c = memo.get(key);
+    if (c === undefined) {
+      const T = tc[ch];
+      if (T.length) {
+        let g = clouds.get(i * 8 + k);
+        if (!g) { g = cloud(main.slice(i, i + k).map(t => t.s), P.n); clouds.set(i * 8 + k, g); }
+        c = Infinity;
+        for (const t of T) c = Math.min(c, cloudDist(g, t.c) + 0.015 * Math.abs(k - t.k));
+      } else c = 0.11 + 0.02 * Math.max(0, k - 2);                     // no drawing of it to compare with
+      memo.set(key, c);
+    }
+    // the space between words, and none inside one (a new line starts fresh)
+    const b = sbox(main.slice(i, i + k).map(t => t.s)), gap = b[0] - reach[i];
+    let g = 0;
+    if (i > 0 && main[i].li === main[i - 1].li) {
+      if (spaceBefore[j] && gap < P.wordGap) g = 0.6 * (P.wordGap - gap);
+      if (!spaceBefore[j] && gap > P.letterGap) g = 0.3 * (gap - P.letterGap);
+    }
+    return c + g;
+  };
+  // best[i][j]: strokes 0..i-1 written as characters 0..j-1. Row by row: first the letters left out (they stay on the
+  // row), then from each state that is not hopelessly behind the row's best (a beam: more than P.beam worse can no
+  // longer win in practice), a stray stroke or the next letter.
+  const W = M + 1, best = new Float64Array((N + 1) * W).fill(Infinity), from = new Int32Array((N + 1) * W).fill(-1);
+  best[0] = 0;
+  for (let i = 0; i <= N; i++) {
+    let low = Infinity;
+    for (let j = 0; j <= M; j++) {
+      const here = best[i * W + j];
+      if (here === Infinity) continue;
+      if (j < M && best[i * W + j + 1] > here + P.skip) { best[i * W + j + 1] = here + P.skip; from[i * W + j + 1] = 0; }        // a letter left out
+      low = Math.min(low, here);
+    }
+    if (i === N) break;
+    for (let j = 0; j <= M; j++) {
+      const here = best[i * W + j];
+      if (!(here <= low + P.beam)) continue;
+      if (best[(i + 1) * W + j] > here + P.skip) { best[(i + 1) * W + j] = here + P.skip; from[(i + 1) * W + j] = 1; }          // a stray stroke
+      if (j < M) for (let k = 1; k <= P.maxGroup && i + k <= N; k++) {
+        if (k > 1 && main[i + k - 1].li !== main[i].li) break;
+        const v = here + groupCost(i, k, j), at = (i + k) * W + j + 1;
+        if (v < best[at]) { best[at] = v; from[at] = 1 + k; }
+      }
+    }
+  }
+  const letters = chars.map((ch, j) => ({ ch, strokes: [], line: -1, cost: Infinity, ok: false, idx: [] }));
+  for (let i = N, j = M; i > 0 || j > 0;) {
+    const f = from[i * W + j];
+    if (f === 0) j--;
+    else if (f === 1) i--;
+    else if (f >= 2) {
+      const k = f - 1, L = letters[j - 1];
+      L.idx = Array.from({ length: k }, (_, q) => i - k + q);
+      L.cost = groupCost(i - k, k, j - 1);
+      i -= k; j--;
+    } else break;
+  }
+  // late strokes to the letter whose ink they sit over (or nearest across)
+  for (const t of late) {
+    let bestL = null, bd = Infinity;
+    for (const L of letters) {
+      if (!L.idx.length) continue;
+      const b = sbox(L.idx.map(q => main[q].s));
+      const d = Math.max(0, b[0] - t.b[2], t.b[0] - b[2]) + 0.3 * Math.max(0, b[1] - t.b[3], t.b[1] - b[3]);
+      if (d < bd) { bd = d; bestL = L; }
+    }
+    if (bestL && bd < 0.25) bestL.late = (bestL.late || []).concat([t]);
+  }
+  let total = 0, n = 0;
+  for (const L of letters) {
+    if (!L.idx.length) { delete L.idx; continue; }
+    const parts = L.idx.map(q => main[q]).concat(L.late || []);
+    L.line = parts[0].li;
+    L.strokes = parts.map(t => t.s.map(p => [p[0] - L.line * 1000, p[1]]));
+    const g = cloud(L.strokes, P.n);
+    if (tc[L.ch].length) L.cost = Math.min(...tc[L.ch].map(t => cloudDist(g, t.c) + 0.015 * Math.abs(L.strokes.length - t.k)));
+    // learned only when close to its own drawings and clearly closer to them than to any other character's
+    let rival = Infinity;
+    if (tc[L.ch].length && L.cost < P.accept) for (const [ch, t] of others) if (ch !== L.ch) rival = Math.min(rival, cloudDist(g, t.c));
+    L.ok = tc[L.ch].length > 0 && L.cost < P.accept && L.cost < 0.8 * rival;
+    total += L.cost; n++;
+    delete L.idx; delete L.late;
+  }
+  // a sentence that does not match its text as a whole (the wrong sentence, words left out) teaches nothing: too
+  // few letters written, too far from their drawings on the whole, or only a few of those with a drawing close
+  const cost = n ? total / n : Infinity, drawn = letters.filter(L => tc[L.ch].length).length, good = letters.filter(L => L.ok).length;
+  if (n < 0.75 * M || cost > 1.3 * P.accept || good < P.most * drawn) for (const L of letters) L.ok = false;
+  return { letters, cost };
+}
+// The average drawing of one character from its samples (box space; the box drawing usually first): the samples
+// with the usual number of strokes, each stroke matched to the most typical sample's (order and direction), resampled
+// and averaged point by point, the outliers left out; null when fewer than two agree.
+function averageGlyph(samples, o) {
+  const P = Object.assign({ points: 40 }, o || {});
+  const S = (samples || []).map(cleanStrokes).filter(st => st.length);
+  if (S.length < 2) return null;
+  const counts = new Map();
+  for (const st of S) counts.set(st.length, (counts.get(st.length) || 0) + 1);
+  let K = S[0].length, bestN = counts.get(K) || 0;
+  for (const [k, c] of counts) if (c > bestN) { K = k; bestN = c; }
+  let G = S.filter(st => st.length === K);
+  if (G.length < 2) return null;
+  const L = G.map(toLine), C = L.map(st => cloud(st, 32));
+  const dsum = C.map(a => C.reduce((t, b) => t + cloudDist(a, b), 0));
+  const ref = dsum.indexOf(Math.min(...dsum));
+  const dref = C.map(c => cloudDist(c, C[ref])), med = dref.slice().sort((a, b) => a - b)[Math.floor(dref.length / 2)];
+  const keep = L.map((st, i) => i).filter(i => dref[i] <= Math.max(2.2 * med, 0.05));
+  if (keep.length < 2) return null;
+  const R = L[ref].map(s => along(s, P.points));
+  const acc = R.map(s => s.map(() => [0, 0]));
+  const refC = sbox(L[ref]);
+  for (const i of keep) {
+    // centred across on the reference, kept at its height
+    const b = sbox(L[i]), dx = (refC[0] + refC[2]) / 2 - (b[0] + b[2]) / 2;
+    const strokes = L[i].map(s => along(s.map(p => [p[0] + dx, p[1]]), P.points));
+    const used = new Set();
+    R.forEach((rs, a) => {
+      let bj = -1, bd = Infinity, brev = false;
+      strokes.forEach((s, j) => {
+        if (used.has(j)) return;
+        for (const rev of [false, true]) {
+          const q = rev ? s.slice().reverse() : s;
+          let d = 0; for (let t = 0; t < q.length; t++) d += Math.hypot(q[t][0] - rs[t][0], q[t][1] - rs[t][1]);
+          if (d < bd) { bd = d; bj = j; brev = rev; }
+        }
+      });
+      used.add(bj);
+      const q = brev ? strokes[bj].slice().reverse() : strokes[bj];
+      q.forEach((p, t) => { acc[a][t][0] += p[0]; acc[a][t][1] += p[1]; });
+    });
+  }
+  return toBox(acc.map(s => s.map(p => [p[0] / keep.length, p[1] / keep.length])));
+}
+
+const Replicator = { UPM, BOX, GUIDE, GUIDE_FRAC, SECTIONS, ALTS, DESCENDERS, FIT, LU, cleanStrokes, smooth, dehook, rasterize, trace, simplify, outline, toContour, writeTTF, warm, buildFont, tidyShift, fitToGuides, toLine, toBox, cloud, cloudDist, alignSentence, averageGlyph };
 if (typeof module !== 'undefined' && module.exports) module.exports = Replicator;
 if (typeof window !== 'undefined') window.Replicator = Replicator;
 </script>
@@ -4842,8 +5259,9 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
 (function () {
   'use strict';
   const R = window.Replicator, $ = id => document.getElementById(id);
-  const KEY = 'replicator-v1';
-  const state = { name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 2, tidy: true, big: false, glyphs: {}, section: 'upper' };
+  const KEY = 'replicator-v1', MAX_SAMPLES = 12;
+  const state = { v: 2, name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 5, tidy: true, even: true, big: false, glyphs: {}, section: 'upper',
+    samples: {}, useSamples: true, sentDone: 0, sentIdx: 0 };
   const history = [];          // [{ch, stroke}] for undo
   const boxes = new Map();     // ch -> {el, canvas, ctx}
   const cache = new Map();     // traced outlines, reused while a glyph's strokes and the pen settings are unchanged
@@ -4854,40 +5272,83 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
   function adopt(d) {
     if (!d || typeof d !== 'object' || !d.glyphs || typeof d.glyphs !== 'object' || Array.isArray(d.glyphs)) return false;
     const num = (v, lo, hi, def) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def);
-    const glyphs = {};
-    for (const sec of R.SECTIONS) for (const ch of sec.chars) { const st = R.cleanStrokes(d.glyphs[ch]); if (st.length) glyphs[ch] = st; }
-    state.glyphs = glyphs;
+    const glyphs = {}, samples = {};
+    const S = d.samples && typeof d.samples === 'object' && !Array.isArray(d.samples) ? d.samples : {};
+    for (const sec of R.SECTIONS) for (const ch of sec.chars) {
+      const st = R.cleanStrokes(d.glyphs[ch]); if (st.length) glyphs[ch] = st;
+      const list = (Array.isArray(S[ch]) ? S[ch] : []).map(R.cleanStrokes).filter(x => x.length).slice(-MAX_SAMPLES);
+      if (list.length) samples[ch] = list;
+    }
+    state.glyphs = glyphs; state.samples = samples;
     state.name = typeof d.name === 'string' ? d.name.slice(0, 40) : 'My Handwriting';
-    state.weight = num(d.weight, 40, 150, 80); state.spacing = num(d.spacing, 0, 140, 50); state.smoothing = Math.round(num(d.smoothing, 0, 6, 2));
-    state.tidy = typeof d.tidy === 'boolean' ? d.tidy : true; state.big = d.big === true;
-    if (R.SECTIONS.some(sec => sec.id === d.section)) state.section = d.section;
+    state.weight = num(d.weight, 40, 150, 80); state.spacing = num(d.spacing, 0, 140, 50); state.smoothing = Math.round(num(d.smoothing, 0, 10, 5));
+    // saved before smoothing went to 10 (v 1): the old scale's 2..6 were all gentle, so they move up to match
+    if (!(d.v >= 2) && typeof d.smoothing === 'number' && d.smoothing >= 2) state.smoothing = Math.min(10, Math.round(d.smoothing) + 3);
+    state.tidy = typeof d.tidy === 'boolean' ? d.tidy : true; state.even = typeof d.even === 'boolean' ? d.even : true; state.big = d.big === true;
+    state.useSamples = d.useSamples !== false;
+    state.sentDone = Math.round(num(d.sentDone, 0, 1e6, 0)); state.sentIdx = Math.round(num(d.sentIdx, 0, 1e6, 0));
+    if (d.section === 'sent' || R.SECTIONS.some(sec => sec.id === d.section)) state.section = d.section;
     return true;
   }
   try { adopt(JSON.parse(localStorage.getItem(KEY) || 'null')); } catch (e) { /* first visit or storage blocked */ }
   let saveTimer = null;
-  const persist = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign({ saved: Date.now() }, state))); } catch (e) { /* storage full or blocked */ } }, 400); };  // saved: Nib uses the newest handwriting in this browser
+  // saved: Nib uses the newest handwriting in this browser; avg: the letters as the font draws them, for Nib Board
+  const persist = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(Object.assign({ saved: Date.now(), avg: averages() }, state))); } catch (e) { /* storage full or blocked */ } }, 400);
+  };
+
+  // ---------------------------------------------------------------- the letters as the font draws them
+  // a character written in sentences is the average of its box drawing and every sample of it
+  const gv = {}, sv = {}, avgCache = new Map();
+  function averaged(ch) {
+    const box = state.glyphs[ch], extra = state.samples[ch];
+    if (!box || !box.length || !extra || !extra.length) return null;
+    const key = (gv[ch] || 0) + ':' + (sv[ch] || 0) + ':' + extra.length;
+    let c = avgCache.get(ch);
+    if (!c || c.key !== key) {
+      let st = null;
+      try { st = R.averageGlyph([box].concat(extra)); } catch (e) { st = null; }
+      c = { key, st: st && st.map(s => s.map(p => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000])) };
+      avgCache.set(ch, c);
+    }
+    return c.st;
+  }
+  function averages() {
+    if (!state.useSamples) return undefined;
+    const out = {};
+    for (const ch of Object.keys(state.samples)) { const a = averaged(ch); if (a) out[ch] = a; }
+    return out;
+  }
+  function glyphsNow() { return state.useSamples ? Object.assign({}, state.glyphs, averages()) : state.glyphs; }
 
   // ---------------------------------------------------------------- sheet
   const count = sec => sec.chars.filter(c => (state.glyphs[c] || []).length).length;
+  const nSamples = () => Object.values(state.samples).reduce((t, l) => t + l.length, 0);
   function renderTabs() {
     const tabs = $('tabs'); tabs.textContent = '';
-    for (const sec of R.SECTIONS) {
+    const tab = (id, name, n, done) => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'tab' + (count(sec) === sec.chars.length ? ' done' : ''); b.setAttribute('role', 'tab');
-      b.setAttribute('aria-selected', String(sec.id === state.section)); b.id = 'tab-' + sec.id;
+      b.type = 'button'; b.className = 'tab' + (done ? ' done' : ''); b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(id === state.section)); b.id = 'tab-' + id;
       b.innerHTML = '<span></span><span class="n"></span>';
-      b.firstChild.textContent = sec.name; b.lastChild.textContent = count(sec) + '/' + sec.chars.length;
-      b.onclick = () => { state.section = sec.id; persist(); renderTabs(); renderGrid(); };
+      b.firstChild.textContent = name; b.lastChild.textContent = n;
+      b.onclick = () => { state.section = id; persist(); renderTabs(); renderGrid(); };
       tabs.appendChild(b);
-    }
+    };
+    for (const sec of R.SECTIONS) tab(sec.id, sec.name, count(sec) + '/' + sec.chars.length, count(sec) === sec.chars.length);
+    tab('sent', 'Sentences', String(state.sentDone), state.sentDone > 0);
   }
   function renderGrid() {
     const grid = $('grid'); grid.textContent = ''; boxes.clear();
+    const sentOn = state.section === 'sent';
+    grid.hidden = sentOn; $('sent').hidden = !sentOn;
+    if (sentOn) { showSentences(); return; }
     grid.style.setProperty('--box', state.big ? '168px' : '104px');
     const sec = R.SECTIONS.find(s => s.id === state.section) || R.SECTIONS[0];
     for (const ch of sec.chars) {
       const el = document.createElement('div'); el.className = 'box';
-      el.innerHTML = '<canvas></canvas><span class="ch"></span><button type="button" class="x" title="Clear this box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
+      el.innerHTML = '<canvas></canvas><span class="ch"></span><span class="cnt"></span><button type="button" class="x" title="Clear this box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>';
       el.querySelector('.ch').textContent = ch;
       el.querySelector('.x').setAttribute('aria-label', 'Clear ' + ch);
       const canvas = el.querySelector('canvas');
@@ -4900,7 +5361,7 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
     }
     sizeAll();
   }
-  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => sizeAll()) : null;
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { sizeAll(); sizeStrip(); }) : null;
   function sizeAll() { for (const b of boxes.values()) { size(b); draw(b); if (ro) ro.observe(b.canvas); } }
   function size(b) {
     const r = b.canvas.getBoundingClientRect(), d = window.devicePixelRatio || 1;
@@ -4909,63 +5370,83 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
     b.w = r.width; b.h = r.height; b.d = d;
   }
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  // guides: cap height and x-height dashed, baseline solid, descender line dotted (top: where the box starts, H: its height)
+  function guides(ctx, top, H, W, d) {
+    const g = R.GUIDE_FRAC, line = (f, dash, wid) => { ctx.save(); ctx.strokeStyle = css('--guide'); ctx.lineWidth = wid * d; ctx.setLineDash(dash.map(v => v * d)); ctx.beginPath(); ctx.moveTo(0, top + f * H); ctx.lineTo(W, top + f * H); ctx.stroke(); ctx.restore(); };
+    line(g.cap, [4, 4], 1); line(g.x, [4, 4], 1); line(g.base, [], 1.5); line(g.desc, [1, 4], 1);
+  }
+  function ink(ctx, st, map) {
+    for (const s of st) {
+      ctx.beginPath();
+      if (s.length === 1) { const [x, y] = map(s[0]); ctx.arc(x, y, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(); continue; }
+      const P = s.map(map);
+      ctx.moveTo(P[0][0], P[0][1]);
+      for (let i = 1; i < P.length - 1; i++) ctx.quadraticCurveTo(P[i][0], P[i][1], (P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2);
+      ctx.lineTo(P[P.length - 1][0], P[P.length - 1][1]);
+      ctx.stroke();
+    }
+  }
   function draw(b, live) {
     const { ctx } = b, W = b.canvas.width, H = b.canvas.height;
     if (!b.w) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
-    // guides: cap height and x-height dashed, baseline solid, descender line dotted
-    const g = R.GUIDE_FRAC, line = (f, dash, alpha, wid) => { ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = css('--guide'); ctx.lineWidth = wid * b.d; ctx.setLineDash(dash.map(v => v * b.d)); ctx.beginPath(); ctx.moveTo(0, f * H); ctx.lineTo(W, f * H); ctx.stroke(); ctx.restore(); };
-    line(g.cap, [4, 4], 1, 1); line(g.x, [4, 4], 1, 1); line(g.base, [], 1, 1.5); line(g.desc, [1, 4], 1, 1);
+    guides(ctx, 0, H, W, b.d);
     const st = (state.glyphs[b.ch] || []).concat(live ? [live] : []);
     ctx.strokeStyle = css('--ink'); ctx.fillStyle = css('--ink'); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.lineWidth = Math.max(1.5 * b.d, state.weight / R.BOX.h * H);
-    for (const s of st) {
-      ctx.beginPath();
-      if (s.length === 1) { ctx.arc(s[0][0] * W, s[0][1] * H, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(); continue; }
-      ctx.moveTo(s[0][0] * W, s[0][1] * H);
-      for (let i = 1; i < s.length - 1; i++) ctx.quadraticCurveTo(s[i][0] * W, s[i][1] * H, (s[i][0] + s[i + 1][0]) / 2 * W, (s[i][1] + s[i + 1][1]) / 2 * H);
-      ctx.lineTo(s[s.length - 1][0] * W, s[s.length - 1][1] * H);
-      ctx.stroke();
-    }
+    ink(ctx, st, p => [p[0] * W, p[1] * H]);
     b.el.classList.toggle('has', (state.glyphs[b.ch] || []).length > 0);
+    const n = (state.samples[b.ch] || []).length, c = b.el.querySelector('.cnt');
+    c.textContent = n ? '×' + n : ''; c.title = n ? `Written ${n} more time${n === 1 ? '' : 's'} in sentences` : '';
   }
   // pen, finger or mouse; with a pen in use, touches are ignored (a resting palm)
   let sawPen = false;
-  function attach(b) {
-    let id = null, cur = null;
-    const pt = e => { const r = b.canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
-    b.canvas.addEventListener('pointerdown', e => {
+  function pointer(canvas, at, begin, move, end) {
+    let id = null;
+    canvas.addEventListener('pointerdown', e => {
       if (id !== null) return;
       if (e.pointerType === 'pen') sawPen = true;
       if (sawPen && e.pointerType === 'touch') return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      e.preventDefault(); id = e.pointerId; cur = [pt(e)];
-      try { b.canvas.setPointerCapture(id); } catch (err) { /* ok */ }
-      size(b); draw(b, cur);
+      e.preventDefault(); id = e.pointerId;
+      try { canvas.setPointerCapture(id); } catch (err) { /* ok */ }
+      begin(at(e));
     });
-    b.canvas.addEventListener('pointermove', e => {
+    canvas.addEventListener('pointermove', e => {
       if (e.pointerId !== id) return;
       e.preventDefault();
-      for (const ev of (e.getCoalescedEvents ? e.getCoalescedEvents() : [e])) { const p = pt(ev), q = cur[cur.length - 1]; if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) > 0.002) cur.push(p); }
-      draw(b, cur);
+      move((e.getCoalescedEvents ? e.getCoalescedEvents() : [e]).map(at));
     });
-    const up = e => {
-      if (e.pointerId !== id) return;
-      id = null;
+    const up = e => { if (e.pointerId !== id) return; id = null; end(); };
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up); canvas.addEventListener('lostpointercapture', up);
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+  }
+  function attach(b) {
+    let cur = null;
+    const at = e => { const r = b.canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+    pointer(b.canvas, at, p => { cur = [p]; size(b); draw(b, cur); }, ps => {
+      for (const p of ps) { const q = cur[cur.length - 1]; if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) > 0.002) cur.push(p); }
+      draw(b, cur);
+    }, () => {
       if (!cur) return;
       const s = cur.map(p => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000]); cur = null;
       (state.glyphs[b.ch] = state.glyphs[b.ch] || []).push(s);
       history.push({ ch: b.ch, stroke: s });
       changed(b.ch);
-    };
-    b.canvas.addEventListener('pointerup', up); b.canvas.addEventListener('pointercancel', up); b.canvas.addEventListener('lostpointercapture', up);
-    b.canvas.addEventListener('contextmenu', e => e.preventDefault());
+    });
   }
   function changed(ch) {
+    gv[ch] = (gv[ch] || 0) + 1;
     const b = boxes.get(ch); if (b) draw(b);
     renderTabs(); persist(); schedule();
   }
   function undo() {
+    if (state.section === 'sent') {
+      if (reading) return;
+      if (strip.result) unlearn();
+      else if (strip.strokes.length) { strip.strokes.pop(); drawStrip(); sentButtons(); }
+      return;
+    }
     const h = history.pop(); if (!h) return;
     if (h.cleared) state.glyphs[h.ch] = h.cleared;
     else { const st = state.glyphs[h.ch] || []; const i = st.lastIndexOf(h.stroke); if (i >= 0) st.splice(i, 1); }
@@ -4973,10 +5454,190 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
     changed(h.ch);
   }
 
+  // ---------------------------------------------------------------- sentences
+  // letter-rich sentences for school, every letter in each of the first few; then capitals, numbers and signs
+  const SENTENCES = ['The quick brown fox jumps over the lazy dog.', 'Sphinx of black quartz, judge my vow.', 'How vexingly quick daft zebras jump!',
+    'The five boxing wizards jump quickly.', 'Jackdaws love my big sphinx of quartz.', 'Pack my box with five dozen jugs of juice.',
+    'Bright vixens jump; dozy fowl quack.', 'We promptly judged antique ivory buckles for the next prize.', 'Quick zephyrs blow, vexing daft Jim.',
+    'A wizard\'s job is to vex chumps quickly in fog.', 'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG.', 'Add 27 + 46 = 73, then 9 × 8 = 72 and 150 ÷ 3 = 50.',
+    'Is 3/4 more than 0.7? Yes: 75% > 70%.', 'Six big jackals quietly watched over a frozen pond.', 'Grumpy wizards make toxic brew for the jovial queen.'];
+  const strip = { lines: 3, rowH: 80, w: 0, d: 1, strokes: [], result: null, learned: false, added: [], cur: null };
+  let reading = false;          // a sentence being matched to its text
+  const sentence = () => SENTENCES[state.sentIdx % SENTENCES.length];
+  function showSentences() {
+    if (!$('sentText').value) $('sentText').value = sentence();
+    sizeStrip(); sentButtons(); sentStats();
+    if (ro) ro.observe($('strip'));
+  }
+  function sizeStrip() {
+    const el = $('strip'), c = el.querySelector('canvas');
+    if (el.offsetParent === null) return;
+    const w = el.clientWidth, d = window.devicePixelRatio || 1;
+    strip.rowH = Math.round(Math.max(64, Math.min(132, w / (w < 560 ? 7.5 : 11))));
+    // lines enough for the sentence written about the size of the boxes, and one to spare (never fewer than the writing uses)
+    const t = $('sentText').value || sentence(), letters = [...t].filter(ch => !/\s/.test(ch)).length, gaps = (t.match(/\s+/g) || []).length;
+    let used = 0;
+    for (const st of strip.strokes.concat(strip.cur ? [strip.cur] : [])) for (const p of st) used = Math.max(used, Math.floor(p[1]) + 1);
+    strip.lines = Math.max(used, Math.min(7, Math.max(3, Math.ceil((0.62 * letters + 0.35 * gaps) / Math.max(1, w / strip.rowH - 0.5)) + 1)));
+    const h = strip.lines * strip.rowH + 8;
+    c.style.height = h + 'px';
+    const W = Math.round(w * d), H = Math.round(h * d);
+    if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+    strip.w = w; strip.d = d;
+    el.dataset.lines = strip.lines; el.dataset.rowH = strip.rowH;
+    drawStrip();
+  }
+  function drawStrip() {
+    const el = $('strip'), c = el.querySelector('canvas'), ctx = c.getContext('2d'), d = strip.d, rh = strip.rowH * d;
+    el.dataset.strokes = strip.strokes.length;
+    if (!strip.w) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height);
+    for (let k = 0; k < strip.lines; k++) guides(ctx, 4 * d + k * rh, rh, c.width, d);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(1.5 * d, state.weight / R.BOX.h * rh);
+    const map = p => [p[0] * rh, 4 * d + p[1] * rh];
+    const res = strip.result;
+    ctx.strokeStyle = ctx.fillStyle = css(res ? '--muted' : '--ink');
+    ink(ctx, strip.strokes.concat(strip.cur ? [strip.cur] : []), map);
+    if (!res) return;
+    // what was learned: each letter in gold with its name under it; letters that did not match well, in coral
+    ctx.font = `500 ${Math.round(11 * d)}px ${css('--f-mono') || 'monospace'}`; ctx.textAlign = 'center';
+    for (const L of res.letters) {
+      if (!L.strokes.length) continue;
+      ctx.strokeStyle = ctx.fillStyle = css(L.ok ? '--gold-ink' : '--coral');
+      ink(ctx, L.strokes, p => map([p[0], p[1] + L.line]));
+      let x0 = Infinity, x1 = -Infinity; for (const s of L.strokes) for (const p of s) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); }
+      ctx.fillText(L.ch, (x0 + x1) / 2 * rh, 4 * d + (L.line + R.GUIDE_FRAC.desc + 0.11) * rh);
+    }
+  }
+  {
+    const c = $('strip').querySelector('canvas');
+    const at = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / strip.rowH, (e.clientY - r.top - 4) / strip.rowH]; };
+    pointer(c, at, p => {
+      if (reading) return;
+      if (strip.result) nextSentence(false);          // learned: the next stroke starts the next sentence
+      strip.cur = [p]; drawStrip();
+    }, ps => {
+      if (!strip.cur) return;
+      for (const p of ps) { const q = strip.cur[strip.cur.length - 1]; if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) > 0.004) strip.cur.push(p); }
+      drawStrip();
+    }, () => {
+      if (!strip.cur) return;
+      strip.strokes.push(strip.cur.map(p => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000])); strip.cur = null;
+      drawStrip(); sentButtons();
+    });
+  }
+  function sentButtons() {
+    $('sentLearn').disabled = reading || !strip.strokes.length || !!strip.result || !$('sentText').value.trim();
+    $('sentClear').disabled = !strip.strokes.length;
+  }
+  function sentNote(text, kind) { const n = $('sentNote'); n.textContent = text; n.className = 'note' + (kind ? ' ' + kind : ''); }
+  function sentStats() {
+    const n = nSamples(), top = Object.entries(state.samples).map(([ch, l]) => [ch, l.length]).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    $('sentStats').textContent = n ? `${n} letters learned from ${state.sentDone} sentence${state.sentDone === 1 ? '' : 's'}. Most written: ${top.map(([ch, k]) => ch + ' ×' + k).join(', ')}.` : 'Nothing learned from sentences yet.';
+    $('sentForget').disabled = !n; $('useSamples').checked = state.useSamples;
+  }
+  // a fresh strip: after a sentence was learned, with the next one to copy; skip: past this one without writing it
+  // (after a sentence that did not line up, the same one again)
+  function nextSentence(skip) {
+    if (skip && !strip.learned) state.sentIdx++;
+    if (skip || strip.learned) { $('sentText').value = sentence(); persist(); }
+    strip.strokes = []; strip.result = null; strip.learned = false; strip.cur = null;
+    sentNote(''); sizeStrip(); drawStrip(); sentButtons();
+  }
+  // the fewest points that keep a stroke's shape (to keep what is saved small)
+  function thin(s, tol) {
+    if (s.length < 3) return s;
+    const keep = new Uint8Array(s.length); keep[0] = keep[s.length - 1] = 1;
+    const st = [[0, s.length - 1]];
+    while (st.length) {
+      const [a, b] = st.pop(), [ax, ay] = s[a], [bx, by] = s[b], L = Math.hypot(bx - ax, by - ay) || 1e-9;
+      let md = -1, mi = -1;
+      for (let i = a + 1; i < b; i++) { const d = Math.abs((s[i][0] - ax) * (by - ay) - (s[i][1] - ay) * (bx - ax)) / L; if (d > md) { md = d; mi = i; } }
+      if (md > tol) { keep[mi] = 1; st.push([a, mi], [mi, b]); }
+    }
+    return s.filter((_, i) => keep[i]);
+  }
+  function learn() {
+    const text = $('sentText').value.trim();
+    if (!text || !strip.strokes.length || strip.result || reading) return;
+    const have = Object.keys(state.glyphs).filter(ch => (state.glyphs[ch] || []).length);
+    const need = [...new Set([...text].filter(ch => !/\s/.test(ch)))];
+    if (need.filter(ch => have.includes(ch)).length < 0.6 * need.length) { sentNote('Write the letters of this sentence in the boxes first: each letter here is matched to the one in its box.', 'err'); return; }
+    // matching every stroke to the text takes a moment on a slow computer: say so first
+    reading = true; sentButtons(); sentNote('Reading your writing…');
+    setTimeout(() => { try { learnNow(text, have); } finally { reading = false; sentButtons(); } }, 30);
+  }
+  function learnNow(text, have) {
+    const lines = Array.from({ length: strip.lines }, () => []);
+    for (const s of strip.strokes) {
+      const cy = s.reduce((t, p) => t + p[1], 0) / s.length, li = Math.max(0, Math.min(strip.lines - 1, Math.floor(cy)));
+      lines[li].push(s.map(p => [p[0], p[1] - li]));
+    }
+    const templates = {};
+    for (const ch of have) templates[ch] = [R.toLine(state.glyphs[ch])].concat((state.samples[ch] || []).slice(-3).map(R.toLine));
+    let res;
+    try { res = R.alignSentence(lines, text, templates); } catch (e) { sentNote('That could not be read: ' + e.message, 'err'); return; }
+    let n = 0;
+    strip.added = [];
+    for (const L of res.letters) {
+      if (!L.ok) continue;
+      let x0 = Infinity, x1 = -Infinity; for (const s of L.strokes) for (const p of s) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); }
+      const cx = (x0 + x1) / 2;
+      const st = L.strokes.map(s => thin(s.map(p => [Math.round(((p[0] - cx) / R.LU + 0.5) * 10000) / 10000, Math.round(p[1] * 10000) / 10000]), 0.002));
+      const list = state.samples[L.ch] = state.samples[L.ch] || [];
+      list.push(st);
+      strip.added.push({ ch: L.ch, st, dropped: list.length > MAX_SAMPLES ? list.shift() : null });
+      sv[L.ch] = (sv[L.ch] || 0) + 1; n++;
+    }
+    strip.result = res; strip.learned = n > 0;
+    const total = res.letters.length;
+    if (n) {
+      state.sentDone++; state.sentIdx++;
+      sentNote(`Learned ${n} of ${total} letters${n < total ? ' (the gold ones; the rest did not match closely enough)' : ''}. Write the next sentence, or Undo to take this one back.`, 'ok');
+    } else sentNote('That did not line up with the sentence closely enough to learn from. Write it again exactly as it reads, with the letters apart; the lines clear as you start.', 'err');
+    drawStrip(); sentButtons(); sentStats(); renderTabs(); persist(); if (n) schedule();
+  }
+  // the last Learn taken back: its letters forgotten, the writing left on the lines to fix and learn again
+  function unlearn() {
+    if (strip.learned) {
+      for (const a of strip.added.slice().reverse()) {
+        const l = state.samples[a.ch], i = l ? l.lastIndexOf(a.st) : -1;
+        if (i < 0) continue;
+        l.splice(i, 1);
+        if (a.dropped) l.unshift(a.dropped);
+        if (!l.length) delete state.samples[a.ch];
+        sv[a.ch] = (sv[a.ch] || 0) + 1;
+      }
+      state.sentDone = Math.max(0, state.sentDone - 1); state.sentIdx = Math.max(0, state.sentIdx - 1);
+      schedule();
+    }
+    strip.result = null; strip.learned = false; strip.added = [];
+    sentNote(''); drawStrip(); sentButtons(); sentStats(); renderTabs(); persist();
+  }
+  $('sentLearn').onclick = learn;
+  $('sentClear').onclick = () => { if (strip.result) { nextSentence(false); return; } strip.strokes = []; sentNote(''); drawStrip(); sentButtons(); };
+  $('sentNew').onclick = () => nextSentence(true);
+  $('sentText').addEventListener('input', () => { if (strip.result) { strip.strokes = []; strip.result = null; strip.learned = false; sentNote(''); } sizeStrip(); sentButtons(); });
+  $('useSamples').addEventListener('input', e => { state.useSamples = e.target.checked; persist(); schedule(); });
+  let forgetArmed = null;
+  $('sentForget').onclick = () => {
+    if (!forgetArmed) {
+      $('sentForget').textContent = `Tap again to forget all ${nSamples()} letters`;
+      forgetArmed = setTimeout(() => { forgetArmed = null; $('sentForget').textContent = 'Forget my sentences'; }, 4000);
+      return;
+    }
+    clearTimeout(forgetArmed); forgetArmed = null; $('sentForget').textContent = 'Forget my sentences';
+    for (const ch of Object.keys(state.samples)) sv[ch] = (sv[ch] || 0) + 1;
+    state.samples = {}; state.sentDone = 0;
+    sentStats(); renderTabs(); persist(); schedule();
+    sentNote('Forgotten. Your font is your box drawings again.', 'ok');
+  };
+
   // ---------------------------------------------------------------- the font
   let pending = false;
   function schedule() { pending = true; clearTimeout(buildTimer); buildTimer = setTimeout(build, 500); }
-  const optsNow = () => ({ name: state.name.trim() || 'My Handwriting', weight: state.weight, spacing: state.spacing, smoothing: state.smoothing, tidy: state.tidy, cache });
+  const optsNow = () => ({ name: state.name.trim() || 'My Handwriting', weight: state.weight, spacing: state.spacing, smoothing: state.smoothing, tidy: state.tidy, even: state.even, cache });
   // the font exactly as the sheet is now: a build still waiting or running is finished on the spot
   function current() { if (pending) { clearTimeout(buildTimer); ++buildGen; assemble(optsNow()); } return font; }
   // Tracing every glyph takes a moment (all of them change with the pen weight), so it is done a little at a
@@ -4986,7 +5647,7 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
     pending = true;
     const gen = ++buildGen, opts = optsNow();
     let it;
-    try { it = R.warm(state.glyphs, opts); } catch (e) { $('status').textContent = 'The font could not be built: ' + e.message; return; }
+    try { it = R.warm(glyphsNow(), opts); } catch (e) { $('status').textContent = 'The font could not be built: ' + e.message; return; }
     const step = () => {
       if (gen !== buildGen) return;
       const t0 = performance.now();
@@ -5001,7 +5662,7 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
   function assemble(opts) {
     pending = false;
     let res;
-    try { res = R.buildFont(state.glyphs, opts); }
+    try { res = R.buildFont(glyphsNow(), opts); }
     catch (e) { $('status').textContent = 'The font could not be built: ' + e.message; return; }
     font = res;
     if (!$('cssOut').hidden) note('');                  // the copied font is out of date now
@@ -5064,7 +5725,7 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
     try { navigator.clipboard.writeText(text).then(done, manual); } catch (e) { manual(); }
   };
   $('save').onclick = async () => {
-    if (await offer(fileName() + '.json', JSON.stringify(state), 'application/json')) note('Saved your handwriting. Open it here later to change any character, or in Nib Board to see your board in your own hand.', 'ok');
+    if (await offer(fileName() + '.json', JSON.stringify(Object.assign({ avg: averages() }, state)), 'application/json')) note('Saved your handwriting, sentences included. Open it here later to change any character, or in Nib Board to see your board in your own hand.', 'ok');
   };
   $('open').onclick = () => $('file').click();
   $('file').onchange = () => {
@@ -5075,12 +5736,14 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
       const keep = JSON.stringify(state);
       if (!adopt(d)) throw new Error('it is not a saved handwriting file');
       if (!Object.keys(state.glyphs).length && Object.keys(d.glyphs).length) { adopt(JSON.parse(keep)); throw new Error('it holds no readable handwriting'); }
-      history.length = 0; cache.clear(); syncControls(); renderTabs(); renderGrid(); persist(); build();
+      history.length = 0; cache.clear(); avgCache.clear(); strip.strokes = []; strip.result = null; strip.learned = false; $('sentText').value = '';
+      syncControls(); renderTabs(); renderGrid(); persist(); build();
       note('Opened ' + f.name + '.', 'ok');
     }).catch(e => note('That file could not be opened: ' + e.message, 'err'));
     $('file').value = '';
   };
-  // Nib, when this page carries it: every written character Nib knows is remembered as this writer's shape
+  // Nib, when this page carries it: every written character Nib knows is remembered as this writer's shape — the box
+  // drawing and the two most recent times it was written in a sentence
   const NIB_LABEL = { '×': '\\times', '÷': '\\div', '±': '\\pm', '≠': '\\ne', '≤': '\\le', '≥': '\\ge', 'π': '\\pi', 'θ': '\\theta', '∞': '\\infty', '√': '\\sqrt' };
   // (not on a published page: its storage is its own, so no other tool could read what it learned)
   if (window.Nib && window.Nib.memory && !window.REPLICATOR_PUBLISHED) {
@@ -5092,7 +5755,7 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
         const label = NIB_LABEL[ch] || ch;
         if (!st.length || !known.has(label)) continue;
         // box coordinates with the box's real proportions, so shapes keep their aspect
-        window.Nib.memory.learn(st.map(s => s.map(p => [p[0] * R.BOX.w / R.BOX.h, p[1]])), label, ref);
+        for (const one of [st].concat((state.samples[ch] || []).slice(-2))) window.Nib.memory.learn(one.map(s => s.map(p => [p[0] * R.BOX.w / R.BOX.h, p[1]])), label, ref);
         n++;
       }
       note(n ? `Nib now knows your ${n} characters in this browser. Tools here that use Nib will read your writing better.` : 'Write some letters or numbers first.', n ? 'ok' : '');
@@ -5102,19 +5765,19 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
   // ---------------------------------------------------------------- settings
   function syncControls() {
     $('name').value = state.name; $('weight').value = state.weight; $('spacing').value = state.spacing; $('smooth').value = state.smoothing;
-    $('tidy').checked = state.tidy; $('big').checked = state.big;
+    $('tidy').checked = state.tidy; $('even').checked = state.even; $('big').checked = state.big; $('useSamples').checked = state.useSamples;
     $('weightV').textContent = state.weight; $('spacingV').textContent = state.spacing; $('smoothV').textContent = state.smoothing;
   }
   const bind = (id, key, num, redraw) => $(id).addEventListener('input', e => {
     state[key] = e.target.type === 'checkbox' ? e.target.checked : num ? +e.target.value : e.target.value;
     syncControls(); persist();
-    if (redraw) for (const b of boxes.values()) draw(b);
+    if (redraw) { for (const b of boxes.values()) draw(b); drawStrip(); }
     if (key === 'big') renderGrid(); else schedule();
   });
-  bind('name', 'name'); bind('weight', 'weight', true, true); bind('spacing', 'spacing', true); bind('smooth', 'smoothing', true); bind('tidy', 'tidy'); bind('big', 'big');
+  bind('name', 'name'); bind('weight', 'weight', true, true); bind('spacing', 'spacing', true); bind('smooth', 'smoothing', true); bind('tidy', 'tidy'); bind('even', 'even'); bind('big', 'big');
   $('undo').onclick = undo;
   document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); undo(); } });
-  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { for (const b of boxes.values()) draw(b); }); } catch (e) { /* old browser */ }
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { for (const b of boxes.values()) draw(b); drawStrip(); }); } catch (e) { /* old browser */ }
 
   syncControls(); renderTabs(); renderGrid();
   if (Object.values(state.glyphs).some(s => s && s.length)) build(); else showPreview();

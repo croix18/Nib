@@ -63,8 +63,9 @@ function resample(stroke, spacing) {
 // the hand goes, corners (a turn of more than about 70°) stay sharp, and every stroke still starts and ends where it did.
 const SMOOTH_SIGMA = [0, 5, 9, 14, 20, 27, 35, 44, 54, 65, 78];
 function smooth(stroke, spacing, level) {
-  const pts = resample(stroke, spacing);
-  const sigma = SMOOTH_SIGMA[Math.max(0, Math.min(10, Math.round(+level || 0)))];
+  const lv = Math.max(0, Math.min(10, Math.round(+level || 0))), sigma = SMOOTH_SIGMA[lv];
+  let pts = resample(stroke, spacing);
+  if (lv) pts = dehook(pts, lv >= 3 ? 20 : 12);
   if (!sigma || pts.length < 4) return pts;
   const m = Math.max(2, Math.round(Math.max(15, 0.6 * sigma) / spacing));
   const out = [];
@@ -76,6 +77,37 @@ function smooth(stroke, spacing, level) {
     from = c;
   }
   return out;
+}
+// A hook: the tiny flick of a pen as it lands or lifts, a turn of more than 130° within `max` font units of a stroke's
+// end (and within an eighth of the stroke). It shows as a knot at the end of a stroke, so it goes; a real flag or serif
+// (the flag of a 1 is three times as long) stays.
+const HOOK_TURN = 130 * Math.PI / 180;
+function dehook(pts, max) {
+  const n = pts.length;
+  if (n < 6) return pts;
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const L = cum[n - 1], lim = Math.min(max, L / 8);
+  const turn = (o, k, j) => {
+    const ux = pts[k][0] - pts[o][0], uy = pts[k][1] - pts[o][1], vx = pts[j][0] - pts[k][0], vy = pts[j][1] - pts[k][1];
+    const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+    return lu > 0 && lv > 0 ? Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (lu * lv)))) : 0;
+  };
+  // the sharpest turn near each end, measured against the next 1.5·max of the stroke
+  // (a flick is at least 9 units long: one point out of line at the end is the pen's jitter, not a flick)
+  let a = 0, b = n - 1, best = HOOK_TURN;
+  for (let k = 1; k < n - 1 && cum[k] <= lim; k++) {
+    if (cum[k] < 9) continue;
+    let j = k; while (j < n - 1 && cum[j] - cum[k] < 1.5 * max) j++;
+    const t = turn(0, k, j); if (t > best) { best = t; a = k; }
+  }
+  best = HOOK_TURN;
+  for (let k = n - 2; k > 0 && L - cum[k] <= lim; k--) {
+    if (L - cum[k] < 9) continue;
+    let j = k; while (j > 0 && cum[k] - cum[j] < 1.5 * max) j--;
+    const t = turn(n - 1, k, j); if (t > best) { best = t; b = k; }
+  }
+  return b - a >= 3 && (a > 0 || b < n - 1) ? pts.slice(a, b + 1) : pts;
 }
 // where a stroke turns sharply: the turn between the m points before and the m after, at its sharpest
 function cornersOf(pts, m) {
@@ -256,7 +288,7 @@ function fitToGuides(S, ch) {
 // strokes: box-space strokes. Returns {contours: [[x, y]...] in font units (y up), bbox} or null when empty.
 // opts.even with opts.ch: fitted to the guides (above).
 function outline(strokes, o) {
-  const opts = Object.assign({ weight: 80, smoothing: 2 }, o || {});
+  const opts = Object.assign({ weight: 80, smoothing: 5 }, o || {});
   const unit = opts.unit || Math.max(3, opts.weight / 27);           // finer raster for thin pens
   let S = cleanStrokes(strokes).map(s => smooth(toUnits(s), 6, opts.smoothing));
   if (!S.length) return null;
@@ -442,7 +474,7 @@ function writeTTF(font) {
 }
 
 // ------------------------------------------------------------------ the font
-const FONT_DEFAULTS = { name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 2, tidy: true, even: false, cache: null };
+const FONT_DEFAULTS = { name: 'My Handwriting', weight: 80, spacing: 50, smoothing: 5, tidy: true, even: false, cache: null };
 const fits = (ch, opts) => !!(opts.even && FIT[ch]);
 // one glyph's outline, kept in opts.cache (a Map) while its strokes and the pen settings stay the same
 function cachedOutline(ch, st, opts) {
@@ -551,7 +583,7 @@ function cloudDist(a, b) {
   return Math.min(one(a, b), one(b, a));
 }
 const sbox = st => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const s of st) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); } return [x0, y0, x1, y1]; };
-const SENT = { n: 24, accept: 0.085, skip: 0.4, wordGap: 0.08, letterGap: 0.33, maxGroup: 4 };
+const SENT = { n: 24, accept: 0.085, skip: 0.4, wordGap: 0.08, letterGap: 0.33, maxGroup: 4, beam: 1.6, most: 0.35 };
 // A written sentence, matched letter by letter to its text.
 // lines: [[stroke, ...], ...] — the strokes on each ruled line in line units, in the order written.
 // text: what was written; templates: {char: [drawings in line units]} (the box drawing first).
@@ -583,15 +615,17 @@ function alignSentence(lines, text, templates, o) {
   const others = Object.keys(T0).filter(ch => [...ch].length === 1).map(ch => [ch, tmpl(ch)[0]]).filter(([, t]) => t);
   const reach = new Float64Array(N + 1).fill(-Infinity);                // furthest right reached by the first i strokes
   for (let i = 0; i < N; i++) reach[i + 1] = Math.max(reach[i], main[i].b[2]);
-  const memo = new Map();
+  const memo = new Map(), clouds = new Map();
   const groupCost = (i, k, j) => {
     const ch = chars[j], key = i + ',' + k + ',' + ch;
     let c = memo.get(key);
     if (c === undefined) {
-      const st = main.slice(i, i + k).map(t => t.s), T = tc[ch];
+      const T = tc[ch];
       if (T.length) {
-        const g = cloud(st, P.n);
-        c = Math.min(...T.map(t => cloudDist(g, t.c) + 0.015 * Math.abs(k - t.k)));
+        let g = clouds.get(i * 8 + k);
+        if (!g) { g = cloud(main.slice(i, i + k).map(t => t.s), P.n); clouds.set(i * 8 + k, g); }
+        c = Infinity;
+        for (const t of T) c = Math.min(c, cloudDist(g, t.c) + 0.015 * Math.abs(k - t.k));
       } else c = 0.11 + 0.02 * Math.max(0, k - 2);                     // no drawing of it to compare with
       memo.set(key, c);
     }
@@ -604,18 +638,29 @@ function alignSentence(lines, text, templates, o) {
     }
     return c + g;
   };
-  // best[i][j]: strokes 0..i-1 written as characters 0..j-1
+  // best[i][j]: strokes 0..i-1 written as characters 0..j-1. Row by row: first the letters left out (they stay on the
+  // row), then from each state that is not hopelessly behind the row's best (a beam: more than P.beam worse can no
+  // longer win in practice), a stray stroke or the next letter.
   const W = M + 1, best = new Float64Array((N + 1) * W).fill(Infinity), from = new Int32Array((N + 1) * W).fill(-1);
   best[0] = 0;
-  for (let i = 0; i <= N; i++) for (let j = 0; j <= M; j++) {
-    const here = best[i * W + j];
-    if (here === Infinity) continue;
-    if (j < M && best[i * W + j + 1] > here + P.skip) { best[i * W + j + 1] = here + P.skip; from[i * W + j + 1] = 0; }          // a letter left out
-    if (i < N && best[(i + 1) * W + j] > here + P.skip) { best[(i + 1) * W + j] = here + P.skip; from[(i + 1) * W + j] = 1; }      // a stray stroke
-    if (j < M) for (let k = 1; k <= P.maxGroup && i + k <= N; k++) {
-      if (k > 1 && main[i + k - 1].li !== main[i].li) break;
-      const v = here + groupCost(i, k, j), at = (i + k) * W + j + 1;
-      if (v < best[at]) { best[at] = v; from[at] = 1 + k; }
+  for (let i = 0; i <= N; i++) {
+    let low = Infinity;
+    for (let j = 0; j <= M; j++) {
+      const here = best[i * W + j];
+      if (here === Infinity) continue;
+      if (j < M && best[i * W + j + 1] > here + P.skip) { best[i * W + j + 1] = here + P.skip; from[i * W + j + 1] = 0; }        // a letter left out
+      low = Math.min(low, here);
+    }
+    if (i === N) break;
+    for (let j = 0; j <= M; j++) {
+      const here = best[i * W + j];
+      if (!(here <= low + P.beam)) continue;
+      if (best[(i + 1) * W + j] > here + P.skip) { best[(i + 1) * W + j] = here + P.skip; from[(i + 1) * W + j] = 1; }          // a stray stroke
+      if (j < M) for (let k = 1; k <= P.maxGroup && i + k <= N; k++) {
+        if (k > 1 && main[i + k - 1].li !== main[i].li) break;
+        const v = here + groupCost(i, k, j), at = (i + k) * W + j + 1;
+        if (v < best[at]) { best[at] = v; from[at] = 1 + k; }
+      }
     }
   }
   const letters = chars.map((ch, j) => ({ ch, strokes: [], line: -1, cost: Infinity, ok: false, idx: [] }));
@@ -656,9 +701,10 @@ function alignSentence(lines, text, templates, o) {
     total += L.cost; n++;
     delete L.idx; delete L.late;
   }
-  // a sentence that does not match its text as a whole (the wrong sentence, words left out) teaches nothing
-  const cost = n ? total / n : Infinity;
-  if (n < 0.75 * M || cost > 1.3 * P.accept) for (const L of letters) L.ok = false;
+  // a sentence that does not match its text as a whole (the wrong sentence, words left out) teaches nothing: too
+  // few letters written, too far from their drawings on the whole, or only a few of those with a drawing close
+  const cost = n ? total / n : Infinity, drawn = letters.filter(L => tc[L.ch].length).length, good = letters.filter(L => L.ok).length;
+  if (n < 0.75 * M || cost > 1.3 * P.accept || good < P.most * drawn) for (const L of letters) L.ok = false;
   return { letters, cost };
 }
 // The average drawing of one character from its samples (box space; the box drawing usually first): the samples
@@ -706,6 +752,6 @@ function averageGlyph(samples, o) {
   return toBox(acc.map(s => s.map(p => [p[0] / keep.length, p[1] / keep.length])));
 }
 
-const Replicator = { UPM, BOX, GUIDE, GUIDE_FRAC, SECTIONS, ALTS, DESCENDERS, FIT, LU, cleanStrokes, smooth, rasterize, trace, simplify, outline, toContour, writeTTF, warm, buildFont, tidyShift, fitToGuides, toLine, toBox, cloud, cloudDist, alignSentence, averageGlyph };
+const Replicator = { UPM, BOX, GUIDE, GUIDE_FRAC, SECTIONS, ALTS, DESCENDERS, FIT, LU, cleanStrokes, smooth, dehook, rasterize, trace, simplify, outline, toContour, writeTTF, warm, buildFont, tidyShift, fitToGuides, toLine, toBox, cloud, cloudDist, alignSentence, averageGlyph };
 if (typeof module !== 'undefined' && module.exports) module.exports = Replicator;
 if (typeof window !== 'undefined') window.Replicator = Replicator;

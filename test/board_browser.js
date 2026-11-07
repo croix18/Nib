@@ -365,6 +365,44 @@ function makeHandFile() {
     await rep.close();
   } else console.log('    (skipped: no offline Replicator beside this page)');
 
+  console.log('a real board: Croix\'s screenshot of 4 Nov, its strokes written again');
+  {
+    // test/fixtures/board_2026-11-04.json: the strokes taken back out of his screenshot (tools/strokes_from_screenshot.py),
+    // in page px of the 1440 x 900 window it was written in. That board gave three wrong answers (2 + 7 = 9 for
+    // 13.999 + 2 + 7, 7 + ½ = −5, 5x + 2x = 2x + 5, its first x written like a plus); none may come back.
+    const F = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'board_2026-11-04.json'), 'utf8'));
+    const bp = await browser.newPage(); bp.on('pageerror', e => errors.push(String(e)));
+    await bp.setViewport({ width: F.width, height: F.height });
+    await bp.goto(url, { waitUntil: 'load' });
+    await bp.evaluate(() => localStorage.clear()); await bp.reload({ waitUntil: 'load' }); await wait(600);
+    if (await bp.$eval('#solve', e => e.getAttribute('aria-pressed')) !== 'true') await bp.click('#solve');
+    const bc = await bp.target().createCDPSession();
+    for (const s of F.strokes) {
+      await bc.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: s[0][0], y: s[0][1], button: 'left', clickCount: 1 });
+      for (let i = 1; i < s.length; i++) await bc.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: s[i][0], y: s[i][1], button: 'left' });
+      await bc.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: s[s.length - 1][0], y: s[s.length - 1][1], button: 'left', clickCount: 1 });
+    }
+    await wait(1500);
+    await bp.waitForFunction(() => { const p = document.getElementById('pad'); return p.pad && !p.pad.anim && p.pad.result && p.pad.strokes.length === p.pad.resultStrokes.length; }, { timeout: 60000 }).catch(() => {});
+    await wait(600);
+    // each line as read, with the answer after it (lines in reading order)
+    const lines = await bp.evaluate(() => {
+      const P = document.getElementById('pad').pad, by = new Map(P.answers.map(a => [a.line, a.latex]));
+      return P.result.lines.map((l, i) => ({ latex: l.latex, answer: by.has(i) ? by.get(i) : null }));
+    });
+    const said = lines.map(l => l.latex + (l.answer === null ? '' : ' → ' + l.answer));
+    const want = [['7+7=', '14'], ['14^{2}=', '196'], ['13.999+2+7=', '22.999'], ['7-7=', '0'], ['14^{2}=', '196'], ['7+\\frac{1}{2}=', '\\frac{15}{2}'],
+      ['13+4=', '17'], ['\\sqrt{14}=', '3.741\\ldots'], ['7+\\frac{1}{2}=', '\\frac{15}{2}'], ['7-7=', '0'], ['3.741^{2}=', '13.995081'], ['5x+2x=', '7x']];
+    let right = 0;
+    for (const [tex, ans] of want) if (lines.some(l => l.latex === tex && l.answer === ans)) right++;
+    ok(right >= 11, `${right} of the ${want.length} problems on it are read and answered right: ${said.join(';  ')}`);
+    const wrong = lines.filter(l => l.answer !== null && !want.some(([tex, ans]) => l.latex === tex && l.answer === ans));
+    ok(wrong.length === 0, 'and no answer on it is wrong' + (wrong.length ? ': ' + wrong.map(l => l.latex + ' → ' + l.answer).join(', ') : ''));
+    ok(!lines.some(l => l.answer === '9' || l.answer === '-5' || l.answer === '2x+5'), 'none of the three wrong answers it showed comes back');
+    await bp.screenshot({ path: path.join(out, 'board-replayed-2026-11-04.png') });
+    await bp.close();
+  }
+
   console.log('phone, dark');
   const ph = await browser.newPage(); ph.on('pageerror', e => errors.push(String(e)));
   await ph.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
