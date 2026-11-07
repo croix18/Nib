@@ -5105,6 +5105,18 @@ class Pad {
     if (removed.length) this.el.dispatchEvent(new CustomEvent('nib:train', { detail: { removed }, bubbles: true }));
     return removed.length;
   }
+  // drop given records from the log (a drill step taken back)
+  trainDrop(keys) {
+    const removed = [];
+    for (const k of keys || []) {
+      const rec = this._trainIdx.get(k);
+      if (!rec) continue;
+      const i = this.training.indexOf(rec); if (i >= 0) this.training.splice(i, 1);
+      this._trainIdx.delete(k); this._trainBytes.delete(k); removed.push(k);
+    }
+    if (removed.length) this.el.dispatchEvent(new CustomEvent('nib:train', { detail: { removed }, bubbles: true }));
+    return removed.length;
+  }
   // forget the log; what is on the page now is not kept again unless it changes
   trainForget() {
     this.training.length = 0; this._trainIdx.clear(); this._trainBytes.clear();
@@ -5203,6 +5215,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     get trainMeta() { return this.pad ? this.pad.trainMeta : (this._meta || null); }
     set trainMeta(v) { const m = v && typeof v === 'object' ? Object.assign({}, v) : null; this._meta = m; if (this.pad) this.pad.trainMeta = m; }
     trainVerify(key, verified) { return this.pad ? this.pad.trainVerify(key, verified) : null; }
+    trainDrop(keys) { return this.pad ? this.pad.trainDrop(keys) : 0; }
     strokeInfo(s) { return this.pad ? this.pad.strokeInfo(s) : { type: null, width: null }; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
     set mode(v) { if (this.pad) this.pad.mode = v === 'erase' ? 'erase' : 'draw'; }

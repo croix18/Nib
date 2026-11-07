@@ -788,6 +788,22 @@ function makeHandFile() {
       B = await bar(); ds = await DS(); R = await T();
       ok(B.n === `3 / ${N}` && ds.pos === 2 && JSON.stringify(ds.skipped) === '[2]' && await nStrokesX() === 0, `Skip: on to 3, item 2 remembered as skipped (${JSON.stringify(ds.skipped)})`);
       ok(!R.some(r => r.item === 2) && !R.some(r => r.latex === '3+4=' && r.expect), 'and nothing kept for it');
+      // Undo in the bar takes back the last stroke; Back goes to the prompt before and drops what it kept
+      await write(e1, [0.2, 0.45, 0.3, 0.12]); await wait(300);
+      const nBefore = await nStrokesX();
+      await page.click('#dundo'); await wait(300);
+      ok(await nStrokesX() === nBefore - 1, `Undo in the bar takes back the last stroke (${nBefore} -> ${await nStrokesX()})`);
+      await page.click('#dback'); await wait(400);
+      B = await bar(); ds = await DS(); R = await T();
+      ok(B.n === `2 / ${N}` && ds.pos === 1 && ds.skipped.length === 0 && await nStrokesX() === 0, `Back: prompt 2 again, its skip unmarked, the board cleared (${B.n}, skipped ${JSON.stringify(ds.skipped)})`);
+      await page.click('#dback'); await wait(400);
+      B = await bar(); ds = await DS(); R = await T();
+      ok(B.n === `1 / ${N}` && ds.pos === 0 && ds.done.length === 0 && !R.some(r => r.item === 1), `Back again: prompt 1, and the record Right kept for it is dropped (${R.length} records)`);
+      ok(await page.$eval('#dback', e => e.disabled), 'Back is off at the first prompt');
+      await write(e1, [0.2, 0.45, 0.3, 0.12]); await until('match'); await page.click('#dright'); await wait(400);
+      await write(eMiss, [0.2, 0.45, 0.3, 0.12]); await until('miss'); await page.click('#dskip'); await wait(400);
+      ds = await DS();
+      ok(ds.pos === 2 && JSON.stringify(ds.skipped) === '[2]' && ds.done.length === 1, 'done again the same way: at prompt 3 with item 2 skipped');
       // Stop, Continue, reload
       await page.click('#dstop'); await wait(300);
       ok((await bar()).hidden && await page.evaluate(() => document.getElementById('pad').trainMeta === null), 'Stop hides the bar (and the pad has no trainMeta)');

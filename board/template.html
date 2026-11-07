@@ -193,6 +193,7 @@ nib-pad {
 .dbtn.go { background: var(--gold); border-color: var(--gold); color: var(--on-gold); font-weight: 600; min-width: 96px; }
 .dbtn[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
 .dbtn:disabled { opacity: .4; cursor: default; }
+.dbtn svg { width: 17px; height: 17px; vertical-align: -3px; margin-right: 5px; }
 .dbtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .dsum { flex: 1 1 320px; margin: 0; font: 400 clamp(22px, 2.4vw, 30px)/1.2 var(--f-display); }
 .dsum small { display: block; margin-top: 4px; font: 500 13px/1.3 var(--f-body); color: var(--muted); }
@@ -237,7 +238,7 @@ nib-pad {
       <p class="dsum" id="dsum" hidden></p>
       <div class="dside">
         <span class="dn" id="dn">1 / 60</span>
-        <div class="dbtns" id="dplay"><button type="button" class="dbtn go" id="dright" title="It reads what I meant: keep it and go on">Right</button><button type="button" class="dbtn" id="dfix" aria-pressed="false" title="Fix a misread symbol">Fix</button><button type="button" class="dbtn" id="dskip" title="Go on without keeping this one">Skip</button><button type="button" class="dbtn" id="dstop" title="Stop for now; Settings, Training continues the drill">Stop</button></div>
+        <div class="dbtns" id="dplay"><button type="button" class="dbtn go" id="dright" title="It reads what I meant: keep it and go on">Right</button><button type="button" class="dbtn" id="dundo" title="Take back the last stroke"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Undo</button><button type="button" class="dbtn" id="dfix" aria-pressed="false" title="Fix a misread symbol">Fix</button><button type="button" class="dbtn" id="dskip" title="Go on without keeping this one">Skip</button><button type="button" class="dbtn" id="dback" title="Back to the one before (what it kept is dropped)">Back</button><button type="button" class="dbtn" id="dstop" title="Stop for now; Settings, Training continues the drill">Stop</button></div>
         <div class="dbtns" id="dend" hidden><button type="button" class="dbtn go" id="dsave">Save training</button><button type="button" class="dbtn" id="dagain">Start again</button><button type="button" class="dbtn" id="dclose">Close</button></div>
       </div>
     </div>
@@ -638,6 +639,7 @@ nib-pad {
     dHow = how.join(' · '); $('dhow').textContent = dHow;
     $('dn').textContent = `${D.pos + 1} / ${N}`;
     $('dfix').setAttribute('aria-pressed', String(fixing));
+    $('dback').disabled = D.pos === 0;
     drillRead();
   }
   // the writing for this prompt: read, and the pen rested for a second
@@ -709,6 +711,24 @@ nib-pad {
     drillNext();
   };
   $('dfix').onclick = () => { fixMode(!fixing); };
+  $('dundo').onclick = () => { if (fixing) fixMode(false); pad.undo(); };
+  // back to the prompt before: what Right kept for it is dropped, a skip is unmarked, and it is written again
+  $('dback').onclick = () => {
+    if (!D || D.pos === 0) return;
+    if (fixing) fixMode(false);
+    pad.trainMeta = null;
+    if (pad.pad) pad.pad.trainIgnore();           // what is on the board for the current prompt keeps nothing
+    pad.clear();
+    D.pos--;
+    const it = DRILL.items[D.pos], P = pad.pad;
+    // the record kept for that prompt, if any: the newest record carrying its item number
+    const kept = (P ? P.training : []).filter(r => r.drill === DRILL.id && r.item === it.item).map(r => r.key);
+    if (kept.length && P) P.trainDrop(kept);
+    D.done = D.done.filter(k => !kept.includes(k));
+    D.skipped = D.skipped.filter(k => k !== it.item);
+    D.fixed = D.fixed.filter(k => k !== it.item);
+    saveDrill(); drillShow();
+  };
   $('dstop').onclick = () => { stopDrill(); note(`Stopped at ${D.pos + 1} of ${N}. Settings, Training continues the drill.`); };
   $('dclose').onclick = () => stopDrill();
   $('dagain').onclick = () => startDrill(true);
