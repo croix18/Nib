@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The writing a Nib Board kept for training -> rows in the trainer's format (training/scratch/data/*.jsonl).
 
-    python3 -I tools/training_to_jsonl.py Nib-training-2026-11-07.json [more.json ...] out.jsonl [--repeat-fixed N]
+    python3 -I tools/training_to_jsonl.py Nib-training-2026-11-07.json [more.json ...] out.jsonl [--repeat-fixed N] [--verified-only]
 
 Each record of a saved file (format 'nib-training', version 1) becomes one row:
     {id, writer, truth, strokes: [[[x, y], ...], ...], symbols: [{label, strokes: [indices]}], orphans,
@@ -11,14 +11,44 @@ dropped. Labels are the classifier's classes: a times dot is its '.', a ':' is t
 a symbol with a label the classifier has no class for is left out (its strokes go to orphans) and counted.
 The same record (same key) in several files is taken once, the newest. --repeat-fixed N writes each row that
 carries a correction N times (default 1), to weight the corrections in training.
+
+Records written in the Board's drill also carry what the writer meant to write: expect (the prompt's LaTeX),
+drill, item, how ('pen' | 'finger' | 'any'), note, and verified (true once the writer pressed Right). These go
+into the row as they are. A row whose record is verified and whose reading equals its expect (the drill's
+comparison: spacing, \\cdot or a raised dot, \\frac braces, \\leq for \\le, a final '=' all ignored) is marked
+gold: true; every other row gold: false. --verified-only writes only the verified rows.
 Standard library only."""
-import json, sys
+import json, re, sys
 
 # the classifier's classes (training/scratch/work/ep/classes.txt), without 'junk'
 CLASSES = set(r"""! $ % ( ) + , - . / 0 1 2 3 4 5 6 7 8 9 < = > A B C E F G H I L M N P R S T V X Y [ \Delta \alpha \beta
 \cos \div \exists \forall \gamma \ge \in \infty \int \lambda \ldots \le \lim \log \mu \ne \phi \pi \pm \prime
 \rightarrow \sigma \sin \sqrt \sum \tan \theta \times \{ \} ] a b c d e f g h i j k l m n o p q r s t u v w x y z |""".split())
 MAP = {'\\cdot': '.', '\\circ': 'o'}
+DRILL_FIELDS = ('expect', 'verified', 'drill', 'item', 'how', 'note')
+
+
+# the Board's normTex (board/template.html): two readings are the same problem when they differ only in this
+def norm_line(l):
+    l = re.sub(r'\\left(?![a-zA-Z])|\\right(?![a-zA-Z])', '', l)
+    l = re.sub(r'\\[,;:! ]', '', l).replace('~', '')
+    l = re.sub(r'\s+', '', l)
+    l = re.sub('[\u00b7\u22c5]', lambda m: '\\cdot', l)
+    l = re.sub(r'\\[dt]frac(?![a-zA-Z])', lambda m: '\\frac', l)
+    l = re.sub(r'\\(le|ge|ne)q(?![a-zA-Z])', lambda m: '\\' + m.group(1), l)
+    l = l.replace('\\%', '%')
+    l = re.sub(r'\\frac([^{\\])', lambda m: '\\frac{' + m.group(1) + '}', l)
+    l = re.sub(r'\\frac(\{[^{}]*\})([^{\\])', lambda m: '\\frac' + m.group(1) + '{' + m.group(2) + '}', l)
+    l = re.sub(r'([\^_])([^{\\])', lambda m: m.group(1) + '{' + m.group(2) + '}', l)
+    return l
+
+
+def norm_tex(t):
+    t = re.sub(r'\\begin\{gathered\}|\\end\{gathered\}', '', t or '')
+    lines = [x for x in (norm_line(l) for l in t.split('\\\\')) if x]
+    if lines:
+        lines[-1] = re.sub('=$', '', lines[-1])
+    return '\\\\'.join(lines)
 
 
 def symbols_of(rec, n):
@@ -40,11 +70,14 @@ def symbols_of(rec, n):
 
 def main(argv):
     rep = 1
+    verified_only = False
     args = []
     i = 0
     while i < len(argv):
         if argv[i] == '--repeat-fixed':
             rep = max(1, int(argv[i + 1])); i += 2; continue
+        if argv[i] == '--verified-only':
+            verified_only = True; i += 1; continue
         args.append(argv[i]); i += 1
     if len(args) < 2:
         print(__doc__.strip().split('\n\n')[1], file=sys.stderr)
@@ -67,10 +100,13 @@ def main(argv):
             old = recs.get(r['key'])
             if old is None or (r.get('t') or 0) >= (old.get('t') or 0):
                 recs[r['key']] = r
-    n_rows = n_strokes = n_syms = n_fixed = 0
+    n_rows = n_strokes = n_syms = n_fixed = n_gold = n_left = 0
     dropped = {}
     with open(out, 'w', encoding='utf-8') as f:
         for r in sorted(recs.values(), key=lambda r: r.get('t') or 0):
+            if verified_only and r.get('verified') is not True:
+                n_left += 1
+                continue
             strokes = [[[float(p[0]), float(p[1])] for p in s if isinstance(p, list) and len(p) >= 2] for s in r['strokes']]
             symbols, lost = symbols_of(r, len(strokes))
             for lab in lost:
@@ -83,12 +119,19 @@ def main(argv):
                    'strokes': strokes, 'symbols': symbols, 'orphans': [k for k in range(len(strokes)) if k not in covered],
                    'latex': latex, 'source': 'board', 'types': types + [None] * (len(strokes) - len(types)),
                    'fixed': fixed, 'split': 'board'}
+            for k in DRILL_FIELDS:
+                if k in r:
+                    row[k] = r[k]
+            gold = r.get('verified') is True and isinstance(r.get('expect'), str) and norm_tex(latex) == norm_tex(r['expect'])
+            row['gold'] = gold
             line = json.dumps(row, separators=(',', ':')) + '\n'
             for _ in range(rep if fixed else 1):
                 f.write(line)
-            n_rows += 1; n_strokes += len(strokes); n_syms += len(symbols); n_fixed += fixed
+            n_rows += 1; n_strokes += len(strokes); n_syms += len(symbols); n_fixed += fixed; n_gold += gold
     print(f'{files} file(s): {n_rows} records, {n_strokes} strokes, {n_syms} symbols, {n_fixed} fixed'
           + (f' (each fixed row written {rep} times)' if rep > 1 else '') + f' -> {out}')
+    print(f'{n_gold} gold (verified, and read as the prompt)'
+          + (f'; {n_left} not verified, left out (--verified-only)' if verified_only else ''))
     if dropped:
         print('left out (no class for them): ' + ', '.join(f'{k} x{v}' for k, v in sorted(dropped.items())))
     return 0

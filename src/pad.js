@@ -99,6 +99,7 @@ class Pad {
     this.info = new WeakMap();      // stroke -> {type, width}: the pointer that wrote it
     this.training = []; this._trainIdx = new Map(); this._trainBytes = new Map(); this._trainSkip = new Set();
     this._seen = new Map(); this._trainTimer = null; this._hashes = new WeakMap(); this._answered = new WeakMap();
+    this.trainMeta = null;          // a plain object whose fields go into every training record made while it is set (a drill's prompt)
     if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
     c.addEventListener('pointerdown', this._down);
@@ -976,6 +977,9 @@ class Pad {
       answered: !!this._answered.get(r),
       confidence: Math.round((r.confidence || 0) * 1000) / 1000,
     };
+    // what the writer meant to write (a drill's prompt): its fields are copied in, never over the record's own
+    const meta = this.trainMeta;
+    if (meta && typeof meta === 'object') for (const k of Object.keys(meta)) if (!(k in rec) && meta[k] !== undefined && typeof meta[k] !== 'function') rec[k] = meta[k];
     this._trainPut(rec);
     this.el.dispatchEvent(new CustomEvent('nib:train', { detail: rec, bubbles: true }));
     return rec;
@@ -1001,6 +1005,39 @@ class Pad {
       this._trainPut(rec); n++;
     }
     return n;
+  }
+  // keep the piece of the latest reading made of these strokes now (again, if it was kept before: the record is
+  // replaced), whether or not train is on; returns the record, or null when no piece read is made of them
+  trainKeep(strokes) {
+    if (!Array.isArray(strokes) || !strokes.length) return null;
+    const k = this._trainKey(strokes);
+    const p = this._trainParts().find(q => this._trainKey(q.strokes) === k);
+    if (!p) return null;
+    this._trainSkip.delete(k);
+    return this._trainRecord(p, k);
+  }
+  // mark the record with this key as checked by the writer (verified true) or not (false); sends nib:train again
+  trainVerify(key, verified) {
+    const rec = this._trainIdx.get(key);
+    if (!rec) return null;
+    rec.verified = !!verified;
+    try { this._trainBytes.set(key, JSON.stringify(rec).length); } catch (e) { /* ok */ }
+    this.el.dispatchEvent(new CustomEvent('nib:train', { detail: rec, bubbles: true }));
+    return rec;
+  }
+  // the writing on the page now is not kept: records already made of it go, and it is not kept again unless it
+  // changes (a drill's Skip); returns how many records went (nib:train is sent with {removed: [keys]})
+  trainIgnore() {
+    const removed = [];
+    clearTimeout(this._trainTimer); this._trainTimer = null;
+    for (const p of this._trainParts()) {
+      const k = this._trainKey(p.strokes);
+      this._trainSkip.add(k);
+      const rec = this._trainIdx.get(k);
+      if (rec) { const i = this.training.indexOf(rec); if (i >= 0) this.training.splice(i, 1); this._trainIdx.delete(k); this._trainBytes.delete(k); removed.push(k); }
+    }
+    if (removed.length) this.el.dispatchEvent(new CustomEvent('nib:train', { detail: { removed }, bubbles: true }));
+    return removed.length;
   }
   // forget the log; what is on the page now is not kept again unless it changes
   trainForget() {
@@ -1056,6 +1093,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
       this.pad = new Pad(this, Object.assign(this._opts(), {
         onResult: r => this.dispatchEvent(new CustomEvent('change', { detail: r, bubbles: true })),
       }));
+      if (this._meta) this.pad.trainMeta = this._meta;
       if (this._saved) { this.pad.setStrokes(this._saved); this._saved = null; }
     }
     // moved within the page: keep everything; removed for good: release the canvas and observers (ink is kept
@@ -1095,6 +1133,10 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     get training() { return this.pad ? this.pad.training : []; }
     get train() { return this.pad ? !!this.pad.o.train : this.hasAttribute('train') && this.getAttribute('train') !== 'false'; }
     set train(v) { if (v) this.setAttribute('train', ''); else this.removeAttribute('train'); }
+    // fields copied into every training record made while it is set ({expect, drill, item, how}), or null
+    get trainMeta() { return this.pad ? this.pad.trainMeta : (this._meta || null); }
+    set trainMeta(v) { const m = v && typeof v === 'object' ? Object.assign({}, v) : null; this._meta = m; if (this.pad) this.pad.trainMeta = m; }
+    trainVerify(key, verified) { return this.pad ? this.pad.trainVerify(key, verified) : null; }
     strokeInfo(s) { return this.pad ? this.pad.strokeInfo(s) : { type: null, width: null }; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
     set mode(v) { if (this.pad) this.pad.mode = v === 'erase' ? 'erase' : 'draw'; }

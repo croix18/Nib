@@ -18,6 +18,7 @@
   --gold-wash: #f4e7bd;
   --answer: #8a6a10;    /* answers after "=": gold deep enough for a pen line on cream */
   --coral: #d9654f;
+  --on-gold: #1b2a4a;   /* text on a gold button, in either theme */
   --f-display: "DM Serif Display", Georgia, "Times New Roman", serif;
   --f-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
@@ -162,6 +163,40 @@ nib-pad {
   .mark { display: none; } .seg .vi { display: block; } .seg .vt { display: none; } .seg button { padding: 0 9px; } .pageno { min-width: 34px; }
 }
 @media (prefers-reduced-motion: no-preference) { .tool, .seg button { transition: background .15s, color .15s, border-color .15s; } }
+/* the drill: one problem at a time to copy onto the board, across the top of the writing surface */
+.opt.primary { background: var(--gold); border-color: var(--gold); color: var(--on-gold); font-weight: 600; }
+.hint { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+.drill {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; box-sizing: border-box;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--rail); border-bottom: 1px solid var(--rule); box-shadow: 0 12px 28px -22px rgba(0, 0, 0, .55);
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.board[data-rail="bottom"] .drill { padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
+.drill.warn { border: 2px solid var(--coral); border-top-width: 0; }
+.dq { flex: 1 1 320px; min-width: 0; }
+.dprompt { margin: 0; font: 400 clamp(28px, 3.4vw, 46px)/1.12 "Nib KaTeX Main", "Cambria Math", "STIX Two Math", "Times New Roman", serif; color: var(--ink); letter-spacing: .01em; }
+.dprompt .dl { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dprompt i { font-family: "Nib KaTeX Math", "Cambria Math", "STIX Two Math", "Times New Roman", serif; font-style: italic; }
+.dprompt .stk { font: 500 13px/1 var(--f-body); color: var(--muted); letter-spacing: 0; margin-left: 10px; vertical-align: middle; }
+.dhow { margin: 4px 0 0; font: 600 14px/1.3 var(--f-body); color: var(--gold-ink); }
+.dhow:empty { display: none; }
+.drill.warn .dhow { color: var(--coral); }
+.dread { margin: 6px 0 0; min-height: 1.35em; font: 500 17px/1.35 var(--f-body); color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dread[data-state="match"] { color: var(--gold-ink); }
+.dread[data-state="miss"] { color: var(--coral); }
+.dread b { font-weight: 600; }
+.dside { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; justify-content: flex-end; }
+.dn { font: 500 15px/1 var(--f-body); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.dbtn { font: 500 15px/1 var(--f-body); min-height: 48px; min-width: 64px; padding: 0 16px; border-radius: 11px; border: 1px solid var(--rule); background: var(--board); color: var(--ink); cursor: pointer; }
+.dbtn.go { background: var(--gold); border-color: var(--gold); color: var(--on-gold); font-weight: 600; min-width: 96px; }
+.dbtn[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
+.dbtn:disabled { opacity: .4; cursor: default; }
+.dbtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.dsum { flex: 1 1 320px; margin: 0; font: 400 clamp(22px, 2.4vw, 30px)/1.2 var(--f-display); }
+.dsum small { display: block; margin-top: 4px; font: 500 13px/1.3 var(--f-body); color: var(--muted); }
+@media (max-width: 719px) { .drill { gap: 8px; } .dbtn { padding: 0 12px; min-width: 52px; } .dbtn.go { min-width: 80px; } }
 </style>
 
 <div class="board" id="board" data-rail="top">
@@ -197,6 +232,15 @@ nib-pad {
     <nib-pad id="pad" view="ink" stroke-width="3.5" settle="2500" separate times="false" reveal fit aria-label="Board"></nib-pad>
     <div class="fixlayer" id="fixlayer" hidden></div>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
+    <div class="drill" id="drill" role="region" aria-label="Drill" hidden>
+      <div class="dq" id="dq"><p class="dprompt" id="dprompt"></p><p class="dhow" id="dhow"></p><p class="dread" id="dread" aria-live="polite"></p></div>
+      <p class="dsum" id="dsum" hidden></p>
+      <div class="dside">
+        <span class="dn" id="dn">1 / 60</span>
+        <div class="dbtns" id="dplay"><button type="button" class="dbtn go" id="dright" title="It reads what I meant: keep it and go on">Right</button><button type="button" class="dbtn" id="dfix" aria-pressed="false" title="Fix a misread symbol">Fix</button><button type="button" class="dbtn" id="dskip" title="Go on without keeping this one">Skip</button><button type="button" class="dbtn" id="dstop" title="Stop for now; Settings, Training continues the drill">Stop</button></div>
+        <div class="dbtns" id="dend" hidden><button type="button" class="dbtn go" id="dsave">Save training</button><button type="button" class="dbtn" id="dagain">Start again</button><button type="button" class="dbtn" id="dclose">Close</button></div>
+      </div>
+    </div>
     <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
       <h2>Settings</h2>
       <div class="row"><p class="lab" id="lab-rail">Tools</p><div class="seg" role="radiogroup" aria-labelledby="lab-rail" data-set="rail">
@@ -212,6 +256,8 @@ nib-pad {
       <div class="row sect" role="group" aria-labelledby="lab-train"><p class="lab" id="lab-train">Training</p>
         <button type="button" class="switch" id="train" role="switch" aria-checked="false"><span>Keep writing for training</span><span class="track" aria-hidden="true"></span></button>
         <p class="count" id="traincount" aria-live="polite">0 expressions kept · 0 corrected</p>
+        <p class="hint" id="drillhint">The drill: 60 problems to copy onto the board, one at a time, each kept with what it should say.</p>
+        <div class="btns" id="drillbtns"><button type="button" class="opt primary" id="drillgo">Start the drill</button><button type="button" class="opt" id="drillagain" hidden>Start again</button></div>
         <div class="btns" id="trainbtns"><button type="button" class="opt" id="savetrain" title="Save what has been kept as a file">Save training</button><button type="button" class="opt danger" id="forgettrain">Forget training</button></div>
         <div class="confirm" id="forgetask" hidden><p id="forgetq">Forget everything kept for training?</p><button type="button" class="opt solid" id="forgetyes">Forget</button><button type="button" class="opt" id="forgetno">Keep it</button></div>
       </div>
@@ -386,9 +432,12 @@ nib-pad {
     $('traincount').textContent = `${n} expression${n === 1 ? '' : 's'} kept · ${c} corrected`;
     $('savetrain').disabled = !n; $('forgettrain').disabled = !n;
     if (!n) askForget(false);
+    drillLine();
+    if (D && D.active && D.pos >= N) $('dsave').disabled = !n;
   }
   function setTrain(on, quiet) {
     S.train = on; pad.train = on; $('train').setAttribute('aria-checked', String(on)); persist();
+    if (!on && D && D.active) { stopDrill(); if (!quiet) note('The drill keeps its place while training is off.'); }
     if (on && !S.trainNoted && !quiet) {
       S.trainNoted = true; persist();
       note('Nib keeps what is written on this board — the strokes and how they were read — on this computer only, until you save it. Nothing else is kept.', null, null, true);
@@ -413,6 +462,261 @@ nib-pad {
     const name = `Nib-training-${today()}.json`;
     if (await offer(name, new Blob([JSON.stringify(file)], { type: 'application/json' }))) note(`Saved ${name} (${R.length} expression${R.length === 1 ? '' : 's'}).`);
   };
+
+  // ---------------------------------------------------------------- the drill: problems to copy, each kept with what it should say
+  // Each prompt is LaTeX (what the writing should read as), with how to write it ('any', 'pen' or 'finger') and an
+  // optional note. Progress is kept in this browser (nib-drill-v1) so the drill can be stopped and taken up again.
+  const DKEY = 'nib-drill-v1';
+  const DRILL = { id: 'v1', items: [
+    ...['7-1=', '17+71=', '1001-101=', '46\\cdot 9=', '69+96=', '555-55=', '2\\cdot 22+2=', '444\\div 4=',
+      '0.5+0.25=', '3.14\\cdot 2=', '4\\cdot 0.4=', '12.5\\%\\cdot 80=', '7.07-0.7=',
+      '\\frac{1}{2}+\\frac{1}{3}=', '2\\frac{3}{4}-1\\frac{1}{2}=', '\\frac{2}{3}\\cdot\\frac{9}{4}=', '\\frac{3+5}{2+2}='].map(tex => ({ tex })),
+    { tex: '7+\\frac{1}{8}=', note: 'fraction small and a little off-centre' },
+    ...['2^{5}-5^{2}=', '3^{-2}=', '(-4)^{2}=', '\\sqrt{144}=', '\\sqrt[3]{64}=', '\\sqrt[3]{1000}=', '|-12|+|7|=', '10^{3}\\cdot 10^{-1}=',
+      '4x+4-x=', '2a+3b-a+b=', '5t-7t=', '3(2x-4)=', '(x+1)(x+4)=', '2(x+3)-4(x-1)=', '\\frac{1}{2}x+\\frac{1}{4}x=', 'g+g+g=', '6p-2q+p=',
+      '4x-7=21 \\\\ x=', '2(x+3)=14 \\\\ x=', '\\frac{x}{5}+2=6 \\\\ x=', '3x+4=x+10 \\\\ x=', 'x^{2}=64 \\\\ x=', 'x^{2}+6x+8=0 \\\\ x=', '2x+3y=12 \\\\ y=', 'x+y=9 \\\\ x-y=1 \\\\ x=',
+      '3x-2<10 \\\\ x<', '-2x+1\\ge 7 \\\\ x\\le', '5\\ne 4',
+      '(12)(3)=', '12(3)+1=', '(-3)(-7)=', '1(1+1)='].map(tex => ({ tex })),
+    { tex: '144\\cdot 69=', note: 'small' }, { tex: '144\\cdot 69=', note: 'large' }, { tex: '144\\cdot 69=', note: 'fast' },
+    { tex: '7+4=', note: 'your usual 4' }, { tex: '7+4=', note: 'a closed 4' },
+    ...['7+4=', '13-6=', '2x+5x=', '\\frac{1}{2}+\\frac{1}{4}=', '3(x-2)='].map(tex => ({ tex, how: 'finger' })),
+  ].map((it, i) => ({ item: i + 1, tex: it.tex, how: it.how || 'any', note: it.note || null })) };
+  const NOTES = { small: 'Write it small', large: 'Write it large', fast: 'Write it fast', 'your usual 4': 'Write your usual 4', 'a closed 4': 'Write a closed 4',
+    'fraction small and a little off-centre': 'The fraction small and a little off-centre' };
+  // two readings are the same problem when they differ only in spacing, · for \cdot, how a fraction or power is
+  // braced, \leq for \le and the like, or a final "=" (tools/training_to_jsonl.py does the same)
+  function normLine(l) {
+    return l.replace(/\\left(?![a-zA-Z])|\\right(?![a-zA-Z])/g, '').replace(/\\[,;:! ]/g, '').replace(/~/g, '').replace(/\s+/g, '')
+      .replace(/[·⋅]/g, '\\cdot').replace(/\\[dt]frac(?![a-zA-Z])/g, '\\frac').replace(/\\(le|ge|ne)q(?![a-zA-Z])/g, '\\$1').replace(/\\%/g, '%')
+      .replace(/\\frac([^{\\])/g, '\\frac{$1}').replace(/\\frac(\{[^{}]*\})([^{\\])/g, '\\frac$1{$2}').replace(/([\^_])([^{\\])/g, '$1{$2}');
+  }
+  function normTex(t) {
+    const lines = String(t || '').replace(/\\begin\{gathered\}|\\end\{gathered\}/g, '').split('\\\\').map(normLine).filter(Boolean);
+    if (lines.length) lines[lines.length - 1] = lines[lines.length - 1].replace(/=$/, '');
+    return lines.join('\\\\');
+  }
+  // LaTeX as plain text, for a page without KaTeX: fractions a/b, roots √ ∛, powers in superscript digits
+  const SUP = { '−': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '-': '⁻', '+': '⁺', '(': '⁽', ')': '⁾', n: 'ⁿ', x: 'ˣ' };
+  const OPS = { '\\cdot': '·', '\\times': '×', '\\div': '÷', '\\ge': '≥', '\\le': '≤', '\\ne': '≠', '\\geq': '≥', '\\leq': '≤', '\\neq': '≠', '\\pm': '±', '+': '+', '=': '=', '<': '<', '>': '>', '-': '−' };
+  const SYMS = { '\\%': '%', '\\ldots': '…', '\\pi': 'π', '\\infty': '∞', '\\circ': '°' };
+  function texLine(src) {
+    let i = 0, stacked = false;
+    const group = () => {
+      while (src[i] === ' ') i++;
+      if (src[i] !== '{') return src[i++] || '';
+      let d = 0, j = i;
+      for (; j < src.length; j++) { if (src[j] === '{') d++; else if (src[j] === '}' && --d === 0) break; }
+      const g = src.slice(i + 1, j); i = j + 1; return g;
+    };
+    const toks = [];                       // {op} or {a: text}
+    const atom = a => { const p = toks[toks.length - 1]; if (p && p.a !== undefined) p.a += a; else toks.push({ a }); };
+    const simple = t => /^[0-9A-Za-z.]+$/.test(t);
+    const wrap = t => (simple(t) ? t : '(' + t + ')');
+    while (i < src.length) {
+      const c = src[i];
+      if (c === ' ' || c === '{' || c === '}') { i++; continue; }
+      if (c === '\\') {
+        const m = /^\\([a-zA-Z]+|.)/.exec(src.slice(i)), cmd = m[0]; i += cmd.length;
+        if (cmd === '\\frac') {
+          const a = texLine(group()), b = texLine(group()); stacked = true;
+          const p = toks[toks.length - 1];
+          if (p && p.a !== undefined && /[0-9]$/.test(p.a)) p.a += ' ';      // a mixed number: 2 3/4
+          atom(wrap(a.text) + '/' + wrap(b.text));
+          if (/^[A-Za-z(]/.test(src.slice(i).trim())) atom(' ');           // ½x: 1/2 x
+          continue;
+        }
+        if (cmd === '\\sqrt') {
+          let n = '';
+          if (src[i] === '[') { const j = src.indexOf(']', i); n = src.slice(i + 1, j); i = j + 1; }
+          const b = texLine(group()); if (b.stacked) stacked = true;
+          atom((n === '3' ? '∛' : n === '4' ? '∜' : n ? n + '√' : '√') + wrap(b.text));
+          continue;
+        }
+        if (OPS[cmd]) { toks.push({ op: OPS[cmd] }); continue; }
+        if (SYMS[cmd]) { atom(SYMS[cmd]); continue; }
+        if (/^\\[,;:! ]$/.test(cmd) || cmd === '\\left' || cmd === '\\right') continue;
+        if (/^\\(begin|end)$/.test(cmd)) { group(); continue; }
+        atom(cmd.slice(1)); continue;
+      }
+      if (c === '^' || c === '_') {
+        i++; const g = texLine(group()), t = g.text.replace(/\s+/g, '');
+        if (c === '^' && [...t].every(ch => SUP[ch])) atom([...t].map(ch => SUP[ch]).join(''));
+        else atom(c + wrap(t));
+        continue;
+      }
+      i++;
+      if (c === '-') {                     // a minus sign after nothing, an operator or "(" is part of the number
+        const p = toks[toks.length - 1];
+        if (!p || p.op || /[(|]$/.test(p.a)) { atom('−'); continue; }
+      }
+      if (OPS[c]) { toks.push({ op: OPS[c] }); continue; }
+      atom(c === ',' ? ', ' : c);
+    }
+    let text = '';
+    for (const t of toks) text += t.op ? ' ' + t.op + ' ' : t.a;
+    return { text: text.replace(/\s+/g, ' ').trim(), stacked };
+  }
+  const texLines = t => String(t || '').replace(/\\begin\{gathered\}|\\end\{gathered\}/g, '').split('\\\\').map(l => l.trim()).filter(Boolean);
+  const plain = t => texLines(t).map(l => texLine(l).text).join(' / ');
+  // KaTeX when the page has it, else plain text in the typeset fonts (the Board's own builds have no KaTeX)
+  function showTex(el, tex) {
+    el.textContent = '';
+    for (const l of texLines(tex)) {
+      const d = document.createElement('span'); d.className = 'dl';
+      let done = false;
+      if (window.katex && typeof window.katex.render === 'function') { try { window.katex.render(l, d, { throwOnError: true, displayMode: false }); done = true; } catch (e) { done = false; } }
+      if (!done) {
+        // letters in the maths italic, as typeset
+        const r = texLine(l);
+        for (const run of r.text.split(/([A-Za-z]+)/)) {
+          if (!run) continue;
+          if (/^[A-Za-z]+$/.test(run)) { const v = document.createElement('i'); v.textContent = run; d.appendChild(v); }
+          else d.appendChild(document.createTextNode(run));
+        }
+        if (r.stacked) { const s = document.createElement('span'); s.className = 'stk'; s.textContent = '(stacked)'; d.appendChild(s); }
+      }
+      el.appendChild(d);
+    }
+  }
+  const N = DRILL.items.length;
+  const fresh = () => ({ v: 1, drill: DRILL.id, pos: 0, skipped: [], done: [], fixed: [], active: false });
+  let D = null;
+  try {
+    const d = JSON.parse(localStorage.getItem(DKEY) || 'null');
+    if (d && d.drill === DRILL.id && Number.isInteger(d.pos)) D = Object.assign(fresh(), d, { pos: Math.max(0, Math.min(N, d.pos)),
+      skipped: Array.isArray(d.skipped) ? d.skipped : [], done: Array.isArray(d.done) ? d.done : [], fixed: Array.isArray(d.fixed) ? d.fixed : [], active: d.active === true });
+  } catch (e) { /* none, or storage blocked */ }
+  const saveDrill = () => { try { if (D) localStorage.setItem(DKEY, JSON.stringify(D)); else localStorage.removeItem(DKEY); } catch (e) { /* the drill then lasts while the page is open */ } };
+  const underway = () => !!(D && D.pos < N && (D.pos > 0 || D.done.length || D.skipped.length));
+  function drillLine() {
+    const go = $('drillgo'), again = $('drillagain');
+    if (underway()) { go.textContent = `Continue the drill · ${D.pos + 1} / ${N}`; again.hidden = false; }
+    else { go.textContent = D && D.pos >= N ? 'Start the drill again' : 'Start the drill'; again.hidden = true; }
+  }
+  let dCur = null, dTimer = null, dHow = '';          // dCur: the piece of writing read for this prompt {strokes, key, match}
+  function startDrill(over) {
+    if (!D || over || D.pos >= N) D = fresh();
+    D.active = true; saveDrill();
+    openSettings(false);
+    pad.trainMeta = null;
+    // a new page, unless this one is empty already (before training goes on: what was written with it off stays out)
+    if (pad.strokes.length) { pages[cur] = pad.getState(); snaps[cur] = pad.pad.snapshot(); pages.push(blank()); goPage(pages.length - 1); }
+    if (!S.train) setTrain(true);          // with the first-time note
+    try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
+    drillShow();
+  }
+  function stopDrill() {
+    if (!D) return;
+    D.active = false; saveDrill();
+    if (fixing) fixMode(false);
+    pad.trainMeta = null; dCur = null; clearTimeout(dTimer);
+    $('drill').hidden = true; $('drill').classList.remove('warn');
+    drillLine();
+  }
+  function drillShow() {
+    const bar = $('drill');
+    if (!D || !D.active) { bar.hidden = true; return; }
+    bar.hidden = false;
+    const end = D.pos >= N;
+    $('dq').hidden = end; $('dplay').hidden = end; $('dsum').hidden = !end; $('dend').hidden = !end;
+    if (end) {
+      pad.trainMeta = null; dCur = null; bar.classList.remove('warn');
+      const fixedN = D.fixed.length, sk = D.skipped.slice().sort((a, b) => a - b);
+      $('dn').textContent = `${N} / ${N}`;
+      $('dsum').textContent = `${D.done.length} done, ${sk.length} skipped, ${fixedN} fixed`;
+      if (sk.length) { const s = document.createElement('small'); s.textContent = 'Skipped: ' + sk.join(', '); $('dsum').appendChild(s); }
+      $('dsave').disabled = !records().length;
+      return;
+    }
+    const it = DRILL.items[D.pos];
+    pad.trainMeta = Object.assign({ expect: it.tex, drill: DRILL.id, item: it.item, how: it.how }, it.note ? { note: it.note } : {});
+    showTex($('dprompt'), it.tex);
+    const lines = texLines(it.tex).length, how = [];
+    if (it.how === 'finger') how.push('With your finger');
+    if (it.note) how.push(NOTES[it.note] || it.note);
+    if (lines > 1) how.push(lines > 2 ? 'Each line under the one before' : 'The first line, then the second under it');
+    dHow = how.join(' · '); $('dhow').textContent = dHow;
+    $('dn').textContent = `${D.pos + 1} / ${N}`;
+    $('dfix').setAttribute('aria-pressed', String(fixing));
+    drillRead();
+  }
+  // the writing for this prompt: read, and the pen rested for a second
+  function drillRead() {
+    clearTimeout(dTimer); dTimer = null;
+    if (!D || !D.active || D.pos >= N) return;
+    const P = pad.pad, el = $('dread'), it = DRILL.items[D.pos], bar = $('drill');
+    const say = (txt, state) => { el.textContent = txt; el.dataset.state = state; };
+    dCur = null; bar.classList.remove('warn'); $('dhow').textContent = dHow;
+    $('dright').disabled = true;
+    if (!P || !P.strokes.length) { say('Write it on the board.', 'wait'); return; }
+    if (!P.result || P.ptrs.size || P.resultStrokes.length !== P.strokes.length || P.resultStrokes.some((s, i) => s !== P.strokes[i])) { say('Reading…', 'wait'); return; }
+    let last = 0;
+    for (const s of P.strokes) { const q = s[s.length - 1]; if (q && q[2] > last) last = q[2]; }
+    const rest = last ? 1000 - (performance.now() - last) : 0;
+    if (rest > 0) { say('Reading…', 'wait'); dTimer = setTimeout(drillRead, rest + 20); return; }
+    // the board's pieces, and the lines each one starts at (answers are numbered by line across the board)
+    const parts = [];
+    let li = 0;
+    for (const p of P.result.parts || [{ strokes: P.resultStrokes, result: P.result }]) {
+      const r = p.result;
+      if (!r || !r.lines || !r.lines.length || !p.strokes.length) continue;
+      parts.push({ strokes: p.strokes, result: r, line: li, n: r.tree.length });
+      li += r.tree.length;
+    }
+    if (!parts.length) { say('Nothing read yet. Write it a little bigger?', 'wait'); return; }
+    const want = normTex(it.tex);
+    const joined = p => p.result.lines.map(l => l.latex).join(' \\\\ ');
+    const newest = p => Math.max(...p.strokes.map(s => (s[s.length - 1] || [])[2] || 0));
+    const part = parts.find(p => normTex(joined(p)) === want) || parts.slice().sort((a, b) => newest(b) - newest(a) || b.strokes.length - a.strokes.length)[0];
+    const tex = joined(part), match = normTex(tex) === want;
+    const ans = pad.answers.filter(a => a.line >= part.line && a.line < part.line + part.n).map(a => plain(a.latex));
+    dCur = { strokes: part.strokes, match };
+    say('', match ? 'match' : 'miss');
+    const b = document.createElement('b'); b.textContent = 'Read: ';
+    el.appendChild(b); el.appendChild(document.createTextNode(plain(tex) + (ans.length ? ' → ' + ans.join(', ') : '') + (match ? '' : '  (not what it should be)')));
+    // a prompt for the finger, written with a pen or a mouse: said again, in coral (it is still kept)
+    const by = it.how === 'finger' ? part.strokes.map(s => P.strokeInfo(s).type).find(t => t && t !== 'touch') : null;
+    if (by) { bar.classList.add('warn'); $('dhow').textContent = `${dHow} — that was ${by === 'pen' ? 'the pen' : 'a mouse'}: with your finger, please`; }
+    $('dright').disabled = false;
+  }
+  function drillNext() {
+    D.pos++; saveDrill(); dCur = null;
+    if (D.pos >= N) note('The drill is done. Save training keeps it as a file.');
+    drillShow();
+  }
+  $('dright').onclick = () => {
+    if (!dCur || !pad.pad) return;
+    if (fixing) fixMode(false);
+    const it = DRILL.items[D.pos], P = pad.pad;
+    const rec = P.trainKeep(dCur.strokes);
+    if (!rec) { drillRead(); return; }
+    P.trainVerify(rec.key, true);
+    if (!D.done.includes(rec.key)) D.done.push(rec.key);
+    if (rec.fixed && rec.fixed.length && !D.fixed.includes(it.item)) D.fixed.push(it.item);
+    D.skipped = D.skipped.filter(k => k !== it.item);
+    pad.trainMeta = null;                  // anything else on the page is kept as free writing
+    pad.clear();
+    drillNext();
+  };
+  $('dskip').onclick = () => {
+    if (!D) return;
+    if (fixing) fixMode(false);
+    const it = DRILL.items[D.pos];
+    if (!D.skipped.includes(it.item)) D.skipped.push(it.item);
+    pad.trainMeta = null;
+    if (pad.pad) pad.pad.trainIgnore();    // a skipped prompt keeps nothing
+    pad.clear();
+    drillNext();
+  };
+  $('dfix').onclick = () => { fixMode(!fixing); };
+  $('dstop').onclick = () => { stopDrill(); note(`Stopped at ${D.pos + 1} of ${N}. Settings, Training continues the drill.`); };
+  $('dclose').onclick = () => stopDrill();
+  $('dagain').onclick = () => startDrill(true);
+  $('dsave').onclick = () => $('savetrain').onclick();
+  $('drillgo').onclick = () => { if (D && D.active) { openSettings(false); return; } startDrill(false); };
+  $('drillagain').onclick = () => startDrill(true);
+  pad.addEventListener('change', () => drillRead());
+  pad.addEventListener('nib:change', () => drillRead());
 
   // ---------------------------------------------------------------- pages
   function goPage(i) {
@@ -450,7 +754,7 @@ nib-pad {
   const shownAs = l => SHOW[l] || l;
   let fixing = false, popFor = null, emptyTaps = 0;
   function fixMode(on) {
-    fixing = on; emptyTaps = 0; $('fix').setAttribute('aria-pressed', String(on)); $('fixlayer').hidden = !on; closePop();
+    fixing = on; emptyTaps = 0; $('fix').setAttribute('aria-pressed', String(on)); $('dfix').setAttribute('aria-pressed', String(on)); $('fixlayer').hidden = !on; closePop();
     if (on) {
       if (pad.mode === 'erase') erase(false);
       try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
@@ -637,6 +941,9 @@ nib-pad {
     if (p && p.strokes.length) pad.setState(p);
     ready = true;
     tools();
+    // a drill under way when the page was closed comes back where it was
+    if (D && D.active && !S.train) { D.active = false; saveDrill(); }
+    drillLine(); drillShow();
   });
 })();
 </script>

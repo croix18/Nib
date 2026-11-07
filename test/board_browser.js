@@ -720,6 +720,166 @@ function makeHandFile() {
     await page.click('#gear'); await wait(100); await page.click('#delpage'); await wait(100); await page.click('#delyes'); await wait(500);
   }
 
+  console.log('the training drill');
+  {
+    const N = 60;
+    const T = () => page.evaluate(() => document.getElementById('pad').pad.training.map(r => JSON.parse(JSON.stringify(r))));
+    const DS = () => page.evaluate(() => JSON.parse(localStorage.getItem('nib-drill-v1') || 'null'));
+    const bar = () => page.evaluate(() => {
+      const g = id => document.getElementById(id);
+      return { hidden: g('drill').hidden, n: g('dn').textContent, prompt: [...document.querySelectorAll('#dprompt .dl')].map(e => e.textContent).join(' | '), read: g('dread').textContent, state: g('dread').dataset.state,
+        warn: g('drill').classList.contains('warn'), how: g('dhow').textContent, sum: g('dsum').hidden ? null : g('dsum').textContent, right: !g('dright').disabled };
+    });
+    const until = (state, ms) => page.waitForFunction(s => document.getElementById('dread').dataset.state === s, { timeout: ms || 20000 }, state).catch(() => {});
+    const goText = async () => { await closeSettings(); await page.click('#gear'); await wait(150); return page.evaluate(() => ({ go: document.getElementById('drillgo').textContent, again: !document.getElementById('drillagain').hidden })); };
+    const e1 = findX('7-1='), eMiss = findX('3+4='), eF = findX('7+4=');
+    if (e1 && eMiss && eF) {
+      // something on the page, so the drill has to take a new one
+      await page.click('#gear'); await wait(150);
+      if (await page.$eval('#train', e => e.getAttribute('aria-checked')) === 'true') { await page.click('#train'); await wait(100); }
+      await closeSettings();
+      await write(eMiss, [0.1, 0.5, 0.25, 0.1]); await wait(600); await sameReadX();
+      const pg0 = await page.$eval('#pageno', e => e.textContent), np0 = +pg0.split('/')[1];
+      const g0 = await goText();
+      ok(g0.go === 'Start the drill' && !g0.again, 'Settings, Training: "Start the drill"');
+      await page.click('#drillgo'); await wait(400);
+      let B = await bar();
+      const meta = await page.evaluate(() => document.getElementById('pad').trainMeta);
+      ok(!B.hidden && B.n === `1 / ${N}` && B.prompt === '7 − 1 =' && await page.$eval('#settings', e => e.hidden), `it shows the drill bar with prompt 1 and "1 / ${N}" (${B.prompt}, ${B.n})`);
+      ok(await page.$eval('#train', e => e.getAttribute('aria-checked')) === 'true' && await page.evaluate(() => document.getElementById('pad').train), 'and turns "Keep writing for training" on');
+      ok(await page.$eval('#pageno', e => e.textContent) === `${np0 + 1} / ${np0 + 1}` && await nStrokesX() === 0, `on a new page (${pg0} -> ${await page.$eval('#pageno', e => e.textContent)})`);
+      ok(meta && meta.expect === '7-1=' && meta.drill === 'v1' && meta.item === 1 && meta.how === 'any', 'the pad\'s trainMeta is the prompt: ' + JSON.stringify(meta));
+      const geo = await page.evaluate(() => { const b = document.getElementById('drill').getBoundingClientRect(), f = document.getElementById('surface').getBoundingClientRect(), r = document.getElementById('rail').getBoundingClientRect();
+        return { top: Math.abs(b.top - f.top) < 1 && b.top >= r.bottom - 1, width: Math.abs(b.width - f.width) < 1, small: [...document.querySelectorAll('#drill button')].filter(x => x.offsetParent && x.getBoundingClientRect().height < 44).length,
+          right: getComputedStyle(document.getElementById('dright')).backgroundColor, gold: getComputedStyle(document.documentElement).getPropertyValue('--gold').trim(), font: parseFloat(getComputedStyle(document.getElementById('dprompt')).fontSize) }; });
+      ok(geo.top && geo.width && geo.small === 0 && geo.font >= 28, `across the top of the board under the rail, the prompt large (${geo.font} px), every button at least 44 px`);
+      ok(geo.right === 'rgb(201, 162, 39)', 'Right is the gold button: ' + geo.right);
+      ok(B.read === 'Write it on the board.' && !B.right, 'before any writing: "Write it on the board.", Right not yet');
+      await page.screenshot({ path: path.join(out, 'board-test-drill-start.png') });
+      // the prompt copied: read, and in gold
+      await write(e1, [0.2, 0.45, 0.3, 0.12]);
+      await wait(200);
+      const early = (await bar()).state;
+      await until('match');
+      B = await bar();
+      const col = await page.evaluate(() => ({ c: getComputedStyle(document.getElementById('dread')).color, g: getComputedStyle(document.documentElement).getPropertyValue('--gold-ink').trim() }));
+      ok(early === 'wait' && B.state === 'match' && /^Read: 7 − 1 = → 6$/.test(B.read) && B.right, `once read and rested, the reading line: "${B.read}" (${B.state})`);
+      ok(col.c === 'rgb(138, 106, 16)', 'in gold: ' + col.c);
+      await page.screenshot({ path: path.join(out, 'board-test-drill-read.png') });
+      await page.click('#dright'); await wait(400);
+      let R = await T();
+      const r1 = R.filter(r => r.item === 1);
+      ok(r1.length === 1 && r1[0].expect === '7-1=' && r1[0].verified === true && r1[0].drill === 'v1' && r1[0].how === 'any' && r1[0].latex === '7-1=',
+        `Right: pad.training has one record for it, with expect, verified: true, item: 1 (${JSON.stringify({ expect: r1[0] && r1[0].expect, verified: r1[0] && r1[0].verified, item: r1[0] && r1[0].item, latex: r1[0] && r1[0].latex })})`);
+      B = await bar();
+      ok(await nStrokesX() === 0 && B.n === `2 / ${N}` && B.prompt === '17 + 71 =', `the board is empty and the bar shows prompt 2 (${B.prompt})`);
+      let ds = await DS();
+      ok(ds && ds.drill === 'v1' && ds.pos === 1 && ds.done.length === 1 && ds.done[0] === r1[0].key && ds.skipped.length === 0, 'progress kept in nib-drill-v1: ' + JSON.stringify(ds && { pos: ds.pos, done: ds.done.length, skipped: ds.skipped }));
+      await page.waitForFunction(() => { const t = JSON.parse(localStorage.getItem('nib-train-v1') || 'null'); return t && t.records.some(r => r.verified === true); }, { timeout: 3000 }).catch(() => {});
+      ok(await page.evaluate(() => JSON.parse(localStorage.getItem('nib-train-v1')).records.some(r => r.item === 1 && r.verified === true)), 'and the verified record is in the stored log');
+      // something else: coral
+      await write(eMiss, [0.2, 0.45, 0.3, 0.12]);
+      await until('miss');
+      B = await bar();
+      const col2 = await page.evaluate(() => getComputedStyle(document.getElementById('dread')).color);
+      ok(B.state === 'miss' && /^Read: 3 \+ 4 =/.test(B.read) && col2 === 'rgb(217, 101, 79)', `writing that does not match: "${B.read}" in coral (${col2})`);
+      await wait(4500);                                      // long enough to be kept by itself; a skip takes it out again
+      await page.click('#dskip'); await wait(400);
+      B = await bar(); ds = await DS(); R = await T();
+      ok(B.n === `3 / ${N}` && ds.pos === 2 && JSON.stringify(ds.skipped) === '[2]' && await nStrokesX() === 0, `Skip: on to 3, item 2 remembered as skipped (${JSON.stringify(ds.skipped)})`);
+      ok(!R.some(r => r.item === 2) && !R.some(r => r.latex === '3+4=' && r.expect), 'and nothing kept for it');
+      // Stop, Continue, reload
+      await page.click('#dstop'); await wait(300);
+      ok((await bar()).hidden && await page.evaluate(() => document.getElementById('pad').trainMeta === null), 'Stop hides the bar (and the pad has no trainMeta)');
+      let g = await goText();
+      ok(g.go === `Continue the drill · 3 / ${N}` && g.again, 'Settings shows: ' + g.go);
+      await closeSettings(); await wait(600);
+      await page.reload({ waitUntil: 'load' }); await wait(800);
+      g = await goText();
+      ok((await bar()).hidden && g.go === `Continue the drill · 3 / ${N}`, 'after a reload, still: ' + g.go);
+      await page.click('#drillgo'); await wait(400);
+      B = await bar();
+      ok(!B.hidden && B.n === `3 / ${N}` && B.prompt === '1001 − 101 =', `Continue: prompt 3 (${B.prompt})`);
+      ok(await page.evaluate(() => document.getElementById('pad').trainMeta.item) === 3, 'with its trainMeta');
+      // the finger prompts: written with a mouse, the bar says so in coral
+      await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('nib-drill-v1')); d.pos = 55; d.active = true; localStorage.setItem('nib-drill-v1', JSON.stringify(d)); });
+      await page.reload({ waitUntil: 'load' }); await wait(800);
+      B = await bar();
+      ok(!B.hidden && B.n === `56 / ${N}` && B.prompt === '7 + 4 =' && B.how === 'With your finger' && !B.warn, `a drill under way comes back after a reload; prompt 56 says "${B.how}"`);
+      await write(eF, [0.2, 0.45, 0.3, 0.12]);
+      await until('match');
+      B = await bar();
+      const bc = await page.evaluate(() => getComputedStyle(document.getElementById('drill')).borderLeftColor);
+      ok(B.warn && /With your finger — that was a mouse: with your finger, please/.test(B.how) && bc === 'rgb(217, 101, 79)', `written with a mouse: coral border and "${B.how}"`);
+      await page.screenshot({ path: path.join(out, 'board-test-drill-finger.png') });
+      await page.click('#dright'); await wait(400);
+      R = await T();
+      const rF = R.find(r => r.item === 56);
+      ok(rF && rF.how === 'finger' && rF.verified === true && rF.types.every(t => t === 'mouse'), 'it is still kept (how: finger, types: mouse)');
+      // the end: jump to the last prompt
+      await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('nib-drill-v1')); d.pos = 59; localStorage.setItem('nib-drill-v1', JSON.stringify(d)); });
+      await page.reload({ waitUntil: 'load' }); await wait(800);
+      B = await bar();
+      ok(B.n === `60 / ${N}` && B.prompt === '3(x − 2) =', 'the last prompt: ' + B.prompt);
+      await page.click('#dskip'); await wait(400);
+      B = await bar();
+      const endBtns = await page.evaluate(() => ({ save: !document.getElementById('dend').hidden && !document.getElementById('dsave').disabled, again: !!document.getElementById('dagain').offsetParent, play: document.getElementById('dplay').hidden }));
+      ok(B.sum && /^2 done, 2 skipped, 0 fixed/.test(B.sum) && /Skipped: 2, 60/.test(B.sum) && endBtns.save && endBtns.again && endBtns.play, `after the last prompt, the summary: "${B.sum}" with Save training and Start again`);
+      await page.screenshot({ path: path.join(out, 'board-test-drill-end.png') });
+      // Save training from the summary, and the converter on it
+      await page.evaluate(() => { window.__dl = null; window.__aclick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl = { name: this.download, href: this.href }; else window.__aclick.call(this); }; });
+      await page.click('#dsave'); await wait(500);
+      const dl = await page.evaluate(async () => { const d = window.__dl; if (!d) return null; return { name: d.name, text: await (await (await fetch(d.href)).blob()).text() }; });
+      await page.evaluate(() => { HTMLAnchorElement.prototype.click = window.__aclick; });
+      let F = null; try { F = JSON.parse(dl.text); } catch (e) { F = null; }
+      const ver = F ? F.records.filter(r => r.verified === true) : [];
+      ok(F && F.records.length === 2 && ver.length === 2 && ver.every(r => r.expect && r.drill === 'v1' && Number.isInteger(r.item) && r.how), `Save training on the bar saves the file (${F && F.records.length} records, ${ver.length} verified; the writing on the page before the drill, made with training off, is not among them)`);
+      if (F) {
+        const dir = path.join(out, 'downloads'); fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, 'drill-' + dl.name), jl = path.join(dir, 'drill.jsonl'), jv = path.join(dir, 'drill-verified.jsonl');
+        fs.writeFileSync(file, dl.text);
+        const conv = (args, o) => require('child_process').spawnSync('python3', ['-I', path.join(__dirname, '..', 'tools', 'training_to_jsonl.py'), file, o].concat(args), { encoding: 'utf8' });
+        const all = conv([], jl), only = conv(['--verified-only'], jv);
+        const rowsA = all.status === 0 ? fs.readFileSync(jl, 'utf8').trim().split('\n').map(JSON.parse) : [];
+        const rowsV = only.status === 0 ? fs.readFileSync(jv, 'utf8').trim().split('\n').map(JSON.parse) : [];
+        ok(all.status === 0 && rowsA.length === F.records.length && rowsA.filter(w => w.gold).length === 2 && rowsA.every(w => w.gold === (w.verified === true)) && /^2 gold/m.test(all.stdout),
+          'the converter carries the drill fields and marks the verified rows that read as their prompt gold: ' + (all.stdout || all.stderr).trim().split('\n').pop());
+        ok(only.status === 0 && rowsV.length === 2 && rowsV.every(w => w.verified === true && w.gold && w.expect && w.drill === 'v1' && w.item && w.how) && rowsV.map(w => w.item).sort((a, b) => a - b).join() === '1,56',
+          '--verified-only writes only those (' + rowsV.map(w => `${w.item}: ${w.latex} ${w.how}`).join(', ') + ')');
+      }
+      await page.click('#dagain'); await wait(400);
+      B = await bar(); ds = await DS();
+      ok(B.n === `1 / ${N}` && ds.pos === 0 && ds.done.length === 0 && ds.skipped.length === 0, 'Start again: prompt 1, progress reset');
+      // Fix: a symbol corrected, the reading line follows it, and Right keeps it fixed and verified
+      await write(e1, [0.2, 0.45, 0.3, 0.12]);
+      await until('match');
+      await page.click('#dfix'); await wait(200);
+      const fx = await page.evaluate(() => ({ on: document.getElementById('dfix').getAttribute('aria-pressed') === 'true' && !document.getElementById('fixlayer').hidden }));
+      const sym = await page.evaluate(() => { const P = document.getElementById('pad').pad, s = P.result.symbols.find(q => q.label === '1'); return s ? { x: s.box.x + s.box.w / 2, y: s.box.y + s.box.h / 2 } : null; });
+      if (fx.on && sym) {
+        const cbF = await (await page.$('#pad canvas')).boundingBox();
+        await page.mouse.click(cbF.x + sym.x, cbF.y + sym.y); await wait(250);
+        const alt = await page.$$eval('#fixpop .cand[aria-pressed="false"]', bs => { const l = bs.map(b => b.dataset.label); return l.find(x => /^[0-9]$/.test(x)) || l[0]; });
+        await page.click(`#fixpop .cand[data-label="${alt.replace(/\\/g, '\\\\')}"]`);
+        await until('miss', 8000);
+        B = await bar();
+        ok(B.state === 'miss' && B.read.includes('Read: 7 − ' + alt), `Fix on the bar turns Fix on; a symbol changed (1 -> ${alt}) and the reading line follows: "${B.read}"`);
+        await page.click('#dright'); await wait(400);
+        R = await T(); ds = await DS();
+        const rx = R.find(r => r.item === 1 && r.verified === true);
+        ok(rx && rx.fixed.length === 1 && rx.fixed[0].label === alt && JSON.stringify(ds.fixed) === '[1]' && ds.pos === 1 && !(await page.evaluate(() => !document.getElementById('fixlayer').hidden)),
+          'Right then keeps it fixed and verified, counts it as fixed, and Fix mode ends');
+        await page.evaluate(() => Nib.memory.clear());
+      } else ok(false, 'Fix from the drill bar (' + JSON.stringify(fx) + ', a 1 to fix: ' + !!sym + ')');
+      await page.click('#dstop'); await wait(200);
+      // tidy up: forget the log, training off
+      await page.click('#gear'); await wait(150);
+      await page.click('#forgettrain'); await wait(100); await page.click('#forgetyes'); await wait(200);
+      await page.click('#train'); await wait(100); await closeSettings();
+      ok((await bar()).hidden && await page.$eval('#train', e => e.getAttribute('aria-checked')) === 'false', 'stopped; training off again');
+    } else ok(false, 'writers for 7 - 1 =, 3 + 4 = and 7 + 4 =');
+  }
+
   console.log('settings, rails and themes');
   {
     await page.click('#newpage'); await wait(300);                 // an empty page: resizing it moves no ink
