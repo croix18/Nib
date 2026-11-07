@@ -162,6 +162,11 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   await new Promise(r => setTimeout(r, 1100));
   await page.evaluate(() => line(a, 'touch', 26, 20, 180, 120, 190));
   ok(await nA() === 5, 'a second later the same finger writes');
+  // a finger's tap while the pen is in use (the heel of the hand) is not a decimal point; a finger's tap with no pen about is
+  await page.evaluate(() => { ptr(a, 'down', 'touch', 29, 250, 180); ptr(a, 'move', 'touch', 29, 251, 181); ptr(a, 'up', 'touch', 29, 251, 181); });
+  ok(await nA() === 5, 'a finger tap within 30 s of the pen is ignored (a palm)');
+  await page.evaluate(() => { a.pad.penUntil = performance.now() - 40000; ptr(a, 'down', 'touch', 30, 250, 180); ptr(a, 'move', 'touch', 30, 251, 181); ptr(a, 'up', 'touch', 30, 251, 181); });
+  ok(await nA() === 6, 'the same tap with no pen used for half a minute is a dot');
   // the pen's eraser end erases (for that stroke only)
   const before5 = await page.evaluate(() => a.strokes.map(s => Math.round(s[0][1])));
   await page.evaluate(() => line(a, 'pen', 27, 70, 0, 70, 80, { buttons: 32 }));

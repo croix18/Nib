@@ -587,5 +587,28 @@ lines('0.\\overline{3}=\\frac{1}{3} \\\\ 0.\\overline{6}=', [null, '\\frac{2}{3}
   } else console.log('    (y= misread: ' + res.latex + ')');
 }
 
+section('21. the first training file (Croix, tablet, 7 Nov): his open 4s, dots written as tiny rings, 111 in a cube root');
+{
+  const T = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'training_2026-11-07.json'), 'utf8'));
+  const rd = i => { const r = T.records[i], res = new Nib.Recognizer().recognize(r.strokes.map(s => s.map(p => [p[0], p[1]])), X); return { latex: res.latex, answer: Nib.solve(res, X).map(a => a && a.latex) }; };
+  for (const [i, tex, ans] of [[14, '37(17x)-4+2=', '629x-2'], [20, '7+4=', '11'], [27, '144\\cdot 69=', '9936'], [28, '144\\cdot 69=', '9936'], [30, '144\\cdot 69=', '9936'], [31, '4+2=', '6']]) {
+    const r = rd(i); ok(r.latex === tex && r.answer[0] === ans, `#${i}: ${tex} ${ans}  (read ${r.latex} ${r.answer[0]})`);
+  }
+  ok(rd(25).latex === '144', `#25: 144 written with open 4s (read ${rd(25).latex})`);
+  ok(rd(2).latex === '\\sqrt[3]{111}' && rd(5).latex === '\\sqrt[3]{111}', `#2, #5: the cube root of 111 (read ${rd(2).latex}, ${rd(5).latex})`);
+  ok(rd(26).latex === '\\cdot 49=' || rd(26).latex === '\\cdot 69=', `#26: a dot written as a tiny ring is a times dot (read ${rd(26).latex})`);
+  // every record that was read right stays right
+  let same = 0, n = 0;
+  for (const [i, r] of T.records.entries()) { if (r.strokes.length < 4 || [2, 5, 14, 20, 25, 26, 27, 28].includes(i)) continue; n++; if (rd(i).latex === r.latex) same++; }
+  ok(same === n, `the ${n} records read right on the tablet still read the same (${same})`);
+  // the open 4 and the tiny ring with composed writers: nothing lost
+  const { compose } = require('./compose.js');
+  const cnt = (tex, N) => { let k = 0; for (let i = 0; i < N; i++) if (new Nib.Recognizer().recognize(compose(tex).strokes, X).latex === tex) k++; return k; };
+  const c4 = cnt('14+4=', 40), c0 = cnt('10\\cdot 2=', 40), c1 = cnt('|1|=', 40), c2 = cnt('111=', 40);
+  ok(c4 >= 36, `14 + 4 = still reads for ${c4} of 40 writers`);
+  ok(c0 >= 34, `10 · 2 = (a real 0 next to a dot) reads for ${c0} of 40 writers`);
+  ok(c1 >= 30 && c2 >= 34, `|1| reads for ${c1} of 40 and 111 for ${c2} of 40`);
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

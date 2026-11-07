@@ -317,12 +317,33 @@ class Recognizer {
   }
 
   // time-ordered dynamic programme over stroke groups of size <= MAXK
+  // An open 4: an "L" (down, then across) with the upright drawn a little way to its right, not touching. Writers who
+  // make their 4s this way leave a gap the join model takes for two symbols (c 1, L 1, ( 1), so the pair is checked
+  // on its shape: when the classifier sees a 4 in it, the two are joined like a touching 4.
+  openFour(a, b, ref, key, mask, opts, cref) {
+    const A = sbox(a), B = sbox(b), wa = A[2] - A[0], ha = A[3] - A[1], wb = B[2] - B[0], hb = B[3] - B[1];
+    if (ha < 0.35 * ref || wa < 0.15 * ref || hb < 2.2 * wb || hb < 0.5 * ha) return false;
+    const first = a[0], last = a[a.length - 1];
+    if (first[1] > A[1] + 0.35 * ha || first[0] > A[0] + 0.45 * wa) return false;             // starts at its top left
+    if (last[0] < A[0] + 0.5 * wa || last[1] < A[3] - 0.4 * ha) return false;                 // ends along its bottom
+    if (B[0] < A[0] + 0.4 * wa || B[0] > A[2] + 0.6 * ref) return false;                     // the upright to the right
+    if (B[1] > A[1] + 0.35 * ha || B[3] < A[3] - 0.35 * ha) return false;                     // from the top down to the line
+    if (boxGap(A, B) > 0.6 * ref) return false;
+    const M = model(), p = withPrior(this.probs([a, b], cref, key, opts.memory), this.prior);
+    let tot = 0, p4 = 0;
+    for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) { tot += p[c]; if (M.cls[c] === '4') p4 = p[c]; }
+    return tot > 0 && p4 / tot >= 0.45;
+  }
   segment(strokes, ids, ref, mask, opts, fixOf, fixes, cref) {
     cref = cref || ref;
     const n = strokes.length, M = model();
     const boxes = strokes.map(sbox);
-    const pj = [];
-    for (let k = 0; k + 1 < n; k++) pj.push(this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1]));
+    const pj = [], four = new Set();
+    for (let k = 0; k + 1 < n; k++) {
+      let p = this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1]);
+      if (p < 0.5 && this.openFour(strokes[k], strokes[k + 1], ref, ids[k] + ',' + ids[k + 1], mask, opts, cref)) { p = Math.max(p, 0.75); four.add(k); }
+      pj.push(p);
+    }
     // Dynamic programme over (strokes used, label of the last symbol). With opts.lmSeg > 0 the context model
     // scores the labels in writing order while segmenting, so "4" drawn in two strokes beats "1 +" and "="
     // beats "- -"; opts.beta (a per-symbol cost) balances the extra factor each additional symbol brings.
@@ -352,7 +373,7 @@ class Recognizer {
         const group = strokes.slice(i, j + 1);
         const p = foldTimes(withPrior(this.probs(group, cref, ids.slice(i, j + 1).join(','), opts.memory), this.prior), this.foldX);
         let tot = 0; for (let c = 0; c < p.length; c++) if (mask[c]) tot += p[c];
-        const pjunk = p[M.junk] / tot, norm = tot * Math.max(1 - pjunk, 1e-6);
+        const pjunk = (j === i + 1 && four.has(i) ? Math.min(p[M.junk] / tot, 0.1) : p[M.junk] / tot), norm = tot * Math.max(1 - pjunk, 1e-6);
         const list = [];
         for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) list.push([M.cls[c], p[c] / norm]);
         list.sort((x, y) => y[1] - x[1]);
@@ -596,7 +617,9 @@ function fixBars(row, ref, opts) {
         !inner.some(u => u.k === 's' && RELATIONS.has(u.sym.label));
       // two strong bars; or two "1"s standing exactly where an absolute value's bars would (|6 - 12| read as 16 - 121)
       const thin = u => shape(u, opts.barW);
-      const ok = (thin(a) && thin(b) && strong(a) && strong(b)) || (ONE.has(lab(a)) && ONE.has(lab(b)) && plainInside && startsOperand(i) && endsOperand(j));
+      // three 1s in a row, all the same height, are a number (111), not |1|: bars drawn by hand stand taller
+      const onesInside = inner.every(u => u.k === 's' && ONE.has(u.sym.label) && H(u) > 0.85 * Math.min(H(a), H(b)));
+      const ok = (thin(a) && thin(b) && strong(a) && strong(b)) || (ONE.has(lab(a)) && ONE.has(lab(b)) && plainInside && !onesInside && startsOperand(i) && endsOperand(j));
       if (!ok) continue;
       for (const u of [a, b]) if (u.sym.label !== '|') { u.sym.label = '|'; u.type = symType('|'); changed = true; }
       a.sym.fixed = b.sym.fixed = true;
@@ -630,7 +653,7 @@ function takeRoots(units, ref, opts) {
       if (u === R || used.has(u)) continue;
       const bb = u.full || u.box, [cx, cy] = cxy(bb), uw = bb[2] - bb[0], uh = bb[3] - bb[1];
       // (it may stand a little clear of the tick: up to 0.3 of the root's height to its left)
-      if (cx < vx + 0.2 * h && cx > b[0] - 0.45 * h && bb[2] > b[0] - 0.3 * h && cy < b[1] + 0.3 * h && bb[3] < b[1] + 0.55 * h &&
+      if (cx < vx + 0.2 * h && cx > b[0] - 0.45 * h && bb[2] > b[0] - 0.3 * h && cy < b[1] + (cx < vx - 0.1 * h ? 0.4 : 0.3) * h && bb[3] < b[1] + 0.55 * h &&
         cy > b[1] - 0.8 * h && uh < 0.6 * h && uw < 0.6 * h + 0.2 * w && !(u.k === 's' && (u.type === T_OP || u.type === T_PAREN))) idx.push(u);
     }
     let xr = b[2], yr = b[3], changed = true;
@@ -983,6 +1006,12 @@ function fixRow(row, ref, opts) {
       const numL = (a.k === 's' && /^[0-9)]$/.test(a.sym.label) && !a.sup) || a.k === 'f';
       const numR = (b.k === 's' && /^[0-9]$/.test(b.sym.label)) || b.k === 'f';
       if (numL && numR && (u.sym.cands || []).some(([l, q]) => l === '\\times' && q >= 0.02)) { u.sym.label = '\\times'; u.type = symType('\\times'); }
+    }
+    // a tiny ring between digits or letters, a quarter of their height or less, is a dot written as a little loop
+    if (u.k === 's' && (u.sym.label === '0' || u.sym.label === 'o' || u.sym.label === 'O') && !u.sym.fixed && !u.sup && !u.sub && row.length > 1) {
+      const hs = row.filter(v => v !== u && v.k === 's' && /^[0-9A-Za-z]$/.test(v.sym.label)).map(v => v.box[3] - v.box[1]);
+      const h = u.box[3] - u.box[1], w = u.box[2] - u.box[0], ok = v => v && v.k === 's' && /^[0-9A-Za-z]$/.test(v.sym.label), br = v => v && v.k === 's' && /^[()[\]]$/.test(v.sym.label);
+      if (hs.length && (ok(row[i - 1]) || ok(row[i + 1])) && !br(row[i - 1]) && !br(row[i + 1]) && h < 0.3 * median(hs) && w < 0.3 * median(hs)) { u.sym.label = '.'; u.type = symType('.'); }
     }
     if (u.k === 's' && (u.sym.label === '.' || u.sym.label === '\\cdot') && !(u.sym.fixed && u.sym.label === '\\cdot')) {
       // decimal point sits on the baseline; a centred dot is multiplication (one the writer fixed as a times dot stays)

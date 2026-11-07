@@ -219,6 +219,11 @@ class Pad {
       if (Math.hypot(q[0] - s[0][0], q[1] - s[0][1]) <= 10 && performance.now() - P.t0 <= 400 && this._inChip(P.chip, q)) { this._reveal(P.chip.key); return; }
     }
     if (!s || !s.length) return;
+    // a finger's tap while a pen is in use (within the last 30 s) is the heel of the hand, not a decimal point
+    if (P.type === 'touch' && this.penUntil && performance.now() - (this.penUntil - 1000) < 30000) {
+      const b = sbox(s.map(q => [q[0], q[1]]));
+      if (Math.max(b[2] - b[0], b[3] - b[1]) < 6) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
+    }
     this.info.set(s, { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null });
     this.strokes.push(s);
     this._push({ add: s });
