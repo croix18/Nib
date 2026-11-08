@@ -39,6 +39,8 @@ const Nib = {
     learn(strokes, label, ref) { const s = normStrokes(strokes).strokes; if (!s.length) return; memLearn(classifyGroup(s, ref || refSize(s)).hidden, label); },
     clear() { MEM.items = []; MEM.version++; memSave(); },
     get size() { return memLoad().length; },
+    // the network the corrections are remembered for (they are its embeddings, so a new network starts empty)
+    get model() { return modelId(); },
   },
   classes() { return model().cls.filter(c => c !== 'junk'); },
   // In place: the writing laid out again where it was written, as the writer's own strokes tidied up ('tidy'),

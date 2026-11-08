@@ -960,12 +960,34 @@ nib-pad {
     $('mark').addEventListener('pointerleave', end, { once: true });
   });
 
+  // Corrections are remembered as the network's own embeddings of the corrected shapes, so a new network (a
+  // retrained Nib) cannot use the ones remembered for the old: they would be ignored and the writer would have to
+  // fix the same 1s and 6s again. The training log keeps every corrected symbol's strokes, so the new network is
+  // taught them again, once, the first time the Board opens with it.
+  function relearn() {
+    try {
+      const M = JSON.parse(localStorage.getItem('nib-memory-v1') || 'null');
+      if (!M || M.model === Nib.memory.model) return 0;          // nothing remembered, or remembered for this network
+      let n = 0;
+      for (const r of pad.pad.training || []) {
+        if (!r.fixed || !r.fixed.length || !Array.isArray(r.strokes)) continue;
+        const ink = r.strokes.map(st => st.map(q => [q[0], q[1]])), ref = Nib._internals.refSize(ink);
+        for (const f of r.fixed) {
+          const g = (f.strokes || []).map(i => ink[i]).filter(Boolean);
+          if (g.length && f.label) { Nib.memory.learn(g, f.label === '\\cdot' ? '.' : f.label, ref); n++; }
+        }
+      }
+      return n;
+    } catch (e) { return 0; }                                     // storage blocked: nothing to carry over
+  }
+
   // ---------------------------------------------------------------- start
   setRail(S.rail); setTheme(S.theme); setPen(S.pen); setFinger(S.finger); setReveal(S.reveal); setSolve(S.solve, true); setTrain(S.train, true);
   customElements.whenDefined('nib-pad').then(() => {
     setView(S.view, true);
     // the training log first, so writing put back on the board is known and not kept twice
     try { const T = JSON.parse(localStorage.getItem(TKEY) || 'null'); if (T && Array.isArray(T.records)) pad.pad.trainLoad(T.records); } catch (e) { /* none, or storage blocked */ }
+    relearn();
     trainLine();
     const p = pages[cur];
     if (p && p.strokes.length) pad.setState(p);

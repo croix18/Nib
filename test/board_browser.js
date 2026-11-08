@@ -1218,6 +1218,32 @@ function makeHandFile() {
     await bp.close();
   }
 
+  console.log('a new network learns the corrections kept in the training log');
+  {
+    const mp = await browser.newPage(); mp.on('pageerror', e => errors.push(String(e)));
+    await mp.setViewport({ width: 1280, height: 800 });
+    await mp.goto(url, { waitUntil: 'load' }); await wait(800);
+    const T3 = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'training_2026-11-07c.json'), 'utf8'));
+    const recs = [T3.records[75], T3.records[92]], nFixed = recs.reduce((n, r) => n + r.fixed.length, 0);
+    const kept = await mp.evaluate((recs) => {
+      const was = { t: localStorage.getItem('nib-train-v1'), m: localStorage.getItem('nib-memory-v1') };
+      localStorage.setItem('nib-train-v1', JSON.stringify({ v: 1, records: recs }));
+      localStorage.setItem('nib-memory-v1', JSON.stringify({ model: 'an-older-network', items: [{ l: '7', v: Array(192).fill(0.07) }, { l: '9', v: Array(192).fill(-0.07) }] }));
+      return was;
+    }, recs);
+    await mp.reload({ waitUntil: 'load' }); await wait(1500);
+    const m1 = await mp.evaluate(() => { const M = JSON.parse(localStorage.getItem('nib-memory-v1')); return { model: M.model, items: M.items.length, labels: M.items.map(i => i.l), now: Nib.memory.model, size: Nib.memory.size }; });
+    ok(m1.model === m1.now && m1.size === nFixed && m1.items === nFixed, `the old network's corrections are dropped and the ${nFixed} in the training log are learned again for this one (${JSON.stringify(m1)})`);
+    ok(recs.every(r => r.fixed.every(f => m1.labels.includes(f.label === '\\cdot' ? '.' : f.label))), 'with their labels');
+    await mp.reload({ waitUntil: 'load' }); await wait(1200);
+    ok(await mp.evaluate(() => Nib.memory.size) === nFixed, 'and only once: a second load learns nothing more');
+    await mp.evaluate((was) => {
+      if (was.t === null) localStorage.removeItem('nib-train-v1'); else localStorage.setItem('nib-train-v1', was.t);
+      if (was.m === null) localStorage.removeItem('nib-memory-v1'); else localStorage.setItem('nib-memory-v1', was.m);
+    }, kept);
+    await mp.close();
+  }
+
   console.log('phone, dark');
   const ph = await browser.newPage(); ph.on('pageerror', e => errors.push(String(e)));
   await ph.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
