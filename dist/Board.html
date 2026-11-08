@@ -526,7 +526,7 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
   </div>
 </div>
 
-<script>/*! Nib 1.6.1 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+<script>/*! Nib 1.6.2 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -5947,7 +5947,7 @@ function pdfMake(pages, meta) {
   if (title) info += ' /Title ' + pdfText(title);
   if (M.author) info += ' /Author ' + pdfText(M.author);
   if (M.subject) info += ' /Subject ' + pdfText(M.subject);
-  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.1) /CreationDate (' + pdfDate(date) + ') >>');
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.2) /CreationDate (' + pdfDate(date) + ') >>');
 
   for (let i = 0; i < pages.length; i++) {
     const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
@@ -8702,7 +8702,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.6.1',
+  version: '1.6.2',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },

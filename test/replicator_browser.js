@@ -110,6 +110,45 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   await page.keyboard.down('Control'); await page.keyboard.press('KeyZ'); await page.keyboard.up('Control'); await wait(400);
   ok(strokesIn(await stored()) === strokesIn(before) - 2, 'Ctrl+Z undoes too');
 
+  console.log('the eraser (8 Nov, Croix: "There was also no eraser besides clearing the whole thing.")');
+  {
+    // a box with two strokes or more: rub across one of them
+    // (the point of its first stroke furthest from the others: a rub where two strokes cross takes both, as it should)
+    const pick = await page.evaluate(() => {
+      const g = JSON.parse(localStorage.getItem('replicator-v1')).glyphs;
+      const ch = Object.keys(g).find(c => g[c].length >= 2 && [...document.querySelectorAll('.box .ch')].some(e => e.textContent === c));
+      if (!ch) return null;
+      const [first, ...rest] = g[ch], far = p => Math.min(...rest.flat().map(q => Math.hypot(q[0] - p[0], q[1] - p[1])));
+      const at = first.reduce((a, p) => (far(p) > far(a) ? p : a), first[0]);
+      return { ch, at, n: g[ch].length, room: far(at) };
+    });
+    if (pick) {
+      const bx = await page.evaluateHandle(ch => [...document.querySelectorAll('.box')].find(b => b.querySelector('.ch').textContent === ch), pick.ch);
+      const c = await (await bx.asElement().$('canvas')).boundingBox(), mid = pick.at;
+      await page.click('#eraser'); await wait(80);
+      ok(await page.$eval('#eraser', e => e.getAttribute('aria-pressed')) === 'true', 'the Eraser button turns the eraser on');
+      await page.mouse.move(c.x + mid[0] * c.width - 3, c.y + mid[1] * c.height - 3); await page.mouse.down();
+      await page.mouse.move(c.x + mid[0] * c.width + 3, c.y + mid[1] * c.height + 3, { steps: 3 }); await page.mouse.up(); await wait(500);
+      const n1 = ((await stored()).glyphs[pick.ch] || []).length;
+      ok(n1 === pick.n - 1, `rubbing across a stroke in "${pick.ch}" takes that stroke and leaves the rest (${pick.n} → ${n1})`);
+      await page.click('#undo'); await wait(500);
+      ok(((await stored()).glyphs[pick.ch] || []).length === pick.n, 'Undo puts it back');
+      await page.keyboard.press('e'); await wait(80);
+      ok(await page.$eval('#eraser', e => e.getAttribute('aria-pressed')) === 'false', 'E turns it off again');
+      // the pen turned round (its eraser end) rubs out with the eraser off
+      const r = await page.evaluate((ch, mid) => {
+        const b = [...document.querySelectorAll('.box')].find(x => x.querySelector('.ch').textContent === ch), cv = b.querySelector('canvas'), q = cv.getBoundingClientRect();
+        const ev = (type, dx) => cv.dispatchEvent(new PointerEvent(type, { pointerId: 77, pointerType: 'pen', button: type === 'pointerdown' ? 5 : -1, buttons: type === 'pointerup' ? 0 : 32, clientX: q.left + mid[0] * q.width + dx, clientY: q.top + mid[1] * q.height + dx, bubbles: true, cancelable: true, pressure: 0.5 }));
+        ev('pointerdown', -3); ev('pointermove', 0); ev('pointermove', 3); ev('pointerup', 3);
+        return JSON.parse(localStorage.getItem('replicator-v1') || '{}');
+      }, pick.ch, mid);
+      await wait(500);
+      ok(((await stored()).glyphs[pick.ch] || []).length < pick.n, "the pen's eraser end rubs out too");
+      await page.click('#undo'); await wait(500);
+      void r;
+    } else ok(false, 'a box with two strokes to rub out');
+  }
+
   console.log('settings without freezing the page');
   await page.evaluate(() => { window.__long.length = 0; const w = document.getElementById('weight'); w.value = 140; w.dispatchEvent(new Event('input')); });
   await page.waitForFunction(() => document.getElementById('preview').style.fontFamily.indexOf('Preview') > 0 && !document.querySelector('#status').textContent.includes('could not'), { timeout: 30000 });
@@ -221,7 +260,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     };
     const strokesOnLines = () => page.$eval('#strip', e => +e.dataset.strokes);
     const learnNote = async () => {
-      await page.waitForFunction(() => /^(Learned|That did not)/.test(document.getElementById('sentNote').textContent), { timeout: 20000 }).catch(() => {});
+      await page.waitForFunction(() => /^(Learned|That did not|Every word)/.test(document.getElementById('sentNote').textContent), { timeout: 20000 }).catch(() => {});
       return page.$eval('#sentNote', e => e.textContent);
     };
     const samplesIn = d => Object.values(d.samples || {}).reduce((n, l) => n + l.length, 0);
@@ -274,6 +313,18 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     await drawStroke(g, { li: 2, s: [[9.2, 0.3], [9.6, 0.35], [9.9, 0.32]] });
     await page.click('#undo'); await wait(200);
     ok(await strokesOnLines() === w2.length, 'Undo takes back the last stroke on the lines');
+    // the eraser on the lines: one stroke rubbed out, Undo puts it back
+    {
+      const t = w2[Math.floor(w2.length / 2)], mid = t.s[Math.floor(t.s.length / 2)];
+      const X = g.x + mid[0] * g.rowH, Y = g.y + 4 + (t.li + mid[1]) * g.rowH;
+      await page.click('#eraser'); await wait(60);
+      await page.mouse.move(X - 2, Y - 2); await page.mouse.down(); await page.mouse.move(X + 2, Y + 2, { steps: 2 }); await page.mouse.up(); await wait(150);
+      const after = await strokesOnLines();
+      ok(after < w2.length && after >= w2.length - 3, `the eraser takes what it rubs on the lines, not the rest (${w2.length} → ${after})`);
+      await page.click('#undo'); await wait(150);
+      ok(await strokesOnLines() === w2.length, 'Undo puts it back');
+      await page.click('#eraser'); await wait(60);
+    }
     await page.click('#sentLearn');
     const n2 = await learnNote();
     ok(/^Learned/.test(n2), 'the second sentence: ' + n2);
@@ -292,6 +343,9 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     ok(/^That did not line up/.test(n3), `writing a different sentence (“${s3}” asked) teaches nothing: ${n3}`);
     await page.click('#sentClear'); await wait(700);
     ok(await page.$eval('#sentText', e => e.value) === s3 && await strokesOnLines() === 0, 'Clear keeps the same sentence to try again');
+    await page.click('#undo'); await wait(200);
+    ok(await strokesOnLines() === w3.length, 'and Undo brings the cleared writing back');
+    await page.click('#sentClear'); await wait(300);
     d = await stored();
     const keep = samplesIn(d);
     ok(keep === samplesIn(await stored()) && d.sentDone === 2, 'and nothing was added');

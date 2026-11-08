@@ -664,10 +664,11 @@ function alignSentence(lines, text, templates, o) {
     }
   }
   const letters = chars.map((ch, j) => ({ ch, strokes: [], line: -1, cost: Infinity, ok: false, idx: [] }));
+  const strays = [];
   for (let i = N, j = M; i > 0 || j > 0;) {
     const f = from[i * W + j];
     if (f === 0) j--;
-    else if (f === 1) i--;
+    else if (f === 1) { strays.push(i - 1); i--; }
     else if (f >= 2) {
       const k = f - 1, L = letters[j - 1];
       L.idx = Array.from({ length: k }, (_, q) => i - k + q);
@@ -675,6 +676,27 @@ function alignSentence(lines, text, templates, o) {
       i -= k; j--;
     } else break;
   }
+  // Does the writing line up with the text word for word? Each word of the text on its own run of strokes, apart from
+  // the next one (on the same line) by more than any gap inside either, and at most one word with no strokes at all. A wrong sentence cannot: its words are other lengths, so the matching has to put the text's
+  // word breaks inside written words. Then the letters that match their boxes are learned however few they are (a hand
+  // that writes differently on the lines than in the boxes still teaches the ones that match), and the whole sentence
+  // is judged on the letters only when it does not line up.
+  const wordOf = [], words = [];
+  chars.forEach((ch, j) => { if (j === 0 || spaceBefore[j]) words.push({ text: '', from: j, idx: [] }); const w = words[words.length - 1]; w.text += ch; wordOf.push(words.length - 1); });
+  letters.forEach((L, j) => { words[wordOf[j]].idx.push(...L.idx); });
+  const inGap = q => { let r = -Infinity, g = 0; for (const i of q.slice().sort((a, b) => a - b)) { if (r > -Infinity && main[i].li === main[q[0]].li) g = Math.max(g, main[i].b[0] - r); r = Math.max(r, main[i].b[2]); } return g; };
+  let crossings = 0, empty = 0;
+  words.forEach((w, k) => {
+    if (!w.idx.length) { empty++; return; }
+    const nx = words[k + 1];
+    if (!nx || !nx.idx.length) return;
+    const lastA = Math.max(...w.idx), firstB = Math.min(...nx.idx);
+    if (main[lastA].li !== main[firstB].li) return;                 // the next word starts the next line
+    const right = Math.max(...w.idx.map(i => main[i].b[2])), left = Math.min(...nx.idx.map(i => main[i].b[0]));
+    if (firstB < lastA || left - right <= Math.max(0.04, inGap(w.idx), inGap(nx.idx))) { crossings++; w.cross = true; }
+  });
+  const lined = words.length > 1 && crossings === 0 && empty <= 1;   // (a wrong sentence crossed at least once in 48 of 48 tries)
+  for (const i of strays) { const x = (main[i].b[0] + main[i].b[2]) / 2; const w = words.find(q => q.idx.length && x >= Math.min(...q.idx.map(k => main[k].b[0])) - 0.05 && x <= Math.max(...q.idx.map(k => main[k].b[2])) + 0.05); if (w) w.extra = (w.extra || 0) + 1; }
   // late strokes to the letter whose ink they sit over (or nearest across)
   for (const t of late) {
     let bestL = null, bd = Infinity;
@@ -704,8 +726,10 @@ function alignSentence(lines, text, templates, o) {
   // a sentence that does not match its text as a whole (the wrong sentence, words left out) teaches nothing: too
   // few letters written, too far from their drawings on the whole, or only a few of those with a drawing close
   const cost = n ? total / n : Infinity, drawn = letters.filter(L => tc[L.ch].length).length, good = letters.filter(L => L.ok).length;
-  if (n < 0.75 * M || cost > 1.3 * P.accept || good < P.most * drawn) for (const L of letters) L.ok = false;
-  return { letters, cost };
+  if (n < 0.75 * M || (!lined && (cost > 1.3 * P.accept || good < P.most * drawn))) for (const L of letters) L.ok = false;
+  // each word: whether it got a letter left out or a stroke too many (the word written is not the word asked for)
+  const wordsOut = words.map(w => ({ text: w.text, missing: letters.slice(w.from, w.from + w.text.length).filter(L => !L.strokes.length).length, extra: w.extra || 0, cross: !!w.cross }));
+  return { letters, cost, lined, words: wordsOut };
 }
 // The average drawing of one character from its samples (box space; the box drawing usually first): the samples
 // with the usual number of strokes, each stroke matched to the most typical sample's (order and direction), resampled
