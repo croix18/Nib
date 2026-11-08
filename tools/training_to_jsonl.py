@@ -5,7 +5,7 @@
 
 Each record of a saved file (format 'nib-training', version 1) becomes one row:
     {id, writer, truth, strokes: [[[x, y], ...], ...], symbols: [{label, strokes: [indices]}], orphans,
-     latex, source: 'board', types, fixed: true/false, split: 'board'}
+     latex, source: 'board', types, widths (1.5.2 files), fixed: true/false, split: 'board'}
 Strokes stay in board CSS px with y down, the trainer's convention (CROHME ink is y down too); the times are
 dropped. Labels are the classifier's classes: a times dot is its '.', a ':' is two '.', a degree sign is 'o';
 a symbol with a label the classifier has no class for is left out (its strokes go to orphans) and counted.
@@ -119,6 +119,8 @@ def main(argv):
                    'strokes': strokes, 'symbols': symbols, 'orphans': [k for k in range(len(strokes)) if k not in covered],
                    'latex': latex, 'source': 'board', 'types': types + [None] * (len(strokes) - len(types)),
                    'fixed': fixed, 'split': 'board'}
+            if isinstance(r.get('widths'), list):
+                row['widths'] = r['widths'] + [None] * (len(strokes) - len(r['widths']))
             for k in DRILL_FIELDS:
                 if k in r:
                     row[k] = r[k]

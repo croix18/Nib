@@ -248,6 +248,8 @@ nib-pad {
         <button type="button" role="radio" data-v="light">Light</button><button type="button" role="radio" data-v="dark">Dark</button><button type="button" role="radio" data-v="system">System</button></div></div>
       <div class="row"><p class="lab" id="lab-pen">Pen</p><div class="seg" role="radiogroup" aria-labelledby="lab-pen" data-set="pen">
         <button type="button" role="radio" data-v="thin">Thin</button><button type="button" role="radio" data-v="medium">Medium</button><button type="button" role="radio" data-v="thick">Thick</button></div></div>
+      <div class="row"><p class="lab" id="lab-finger">Finger</p><div class="seg" role="radiogroup" aria-labelledby="lab-finger" data-set="finger">
+        <button type="button" role="radio" data-v="writes">Writes</button><button type="button" role="radio" data-v="ignored">Ignored (pen only)</button></div></div>
       <div class="row"><p class="lab" id="lab-solve">Answers</p><div class="seg" role="radiogroup" aria-labelledby="lab-solve" data-set="solve">
         <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
       <div class="row"><p class="lab" id="lab-reveal">Reveal answers on tap</p><div class="seg" role="radiogroup" aria-labelledby="lab-reveal" data-set="reveal">
@@ -289,6 +291,7 @@ nib-pad {
     rail: pick(saved.rail, RAILS, 'top'),
     theme: pick(saved.theme, THEMES, 'system'),
     pen: pick(saved.pen, Object.keys(PENS), 'medium'),
+    finger: pick(saved.finger, ['writes', 'ignored'], 'writes'),   // 'ignored': pen only (a tablet where the hand rests on the glass)
     train: saved.train === true,          // keep writing for training: off until the teacher turns it on
     trainNoted: saved.trainNoted === true,
   };
@@ -387,11 +390,12 @@ nib-pad {
   }
   try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (S.theme === 'system') setTheme('system'); }); } catch (e) { /* ok */ }
   function setPen(p) { S.pen = p; pad.setAttribute('stroke-width', String(PENS[p])); persist(); marks(); }
+  function setFinger(f) { S.finger = f; if (f === 'ignored') pad.setAttribute('pen-only', ''); else pad.removeAttribute('pen-only'); persist(); marks(); if (typeof drillRead === 'function') drillRead(); }
   function marks() {
-    const val = { rail: S.rail, theme: S.theme, pen: S.pen, solve: S.solve ? 'on' : 'off', reveal: S.reveal ? 'on' : 'off' };
+    const val = { rail: S.rail, theme: S.theme, pen: S.pen, finger: S.finger, solve: S.solve ? 'on' : 'off', reveal: S.reveal ? 'on' : 'off' };
     document.querySelectorAll('#settings .seg').forEach(g => g.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.v === val[g.dataset.set]))));
   }
-  const SETTERS = { rail: setRail, theme: setTheme, pen: setPen, solve: v => setSolve(v === 'on', true), reveal: v => setReveal(v === 'on') };
+  const SETTERS = { rail: setRail, theme: setTheme, pen: setPen, finger: setFinger, solve: v => setSolve(v === 'on', true), reveal: v => setReveal(v === 'on') };
   document.querySelectorAll('#settings .seg').forEach(g => g.addEventListener('click', e => {
     const b = e.target.closest('button'); if (b && b.dataset.v) SETTERS[g.dataset.set](b.dataset.v);
   }));
@@ -649,6 +653,7 @@ nib-pad {
     dCur = null; bar.classList.remove('warn'); $('dhow').textContent = dHow;
     $('dright').disabled = true;
     if (P && P.mode === 'erase') { say('Erase is on: the pen rubs out. Tap Erase again to write.', 'wait'); return; }
+    if (it.how === 'finger' && S.finger === 'ignored' && (!P || !P.strokes.length)) { say('Finger is set to Ignored in Settings: turn it to Writes for this one, or Skip.', 'wait'); return; }
     if (!P || !P.strokes.length) { say('Write it on the board.', 'wait'); return; }
     if (!P.result || P.ptrs.size || P.resultStrokes.length !== P.strokes.length || P.resultStrokes.some((s, i) => s !== P.strokes[i])) { say('Reading…', 'wait'); return; }
     let last = 0;
@@ -956,7 +961,7 @@ nib-pad {
   });
 
   // ---------------------------------------------------------------- start
-  setRail(S.rail); setTheme(S.theme); setPen(S.pen); setReveal(S.reveal); setSolve(S.solve, true); setTrain(S.train, true);
+  setRail(S.rail); setTheme(S.theme); setPen(S.pen); setFinger(S.finger); setReveal(S.reveal); setSolve(S.solve, true); setTrain(S.train, true);
   customElements.whenDefined('nib-pad').then(() => {
     setView(S.view, true);
     // the training log first, so writing put back on the board is known and not kept twice

@@ -649,6 +649,22 @@ section('22. the second training file (the drill, 7 Nov): verified prompts read 
   { let x = 0; for (const i of [5, 6, 7, 8]) { const st = pts(T1.records[i]); if (!st) continue; const w = Math.max(...st.flat().map(p => p[0])); spaced.push(...st.map(s => s.map(p => [p[0] + x, p[1] + (i === 5 ? 0 : 20)]))); x += w + 45; } }
   const p3 = pieces(spaced);
   ok(p3.length === 1 && /\+4=$/.test(p3[0].result.latex), `3√121 + 4 = written in four spaced pieces is one line: ${p3.map(p => p.result.latex).join(' | ')}`);
+  // the third file (the drill to prompt 37): "x =" dropped well under its equation (his prompts 36 and 37) joins it
+  const rd3 = i => new Nib.Recognizer().recognize(pts(T3.records[i]), X).latex;
+  const T3 = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'training_2026-11-07c.json'), 'utf8'));
+  const eq3 = pts(T3.records[100]), xe = pts(T3.records[101]), hEq = Math.max(...eq3.flat().map(p => p[1]));
+  for (const gap of [66, 120]) {
+    const p4 = pieces(eq3.concat(xe.map(s => s.map(p => [p[0] + 150, p[1] + hEq + gap]))));
+    ok(p4.length === 1 && p4[0].result.latex === '\\begin{gathered}4x-7=21 \\\\ x=\\end{gathered}' && Nib.solve(p4[0].result, X)[1].latex === '7', `x = ${gap} px under 4x − 7 = 21 joins it and is answered: ${p4.map(p => p.result.latex).join(' | ')}`);
+  }
+  const far = pieces(eq3.concat(xe.map(s => s.map(p => [p[0] + 150, p[1] + hEq + 200]))));
+  ok(far.length === 2, `x = 200 px under it (4 heights) is left alone (${far.length})`);
+  const twoLine = T3.records.filter(r => r.item === 37 && r.verified);
+  ok(twoLine.length === 1 && twoLine[0].latex === 'x=', 'in the file the verified record for prompt 37 is only "x =": what the drill kept before the join');
+  // every gold record (checked, and read as the prompt) still reads the same without the browser's memory
+  let gold = 0;
+  for (const [i, r] of T3.records.entries()) if (r.verified && !r.fixed.length && r.latex === r.expect) { gold++; ok(rd3(i) === r.expect, `#${i} (prompt ${r.item}): ${r.expect}  (read ${rd3(i)})`); }
+  ok(gold >= 25, `${gold} gold records in the third file`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

@@ -93,7 +93,9 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   const penLatex = await latex('b');
   ok(penLatex === '\\frac{35}{528}', 'numbers pad reads the pen ink: ' + penLatex);
   await touchLine(30, 120, 90, 125);                     // more than a second after the pen: a finger writes again
-  ok(await page.evaluate(() => b.strokes.length) === strokesB + 1, 'a second after the pen, a finger draws again by itself');
+  ok(await page.evaluate(() => b.strokes.length) === strokesB && await page.evaluate(() => b.pad.pending.length) === 1, 'a second after the pen, a brief finger stroke waits to see whether the pen follows');
+  await new Promise(r => setTimeout(r, 1700));
+  ok(await page.evaluate(() => b.strokes.length) === strokesB + 1 && await page.evaluate(() => b.pad.pending.length) === 0, 'and is ink 1.5 s later when it does not');
   await page.evaluate(() => b.undo()); await settle(600);
 
   console.log('finger ink');
@@ -136,7 +138,7 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
       ptr(el, 'up', kind, id, x1, y1, o);
     };
   });
-  await page.evaluate(() => { a.clear(); a.pad.penUntil = 0; a.setAttribute('auto', 'false'); });
+  await page.evaluate(() => { a.clear(); a.pad.penUntil = 0; a.pad.penSeen = -1e9; a.setAttribute('auto', 'false'); });
   const nA = () => page.evaluate(() => a.strokes.length);
   await page.evaluate(() => line(a, 'touch', 11, 20, 20, 120, 30, { width: 40, height: 40 }));
   ok(await nA() === 0, 'a wide contact (a palm, 40 px) draws nothing');
@@ -161,11 +163,13 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   ok(await nA() === 4, 'a finger right after the pen draws nothing');
   await new Promise(r => setTimeout(r, 1100));
   await page.evaluate(() => line(a, 'touch', 26, 20, 180, 120, 190));
-  ok(await nA() === 5, 'a second later the same finger writes');
+  ok(await nA() === 4 && await page.evaluate(() => a.pad.pending.length) === 1, 'a second later the same finger writes, held while the pen might follow');
+  await new Promise(r => setTimeout(r, 1700));
+  ok(await nA() === 5, 'and is ink once it does not');
   // a finger's tap while the pen is in use (the heel of the hand) is not a decimal point; a finger's tap with no pen about is
   await page.evaluate(() => { ptr(a, 'down', 'touch', 29, 250, 180); ptr(a, 'move', 'touch', 29, 251, 181); ptr(a, 'up', 'touch', 29, 251, 181); });
   ok(await nA() === 5, 'a finger tap within 30 s of the pen is ignored (a palm)');
-  await page.evaluate(() => { a.pad.penUntil = performance.now() - 40000; ptr(a, 'down', 'touch', 30, 250, 180); ptr(a, 'move', 'touch', 30, 251, 181); ptr(a, 'up', 'touch', 30, 251, 181); });
+  await page.evaluate(() => { a.pad.penUntil = performance.now() - 40000; a.pad.penSeen = performance.now() - 40000; ptr(a, 'down', 'touch', 30, 250, 180); ptr(a, 'move', 'touch', 30, 251, 181); ptr(a, 'up', 'touch', 30, 251, 181); });
   ok(await nA() === 6, 'the same tap with no pen used for half a minute is a dot');
   // the pen's eraser end erases (for that stroke only)
   const before5 = await page.evaluate(() => a.strokes.map(s => Math.round(s[0][1])));
@@ -175,7 +179,7 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   await page.evaluate(() => line(a, 'pen', 28, 400, 150, 450, 160));
   ok(await nA() === after5.ys.length + 1, 'the next pen stroke draws');
   // two fingers at once: two strokes, each finished on its own
-  await page.evaluate(() => { a.clear(); a.pad.penUntil = 0; });
+  await page.evaluate(() => { a.clear(); a.pad.penUntil = 0; a.pad.penSeen = -1e9; });
   await page.evaluate(() => {
     ptr(a, 'down', 'touch', 31, 20, 40); ptr(a, 'down', 'touch', 32, 400, 40, { isPrimary: false });
     for (let i = 1; i <= 8; i++) { ptr(a, 'move', 'touch', 31, 20 + 10 * i, 40 + i); ptr(a, 'move', 'touch', 32, 400 + 10 * i, 60 + i, { isPrimary: false }); }
@@ -201,7 +205,7 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   await page.evaluate(() => line(a, 'touch', 42, 20, 120, 120, 130));
   ok(await page.evaluate(() => a.strokes.length === 2 && a.pad.ptrs.size === 0), 'a stroke whose pointerup was lost is finished when the next pointer comes down 1.5 s later');
   // two real fingers through the browser (CDP touch events)
-  await page.evaluate(() => { a.clear(); a.pad.penUntil = 0; });
+  await page.evaluate(() => { a.clear(); a.pad.penUntil = 0; a.pad.penSeen = -1e9; });
   {
     const ab = await (await page.$('#a canvas')).boundingBox();
     const P = i => [{ x: ab.x + 40 + 10 * i, y: ab.y + 40, id: 1 }, { x: ab.x + 400 + 10 * i, y: ab.y + 120 + 3 * i, id: 2 }];
@@ -230,7 +234,7 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
     a.strokes = [[[100, 40], [100, 140]], [[160, 40], [160, 140]], [[600, 40], [700, 40]]];
     a.mode = 'erase'; ptr(a, 'down', 'touch', 51, 130, 90, { width: 60, height: 60 }); const r1 = a.pad.ptrs.size ? a.pad.ptrs.get(51).r : -1; ptr(a, 'up', 'touch', 51, 130, 90);
     ptr(a, 'down', 'mouse', 1, 130, 90); const r2 = a.pad.ptrs.get(1).r; ptr(a, 'up', 'mouse', 1, 130, 90);
-    a.pad.penUntil = 0; ptr(a, 'down', 'pen', 52, 130, 90); const r3 = a.pad.ptrs.get(52).r; ptr(a, 'up', 'pen', 52, 130, 90);
+    a.pad.penUntil = 0; a.pad.penSeen = -1e9; ptr(a, 'down', 'pen', 52, 130, 90); const r3 = a.pad.ptrs.get(52).r; ptr(a, 'up', 'pen', 52, 130, 90);
     return { r1, r2, r3 };
   });
   ok(rad.r2 === 20 && rad.r3 === 20, `the eraser's radius is a fifth of the writing near it (100 px tall: ${rad.r2})`);
@@ -239,13 +243,13 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   ok(seg === 0, 'a long straight stroke (two points, 400 px apart) is erased by touching its middle');
   // Fix mode: a tap is sent on as nib:tap and writes nothing; writing writes, and the mode goes back to draw by itself
   const fixm = await page.evaluate(() => {
-    a.clear(); a.pad.penUntil = 0; a.mode = 'fix';
+    a.clear(); a.pad.penUntil = 0; a.pad.penSeen = -1e9; a.mode = 'fix';
     const taps = []; const h = e => taps.push([Math.round(e.detail.x), Math.round(e.detail.y), e.detail.pointerType]); a.addEventListener('nib:tap', h);
     ptr(a, 'down', 'pen', 61, 200, 100); ptr(a, 'move', 'pen', 61, 202, 101); ptr(a, 'up', 'pen', 61, 202, 101);
     const afterTap = { n: a.strokes.length, mode: a.mode, why: a.pad.why };
     line(a, 'pen', 62, 220, 100, 320, 110);
     const afterLine = { n: a.strokes.length, mode: a.mode };
-    a.mode = 'fix'; a.pad.penUntil = 0; ptr(a, 'down', 'touch', 63, 40, 40); ptr(a, 'up', 'touch', 63, 40, 40);
+    a.mode = 'fix'; a.pad.penUntil = 0; a.pad.penSeen = -1e9; ptr(a, 'down', 'touch', 63, 40, 40); ptr(a, 'up', 'touch', 63, 40, 40);
     a.removeEventListener('nib:tap', h); const m = a.mode; a.mode = 'draw';
     return { taps, afterTap, afterLine, m };
   });
@@ -254,7 +258,7 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   ok(fixm.taps.length === 2 && fixm.taps[1][2] === 'touch' && fixm.m === 'fix', 'a finger tap with Fix on is sent on too, and a tap leaves Fix on');
   // a finger resting on the panel when the pen lands (down a while, hardly moving) is a palm: dropped, whatever its age
   const rest = await page.evaluate(async () => {
-    a.clear(); a.pad.penUntil = 0;
+    a.clear(); a.pad.penUntil = 0; a.pad.penSeen = -1e9;
     ptr(a, 'down', 'touch', 71, 500, 300); for (let i = 1; i <= 8; i++) ptr(a, 'move', 'touch', 71, 500 + i * 0.6, 300 + i * 0.5);
     await new Promise(r => setTimeout(r, 450));
     const live = a.pad.ptrs.has(71);
@@ -264,11 +268,33 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
     return { live, gone, n1, n2: a.strokes.length };
   });
   ok(rest.live && rest.gone && rest.n1 === 1 && rest.n2 === 1, `a finger down 450 ms that has hardly moved is dropped when the pen lands, and leaves no mark when it lifts (${JSON.stringify(rest)})`);
+  // a brief touch (under 400 ms) while the pen is in use waits 1.5 s: gone if the pen follows, ink if it does not;
+  // with no pen about, a finger's stroke is ink at once
+  const brush = await page.evaluate(async () => {
+    a.clear(); a.pad.penUntil = 0; a.pad.penSeen = -1e9;
+    line(a, 'touch', 81, 20, 200, 60, 230);                              // no pen session: at once
+    const alone = { n: a.strokes.length, pending: a.pad.pending.length };
+    line(a, 'pen', 82, 100, 200, 180, 210); a.pad.penUntil = 0;         // the pen is the instrument now
+    line(a, 'touch', 83, 300, 200, 310, 240);                            // the hand brushes the board
+    const held = { n: a.strokes.length, pending: a.pad.pending.length, why: a.pad.why };
+    line(a, 'pen', 84, 200, 200, 280, 210); a.pad.penUntil = 0;         // the pen follows
+    const after = { n: a.strokes.length, pending: a.pad.pending.length, why: a.pad.why };
+    line(a, 'touch', 85, 300, 300, 312, 340);                            // another brush, no pen after it
+    const held2 = { n: a.strokes.length, pending: a.pad.pending.length };
+    await new Promise(r => setTimeout(r, 1700));
+    const kept = { n: a.strokes.length, pending: a.pad.pending.length, type: a.strokeInfo(a.strokes.length - 1).type };
+    return { alone, held, after, held2, kept };
+  });
+  ok(brush.alone.n === 1 && brush.alone.pending === 0, 'with no pen about, a finger stroke is ink at once');
+  ok(brush.held.n === 2 && brush.held.pending === 1 && /waiting/.test(brush.held.why), `after the pen, a brief touch waits (${JSON.stringify(brush.held)})`);
+  ok(brush.after.n === 3 && brush.after.pending === 0, `the pen following drops it (${JSON.stringify(brush.after)})`);
+  ok(brush.held2.pending === 1 && brush.kept.n === 4 && brush.kept.pending === 0 && brush.kept.type === 'touch', `a brief touch the pen does not follow is ink after 1.5 s (${JSON.stringify(brush.kept)})`);
+  await page.evaluate(() => { a.pad.penSeen = -1e9; });
   await page.evaluate(() => { a.removeAttribute('auto'); a.clear(); a.mode = 'draw'; });
 
   console.log('what wrote each stroke (strokeInfo)');
   const info = await page.evaluate(() => {
-    a.setAttribute('auto', 'false'); a.clear(); a.mode = 'draw'; a.pad.penUntil = 0;
+    a.setAttribute('auto', 'false'); a.clear(); a.mode = 'draw'; a.pad.penUntil = 0; a.pad.penSeen = -1e9;
     line(a, 'mouse', 1, 20, 20, 120, 30);
     line(a, 'touch', 61, 20, 60, 120, 70, { width: 12, height: 9 });
     line(a, 'touch', 62, 20, 100, 120, 110, { width: 1, height: 1 });
@@ -279,7 +305,7 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
     const st = a.getState(); a.clear(); a.setState(st);
     r.types = st.types; r.kept = a.pad.strokes.map(x => a.pad.strokeInfo(x).type);
     a.strokes = [[[10, 10], [20, 20]]]; r.setter = a.pad.strokeInfo(0);
-    a.removeAttribute('auto'); a.clear(); a.pad.penUntil = 0;
+    a.removeAttribute('auto'); a.clear(); a.pad.penUntil = 0; a.pad.penSeen = -1e9;
     return r;
   });
   const I = info.got;

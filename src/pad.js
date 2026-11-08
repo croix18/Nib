@@ -49,20 +49,42 @@ function clustersOf(strokes) {
   }
   return [].concat(...rows.map(r => r.items.sort((p, q) => p.b[0] - q.b[0]).map(it => it.g)));
 }
-// Pieces of one line of writing left apart by the spaces in it: a piece whose reading ends in + − · × ÷ < > ≤ ≥ ≠ ±
+// Pieces of writing that belong together but were left apart by the spaces between them. A line of working that only
+// asks ("x =", "y <") under a piece is joined to that piece (an equation, or two of them), however far the writer
+// dropped it (within 2.5 line heights). Pieces of one line left apart by the spaces in it: a piece whose reading ends in + − · × ÷ < > ≤ ≥ ≠ ±
 // (not =: "7 − 1 =" is whole, and the problem beside it is another) is joined to the piece to its right on the same
 // row; a piece whose reading begins with an operator (= included) is joined to the piece to its left. Within 2.5
 // writing heights across, sharing half the smaller height. Returns the new groups (in the order of the pieces) or
 // null when there is nothing to join.
+const ASKS = /^\s*[a-zA-Z]\s*(?:=|<|>|\\(?:le|ge|ne|leq|geq|neq)(?![a-zA-Z]))\s*$/;
 const OP_END = /(?:\\(?:cdot|times|div|le|ge|ne|pm|leq|geq|neq)|[+\-<>·×÷])\s*$/, OP_START = /^\s*(?:\\(?:cdot|times|div|le|ge|ne|pm|leq|geq|neq)(?![a-zA-Z])|[+<>=·×÷])/;
 function joinOperands(parts) {
   if (parts.length < 2) return null;
   const P = parts.map(p => {
     const r = p.result, lines = r && r.lines ? r.lines : [];
     const last = lines.length ? lines[lines.length - 1].latex : '', first = lines.length ? lines[0].latex : '';
-    return { box: p.strokes.map(sbox).reduce(ubox), ends: lines.length === 1 && OP_END.test(last), begins: lines.length === 1 && OP_START.test(first) && !/^\s*-/.test(first) };
+    return { box: p.strokes.map(sbox).reduce(ubox), n: Math.max(lines.length, 1), ends: lines.length === 1 && OP_END.test(last), begins: lines.length === 1 && OP_START.test(first) && !/^\s*-/.test(first),
+      asks: lines.length === 1 && ASKS.test(first) };
   });
   const h = b => Math.max(b[3] - b[1], 1), order = P.map((_, i) => i).sort((a, b) => P[a].box[0] - P[b].box[0]);
+  // "x =" (a letter and a relation, nothing after) under a piece of writing asks about it: joined to the nearest piece
+  // above it (within 2.5 line heights, overlapping it or within a height to the side), however the two were spaced
+  for (let i = 0; i < P.length; i++) {
+    const A = P[i];
+    if (!A.asks) continue;
+    let best = -1, gap = Infinity;
+    for (let j = 0; j < P.length; j++) {
+      if (j === i) continue;
+      const B = P[j], lh = h(B.box) / B.n, gy = A.box[1] - B.box[3];
+      if (gy < -0.3 * Math.min(h(A.box), lh)) continue;                                      // not above it
+      const side = Math.max(0, B.box[0] - A.box[2], A.box[0] - B.box[2]);
+      if (side > Math.max(h(A.box), lh) || gy > 2.5 * Math.max(h(A.box), lh)) continue;
+      if (gy < gap) { gap = gy; best = j; }
+    }
+    if (best < 0) continue;
+    const merged = parts[best].idx.concat(parts[i].idx).sort((a, b) => a - b);
+    return parts.map((p, q) => (q === best ? merged : q === i ? null : p.idx)).filter(Boolean);
+  }
   for (let k = 0; k < order.length; k++) {
     const i = order[k], A = P[i];
     // the nearest piece to the right on A's row
@@ -122,6 +144,8 @@ class Pad {
     this.ctx = c.getContext('2d');
     this.ptrs = new Map();          // pointerId -> the stroke (or erase) that pointer is making right now
     this.penUntil = 0;              // touch is ignored until then (a pen is down, or was a moment ago)
+    this.penSeen = -1e9;            // when the pen was last heard from (a pen session: within 30 s)
+    this.pending = [];              // brief touch strokes waiting 1.5 s to see whether the pen follows (a hand brushing the board)
     this.why = '';                  // what the last pointerdown did (for a diagnostic overlay)
     this.revealed = new Set();      // answers shown by a tap on their chip (keys: the line's strokes and the answer)
     this.timer = null; this.gen = 0; this._raf = 0;
@@ -188,7 +212,8 @@ class Pad {
     // a pointer that has gone quiet for 1.5 s lost its pointerup somewhere: finish it and take the new one
     for (const P of [...this.ptrs.values()]) if (now - P.last > 1500 || P.id === e.pointerId) this._finish(P, null);
     if (type === 'pen') {
-      this.penUntil = now + 1000;
+      this.penUntil = now + 1000; this.penSeen = now;
+      this._brushed();                                    // brief touches just before the pen were the hand
       // the palm landed first: a touch only just begun, or one resting (hardly moved however long it has been down)
       for (const P of [...this.ptrs.values()]) if (P.type === 'touch' && (this._young(P, now) || this._still(P))) this._drop(P);
     }
@@ -216,7 +241,7 @@ class Pad {
   }
   _move(e) {
     const now = performance.now();
-    if (e.pointerType === 'pen') this.penUntil = now + 1000;
+    if (e.pointerType === 'pen') { this.penUntil = now + 1000; this.penSeen = now; if (this.pending.length) this._brushed(); }
     const P = this.ptrs.get(e.pointerId);
     if (!P) return;
     e.preventDefault();
@@ -234,7 +259,7 @@ class Pad {
     }
   }
   _up(e) {
-    if (e.pointerType === 'pen') this.penUntil = performance.now() + 1000;
+    if (e.pointerType === 'pen') { this.penUntil = performance.now() + 1000; this.penSeen = performance.now(); }
     const P = this.ptrs.get(e.pointerId);
     if (P) this._finish(P, e);
   }
@@ -263,13 +288,39 @@ class Pad {
       this.el.dispatchEvent(new CustomEvent('nib:tap', { detail: { x: s[0][0], y: s[0][1], pointerType: P.type }, bubbles: true }));
       return;
     }
+    const now = performance.now(), penSession = now - this.penSeen < 30000;
     // a finger's tap while a pen is in use (within the last 30 s) is the heel of the hand, not a decimal point
-    if (P.type === 'touch' && this.penUntil && performance.now() - (this.penUntil - 1000) < 30000 && span < 6) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
+    if (P.type === 'touch' && penSession && span < 6) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
     this.info.set(s, { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null });
     if (P.fix && this.mode === 'fix') this.mode = 'draw';   // written with Fix on: the writer is writing again
+    // a brief touch (under 400 ms) while the pen is the writer's instrument may be the hand brushing the board on its
+    // way down: it waits 1.5 s, shown as ink, and goes if the pen follows; a finger writing on its own waits nothing
+    if (P.type === 'touch' && penSession && !P.fix && now - P.t0 < 400) {
+      this.why = 'touch: waiting for the pen';
+      this.pending.push({ s, timer: setTimeout(() => this._commit(s), 1500) });
+      this.redraw();
+      return;
+    }
     this.strokes.push(s);
     this._push({ add: s });
     this._changed();
+  }
+  // a brief touch stroke the pen did not follow: ink after all
+  _commit(s) {
+    const i = this.pending.findIndex(q => q.s === s);
+    if (i < 0) return;
+    this.pending.splice(i, 1);
+    this.strokes.push(s);
+    this._push({ add: s });
+    this._changed();
+  }
+  // the pen came: whatever brief touches were waiting were the hand
+  _brushed() {
+    if (!this.pending.length) return;
+    for (const q of this.pending) clearTimeout(q.timer);
+    this.pending = [];
+    this.why = 'dropped: the hand before the pen';
+    this.redraw();
   }
   // a stroke that should never have been (a palm under a pen): gone, and whatever it erased is back
   _drop(P) {
@@ -474,6 +525,7 @@ class Pad {
     this._ink();
     for (const s of this.strokes) if (!shown.has(s)) this._stroke(s);
     for (const P of this.ptrs.values()) if (P.cur && !(image && P.chip)) this._stroke(P.cur);
+    if (!image) for (const q of this.pending) this._stroke(q.s);   // brief touches waiting to see whether the pen follows
     if (!image) {
       // the eraser: a faint ring where it is
       for (const P of this.ptrs.values()) {
@@ -881,7 +933,8 @@ class Pad {
     this.history.push(h); this._changed();
   }
   clear() {
-    if (!this.strokes.length) return;
+    for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
+    if (!this.strokes.length) { this.redraw(); return; }
     this.trainFlush();
     const h = { erase: this.strokes.map((s, i) => ({ i, s })).reverse(), clear: true, fixes: this.fixes.slice(), revealed: [...this.revealed] };
     this._apply(h, false);
@@ -903,7 +956,7 @@ class Pad {
     this.history = []; this.future = []; this.fixes = []; this.revealed = new Set(); this._changed();
     if (this.strokes.length && this.o.auto) this._schedule(0);   // no need to wait for a pen to rest
   }
-  _dropAll() { for (const P of [...this.ptrs.values()]) this._drop(P); }
+  _dropAll() { for (const P of [...this.ptrs.values()]) this._drop(P); for (const q of this.pending) clearTimeout(q.timer); this.pending = []; }
   // Everything that makes up the pad's page, to keep: the strokes (x, y to 0.1 px), the corrections (as indices
   // into the strokes) and the answers shown by a tap (the strokes of their line, and the answer).
   getState() {
@@ -1020,7 +1073,7 @@ class Pad {
     const rec = {
       key, t: Date.now(), w: Math.round(this.canvas.width / d), h: Math.round(this.canvas.height / d), view: this.o.view,
       strokes: st.map(s => s.map(q => [r1(q[0] - x0), r1(q[1] - y0), Math.round((q[2] || 0) - t0)])),
-      types: st.map(s => this.strokeInfo(s).type),
+      types: st.map(s => this.strokeInfo(s).type), widths: st.map(s => this.strokeInfo(s).width),
       latex: r.latex,
       symbols: r.symbols.map(sy => ({ label: sy.label, strokes: sy.strokes.slice() })),
       fixed: this.fixes.filter(f => f.strokes.length && f.strokes.every(x => st.includes(x))).map(f => ({ strokes: f.strokes.map(x => st.indexOf(x)), label: f.label })),
@@ -1108,7 +1161,7 @@ class Pad {
     for (const p of this._trainParts()) this._trainSkip.add(this._trainKey(p.strokes));
   }
   destroy() {
-    clearTimeout(this.timer); clearTimeout(this._trainTimer); this.gen++; this.anim = null; this.ptrs.clear();
+    clearTimeout(this.timer); clearTimeout(this._trainTimer); this.gen++; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
     if (this._raf) cancelAnimationFrame(this._raf);
     if (typeof window !== 'undefined') window.removeEventListener('nib:hand', this._handChanged);
     if (this.ro) this.ro.disconnect();

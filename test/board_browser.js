@@ -700,7 +700,7 @@ function makeHandFile() {
       ok(dl && /^Nib-training-\d{4}-\d{2}-\d{2}\.json$/.test(dl.name) && dl.type === 'application/json', 'Save training downloads Nib-training-<date>.json: ' + (dl && dl.name));
       ok(F && F.format === 'nib-training' && F.version === 1 && !isNaN(Date.parse(F.exported)) && /T/.test(F.exported) && F.engine === ver && Array.isArray(F.records) && F.records.length === nR,
         `{format: 'nib-training', version: 1, exported, engine: ${F && F.engine}, records: ${F && F.records.length}}`);
-      ok(F && JSON.stringify(Object.keys(F.records[0]).sort()) === JSON.stringify(['answered', 'confidence', 'fixed', 'key', 'latex', 'strokes', 'symbols', 't', 'types', 'view', 'w', 'h'].sort()), 'each record has exactly the fields of the format: ' + (F && Object.keys(F.records[0]).join(',')));
+      ok(F && JSON.stringify(Object.keys(F.records[0]).sort()) === JSON.stringify(['answered', 'confidence', 'fixed', 'key', 'latex', 'strokes', 'symbols', 't', 'types', 'widths', 'view', 'w', 'h'].sort()), 'each record has exactly the fields of the format: ' + (F && Object.keys(F.records[0]).join(',')));
       // the converter on the saved file
       if (F) {
         const dir = path.join(out, 'downloads'); fs.mkdirSync(dir, { recursive: true });
@@ -928,6 +928,49 @@ function makeHandFile() {
         await page.click('#dright'); await wait(400);
         R = await T();
         ok(R.some(r => r.item === 7 && r.verified === true && r.expect === '2\\cdot 22+2=' && r.types.every(t => t === 'pen')), 'Right keeps it, verified, written with the pen');
+      }
+      // prompt 36 as he wrote it: 4x − 7 = 21 with "x =" dropped well under it (his pen strokes from the third file): one piece, matched
+      await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('nib-drill-v1')); d.pos = 35; d.active = true; localStorage.setItem('nib-drill-v1', JSON.stringify(d)); });
+      await page.reload({ waitUntil: 'load' }); await wait(800);
+      B = await bar();
+      ok(!B.hidden && B.n === `36 / ${N}` && /first line, then the second/.test(B.how), `prompt 36 after a reload: "${B.prompt}" — ${B.how}`);
+      {
+        const T3 = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'training_2026-11-07c.json'), 'utf8'));
+        const eq = T3.records[100].strokes, xe = T3.records[101].strokes, hEq = Math.max(...eq.flat().map(p => p[1]));
+        const cb6 = await (await page.$('#pad canvas')).boundingBox(), ox = cb6.x + 80, oy = cb6.y + cb6.height * 0.4;
+        const penWrite = async strokes => { for (const s of strokes) {
+          const P = s.map(p => [ox + p[0], oy + p[1]]);
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: P[0][0], y: P[0][1], button: 'left', clickCount: 1, pointerType: 'pen' });
+          for (let i = 1; i < P.length; i++) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: P[i][0], y: P[i][1], button: 'left', pointerType: 'pen' });
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: P[P.length - 1][0], y: P[P.length - 1][1], button: 'left', clickCount: 1, pointerType: 'pen' });
+        } };
+        await penWrite(eq);
+        await penWrite(xe.map(s => s.map(p => [p[0] + 150, p[1] + hEq + 70])));      // 70 px under: further than nearness alone joins
+        await until('match');
+        B = await bar();
+        const parts36 = await page.evaluate(() => (document.getElementById('pad').pad.result.parts || []).length);
+        ok(B.state === 'match' && parts36 === 1 && /Read: 4x − 7 = 21 \/ x = → 7/.test(B.read), `"x =" 70 px under the equation joins it, and the drill matches both lines: "${B.read}" (${parts36} piece)`);
+        await page.click('#dright'); await wait(400);
+        R = await T();
+        const r36 = R.find(r => r.item === 36 && r.verified === true);
+        ok(r36 && r36.latex === '\\begin{gathered}4x-7=21 \\\\ x=\\end{gathered}' && r36.strokes.length === eq.length + xe.length && Array.isArray(r36.widths), `Right keeps both lines as one record (${r36 ? r36.strokes.length : 0} strokes, with widths)`);
+      }
+      // Finger: Ignored (pen only) in Settings — a finger writes nothing; a finger prompt says so
+      await page.click('#gear'); await wait(150); await page.click('#settings .seg[data-set="finger"] button[data-v="ignored"]'); await wait(150); await closeSettings();
+      {
+        const cbg = await (await page.$('#pad canvas')).boundingBox(), n0 = await page.evaluate(() => document.getElementById('pad').strokes.length);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cbg.x + 300, y: cbg.y + 500 }] });
+        for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cbg.x + 300 + 8 * i, y: cbg.y + 500 + i }] });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(1800);
+        ok(await page.evaluate(() => document.getElementById('pad').strokes.length) === n0 && await page.evaluate(() => document.getElementById('pad').hasAttribute('pen-only')), 'Finger: Ignored — a finger stroke writes nothing (pen-only on the pad)');
+        await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('nib-drill-v1')); d.pos = 55; d.active = true; localStorage.setItem('nib-drill-v1', JSON.stringify(d)); });
+        await page.reload({ waitUntil: 'load' }); await wait(800);
+        B = await bar();
+        ok(B.n === `56 / ${N}` && /Finger is set to Ignored/.test(B.read) && await page.evaluate(() => document.getElementById('pad').hasAttribute('pen-only')), `the setting is kept, and a finger prompt says so: "${B.read}"`);
+        await page.click('#gear'); await wait(150); await page.click('#settings .seg[data-set="finger"] button[data-v="writes"]'); await wait(150); await closeSettings();
+        ok(!(await page.evaluate(() => document.getElementById('pad').hasAttribute('pen-only'))) && !/Finger is set/.test((await bar()).read), 'Finger: Writes again');
+        await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('nib-drill-v1')); d.pos = 37; localStorage.setItem('nib-drill-v1', JSON.stringify(d)); });
+        await page.reload({ waitUntil: 'load' }); await wait(800);
       }
       await page.click('#dstop'); await wait(200);
       // tidy up: forget the log, training off
