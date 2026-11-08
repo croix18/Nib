@@ -1089,20 +1089,29 @@ function makeHandFile() {
     await page.click('#gear'); await wait(100); await page.click('#delpage'); await wait(100); await page.click('#delyes'); await wait(500);
   }
 
-  console.log('what the panel sends (hold the Nib. mark)');
+  console.log('what the panel sends (More, Pointer events; or hold the Nib. mark)');
   {
-    const mb = await (await page.$('#mark')).boundingBox();
-    await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2); await page.mouse.down(); await wait(750); await page.mouse.up();
-    ok(!(await page.$eval('#diag', e => e.hidden)), 'a long press on "Nib." opens the pointer overlay');
+    // at 1280 px the mark makes room for the tools (since the Lasso): More, Pointer events opens the overlay at any width
+    ok(await page.$eval('#mark', e => getComputedStyle(e).display === 'none'), 'at 1280 px the "Nib." mark is not shown (the rail keeps one row)');
+    await more('#morediag'); await wait(150);
+    ok(!(await page.$eval('#diag', e => e.hidden)) && await page.$eval('#morepop', e => e.hidden), 'More, Pointer events opens the pointer overlay');
     const cb = await (await page.$('#pad canvas')).boundingBox();
     await tapX(cb.x + 600, cb.y + 500); await wait(150);
     const t = await page.$eval('#diag', e => e.textContent);
     ok(/down\s+touch\s+w [\d.]+\s+h [\d.]+\s+p [\d.]+\s+b \d+\s+primary\s+draw/.test(t), 'it lists each event: type, pointerType, width, height, pressure, buttons, isPrimary, and what the board did');
+    await more('#morediag'); await wait(150);
+    ok(await page.$eval('#diag', e => e.hidden), 'and More, Pointer events again closes it');
+    await page.click('#undo'); await wait(300);
+    // on a wide screen, holding the mark does the same
+    await page.setViewport({ width: 1440, height: 760 }); await wait(400);
+    const mb = await (await page.$('#mark')).boundingBox();
+    await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2); await page.mouse.down(); await wait(750); await page.mouse.up();
+    ok(!(await page.$eval('#diag', e => e.hidden)), 'on a wider screen, a long press on "Nib." opens it too');
     await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2); await page.mouse.down(); await wait(200); await page.mouse.up(); await wait(500);
     ok(!(await page.$eval('#diag', e => e.hidden)), 'a short press does nothing');
     await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2); await page.mouse.down(); await wait(750); await page.mouse.up();
     ok(await page.$eval('#diag', e => e.hidden), 'another long press closes it');
-    await page.click('#undo'); await wait(300);
+    await page.setViewport({ width: 1280, height: 760 }); await wait(400);
   }
 
   console.log('two students at once, and the small things');

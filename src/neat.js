@@ -627,25 +627,85 @@ for (const ch of Object.keys(DEFAULT_HAND)) {
     return out;
   });
 }
-// label -> strokes (y down, any units) to draw an answer's symbol with
+// label -> strokes (y down, any units) to draw an answer's symbol with: the writer's own symbol of that label where the
+// board has one read surely (p >= 0.6) — from the problem itself first (book.near(k): the k-th of res.parts), then from
+// the board's equations (parts with =, <, >, ≤, ≥ or ≠) — then the Replicator hand, then (a letter) any of the board's,
+// then the built-in hand. Of several, the most typical (nearest all the others in shape, and the reference glyph), not
+// the one read most surely: a lone straight stroke is read as a 1 with great certainty — a stroke of an X, a letter of
+// a word written on the board — and as "the clearest 1" it once drew an answer's 15 as "\5". Words on the board (no
+// relation sign) never lend an answer their letters-read-as-digits.
+const SAMPLE_REL = new Set(['=', '<', '>', '\\le', '\\ge', '\\ne']);
+function sampleShape(pts) {
+  const all = []; for (const s of pts || []) for (const q of s) all.push(q);
+  if (!all.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const q of all) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; }
+  const k = Math.max(x1 - x0, y1 - y0) || 1, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const P = all.map(q => [(q[0] - cx) / k, (q[1] - cy) / k]), N = 24;
+  const d = [0]; for (let i = 1; i < P.length; i++) d.push(d[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+  const L = d[d.length - 1], out = [];
+  for (let n = 0, i = 0; n < N; n++) {
+    const t = L * n / (N - 1);
+    while (i < P.length - 2 && d[i + 1] < t) i++;
+    const f = P.length < 2 || d[i + 1] === d[i] ? 0 : Math.min(1, Math.max(0, (t - d[i]) / (d[i + 1] - d[i])));
+    const a = P[i], b = P[Math.min(i + 1, P.length - 1)];
+    out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+  }
+  return out;
+}
+function sampleDist(A, B) {
+  let f = 0, r = 0; const n = A.length;
+  for (let i = 0; i < n; i++) { f += Math.hypot(A[i][0] - B[i][0], A[i][1] - B[i][1]); r += Math.hypot(A[i][0] - B[n - 1 - i][0], A[i][1] - B[n - 1 - i][1]); }
+  return Math.min(f, r) / n;                                 // written either way round
+}
 function sampleBook(res, input, hand) {
-  const ink = inkOf(input), best = new Map();
+  const ink = inkOf(input), by = new Map(), eqPart = new Set();
+  ((res && res.parts) || []).forEach((pt, k) => { if (((pt.result && pt.result.symbols) || []).some(sy => SAMPLE_REL.has(sy.label))) eqPart.add(k); });
+  const whole = !(res && res.parts);                       // one expression: all of it is the problem's own
   for (const sy of (res && res.symbols) || []) {
     const c = sy.candidates && sy.candidates[0], p = sy.fixed ? 1 : c && c[0] === sy.label ? c[1] : 0;
     const pts = sy.strokes.map(i => ink[i] || []).filter(q => q.length);
     if (!pts.length) continue;
-    const b = best.get(sy.label);
-    if (!b || p > b.p) best.set(sy.label, { p, pts });
+    const part = typeof sy.part === 'number' ? sy.part : -1;
+    if (!by.has(sy.label)) by.set(sy.label, []);
+    by.get(sy.label).push({ p, pts, part, eq: whole || eqPart.has(part), shape: null });
   }
-  return label => {
-    const b = best.get(label);
-    if (b && b.p >= 0.6) return b.pts;
-    const ch = HAND_CHAR[label] || label;
-    if (hand && hand[ch] && hand[ch].length) return hand[ch];
-    if (b && /^[A-Za-z]$/.test(label)) return b.pts;   // a letter of the question, however it was written, before the built-in one
-    if (DEFAULT_GLYPHS[label]) return DEFAULT_GLYPHS[label];
-    return b ? b.pts : null;                      // a letter of the question, however it was written
+  const refOf = label => { const ch = HAND_CHAR[label] || label; return (hand && hand[ch] && hand[ch].length && hand[ch]) || DEFAULT_GLYPHS[label] || null; };
+  // the most typical of a list: the least summed distance in shape to the others and to the reference glyph
+  const typical = (list, label) => {
+    if (list.length < 2) return list[0] || null;
+    for (const c of list) if (!c.shape) c.shape = sampleShape(c.pts);
+    const ref = refOf(label), R = ref ? sampleShape(ref) : null;
+    let best = null, bs = Infinity;
+    for (const c of list) {
+      if (!c.shape) continue;
+      let d = R ? sampleDist(c.shape, R) : 0;
+      for (const o of list) if (o !== c && o.shape) d += sampleDist(c.shape, o.shape);
+      d -= 1e-3 * c.p;                                       // a tie: the surer reading
+      if (d < bs) { bs = d; best = c; }
+    }
+    return best;
   };
+  const memo = new Map();
+  const make = near => label => {
+    const key = near + '|' + label;
+    if (memo.has(key)) return memo.get(key);
+    const all = by.get(label) || [], sure = all.filter(c => c.p >= 0.6);
+    let c = (near >= 0 || whole ? typical(sure.filter(o => whole || o.part === near), label) : null) || typical(sure.filter(o => o.eq), label);
+    let out = c ? c.pts : null;
+    if (!out) {
+      const ch = HAND_CHAR[label] || label;
+      if (hand && hand[ch] && hand[ch].length) out = hand[ch];
+      else if (/^[A-Za-z]$/.test(label) && all.length) out = (typical(sure, label) || typical(all, label)).pts;   // a letter of the question, however it was written
+      else if (DEFAULT_GLYPHS[label]) out = DEFAULT_GLYPHS[label];
+      else { c = typical(sure, label) || typical(all, label); out = c ? c.pts : null; }
+    }
+    memo.set(key, out);
+    return out;
+  };
+  const book = make(-1);
+  book.near = k => (typeof k === 'number' && k >= 0 ? make(k) : book);
+  return book;
 }
 
 // ------------------------------------------------------------------ glyphs: the writer's Replicator handwriting

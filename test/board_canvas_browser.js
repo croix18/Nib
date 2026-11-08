@@ -102,19 +102,20 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     const rail = await P(() => document.getElementById('rail').getBoundingClientRect().height);
     ok(rail < 64, `the tools fit one row on a 1280 px board (${Math.round(rail)} px tall)`);
     const modes = {};
-    for (const t of ['select', 'hand', 'pen', 'marker', 'highlighter', 'eraser', 'shape', 'text', 'laser']) {
+    const modeNow = () => P(() => { const p = document.getElementById('pad'); return p.mode + (p.mode === 'draw' ? ':' + p.tool.kind : p.pad.lassoOnly ? ':lasso' : ''); });
+    for (const t of ['select', 'lasso', 'hand', 'pen', 'marker', 'highlighter', 'eraser', 'shape', 'text', 'laser']) {
       await tool(t); await wait(60);
-      modes[t] = await P(() => { const p = document.getElementById('pad'); return p.mode + (p.mode === 'draw' ? ':' + p.tool.kind : ''); });
+      modes[t] = await modeNow();
       if (t === 'eraser') { await tool('eraser'); await wait(60); }
     }
-    ok(JSON.stringify(modes) === JSON.stringify({ select: 'select', hand: 'pan', pen: 'draw:pen', marker: 'draw:marker', highlighter: 'draw:highlighter', eraser: 'erase', shape: 'shape', text: 'text', laser: 'laser' }),
+    ok(JSON.stringify(modes) === JSON.stringify({ select: 'select', lasso: 'select:lasso', hand: 'pan', pen: 'draw:pen', marker: 'draw:marker', highlighter: 'draw:highlighter', eraser: 'erase', shape: 'shape', text: 'text', laser: 'laser' }),
       'each tool sets what the board does: ' + JSON.stringify(modes));
     const keys = {};
-    for (const [k, want] of [['v', 'select'], ['h', 'pan'], ['m', 'draw:marker'], ['i', 'draw:highlighter'], ['r', 'shape'], ['t', 'text'], ['l', 'laser'], ['p', 'draw:pen']]) {
+    for (const [k, want] of [['v', 'select'], ['o', 'select:lasso'], ['h', 'pan'], ['m', 'draw:marker'], ['i', 'draw:highlighter'], ['r', 'shape'], ['t', 'text'], ['l', 'laser'], ['p', 'draw:pen']]) {
       await page.keyboard.press(k); await wait(40);
-      keys[k] = (await P(() => { const p = document.getElementById('pad'); return p.mode + (p.mode === 'draw' ? ':' + p.tool.kind : ''); })) === want;
+      keys[k] = (await modeNow()) === want;
     }
-    ok(Object.values(keys).every(Boolean), 'and their keys: V H M I R T L P ' + JSON.stringify(keys));
+    ok(Object.values(keys).every(Boolean), 'and their keys: V O H M I R T L P ' + JSON.stringify(keys));
     await page.keyboard.press('m'); await page.keyboard.press('e'); await wait(40);
     const er = await P(() => document.getElementById('pad').mode);
     await page.keyboard.press('e'); await wait(40);
@@ -283,6 +284,16 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     await wait(150);
     ok((await looks()).some(e => e.tool === 'text' && e.text === 'Exit ticket'), 'text pasted from elsewhere becomes a text box');
     await page.click('#gear'); await wait(100); await page.click('#delpage'); await page.click('#delyes'); await wait(300);
+    await clear(); await use('pen');
+    // the lasso (8 Nov, Croix: "Can I also get a lasso tool"): a loop round writing, starting on the writing itself,
+    // takes what it goes round — with the mouse too — and the bar comes up for it
+    await drag([[100, 150], [100, 230]]); await drag([[140, 150], [140, 230]]); await drag([[400, 150], [400, 230]]);
+    await page.click('[data-tool="lasso"]'); await wait(80);
+    await drag([[100, 190], [60, 120], [200, 110], [210, 260], [60, 270], [100, 190]], 8); await wait(150);
+    const las = await P(() => { const p = document.getElementById('pad').pad; return { n: p.selected.length, x: p.strokes[0][0][0], bar: !document.getElementById('selbar').hidden, on: document.querySelector('[data-tool="lasso"]').getAttribute('aria-checked') }; });
+    ok(las.n === 2 && las.x === 100 && las.bar && las.on === 'true', `Lasso: a loop drawn from on the writing takes the two strokes it goes round, moves nothing, and the bar comes up (${JSON.stringify(las)})`);
+    await page.keyboard.press('Delete'); await wait(80);
+    ok(await count() === 1, 'and Delete takes them away');
     await clear(); await use('pen');
   }
 

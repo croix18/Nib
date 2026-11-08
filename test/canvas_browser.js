@@ -387,6 +387,66 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) <= e;
     ok(key.a === null && key.b === null, 'an empty page has no content either way');
   }
 
+  console.log('what Croix found on his tablet (8 Nov): the pen skipping, and a lasso');
+  {
+    // the S Pen resting a moment in the middle of a stroke (a hand thinking) made what was written so far a straight line
+    // and dropped the rest of the stroke: now the hand moving on means it was writing, and all of it is kept as ink
+    await reset();
+    const go = (pts, holdAt, holdMs, end = 0) => page.evaluate((pts, holdAt, holdMs, end) => new Promise(res => {
+      const P = c.pad; let i = 0;
+      ptr('down', 'pen', 71, pts[0][0], pts[0][1], { pressure: 0.4 });
+      const step = () => {
+        i++;
+        if (i >= pts.length) { setTimeout(() => { ptr('up', 'pen', 71, pts[pts.length - 1][0], pts[pts.length - 1][1]); const s = P.strokes[P.strokes.length - 1], E = P.lookOf(s); res({ n: P.strokes.length, len: s.length, tool: E.tool || 'pen', shape: E.shape || null }); }, end); return; }
+        ptr('move', 'pen', 71, pts[i][0], pts[i][1], { pressure: 0.4 });
+        if (i === holdAt) {                                // still, but for the hand's tremor (under a pixel)
+          let t = 0; const tick = () => { t += 50; ptr('move', 'pen', 71, pts[i][0] + (t % 100 ? 0.4 : -0.4), pts[i][1], { pressure: 0.4 }); if (t < holdMs) setTimeout(tick, 50); else setTimeout(step, 8); };
+          setTimeout(tick, 50);
+        } else setTimeout(step, 8);
+      };
+      setTimeout(step, 8);
+    }), pts, holdAt, holdMs, end);
+    const seg = (x0, y0, x1, y1, n = 20) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n]);
+    const ell = seg(100, 100, 100, 260).concat(seg(100, 260, 260, 260).slice(1));
+    let r = await go(ell, 20, 800);
+    ok(r.n === 1 && r.tool === 'pen' && r.len >= 38, `a pause of 0.8 s in the middle of a stroke, then on: one pen stroke, all of it kept (${JSON.stringify(r)})`);
+    await reset();
+    r = await go(seg(300, 100, 300, 160), 20, 800, 0);
+    ok(r.tool === 'pen', `a short line (60 px) held still at its end stays writing (${JSON.stringify(r)})`);
+    await reset();
+    await putRow('arith_001', [100, 300, 360, 60]);   // writing on the board: its strokes some 30-60 px
+    r = await go(seg(500, 300, 500, 400), 20, 800);
+    ok(r.tool === 'pen', `beside writing, a 100 px stroke held still stays writing (a 1, a fraction bar): ${JSON.stringify(r)}`);
+    r = await go(seg(100, 500, 700, 500, 30), 30, 800);
+    ok(r.tool === 'shape' && r.shape === 'line', `a line well beyond the writing's size, held still at its end, becomes a clean line (${JSON.stringify(r)})`);
+    // the lasso tool: a loop drawn round what to select, starting anywhere, with a mouse too
+    await reset();
+    const las = await page.evaluate(() => {
+      const P = c.pad;
+      line('mouse', 1, [[100, 100], [100, 200]]); line('mouse', 1, [[160, 100], [160, 200]]); line('mouse', 1, [[400, 100], [400, 200]]);
+      P.setMode('lasso');
+      const mode = P.mode, cur = P.canvas.style.cursor;
+      // a loop round the first two, starting on the first stroke itself (Select would pick that stroke up and move it)
+      const loop = [[100, 150], [60, 80], [200, 80], [210, 220], [60, 230], [100, 150]];
+      ptr('down', 'mouse', 1, loop[0][0], loop[0][1]);
+      for (const q of loop.slice(1)) for (let k = 1; k <= 6; k++) ptr('move', 'mouse', 1, q[0], q[1]);
+      ptr('up', 'mouse', 1, 100, 150);
+      const picked = P.selected.length, moved = P.strokes[0][0][0];
+      // a drag from inside the selection moves it
+      ptr('down', 'mouse', 1, 130, 150); for (let k = 1; k <= 5; k++) ptr('move', 'mouse', 1, 130 + 10 * k, 150); ptr('up', 'mouse', 1, 180, 150);
+      const after = [P.strokes[0][0][0], P.strokes[1][0][0], P.strokes[2][0][0]];
+      // a tap on the third picks it alone
+      ptr('down', 'pen', 7, 400, 150); ptr('up', 'pen', 7, 400, 150);
+      const tap = P.selected.length === 1 && P.selected[0] === P.strokes[2];
+      P.setMode('select'); const back = P.lassoOnly;
+      P.setMode('draw');
+      return { mode, cur, picked, moved, after, tap, back };
+    });
+    ok(las.mode === 'select' && las.cur === 'crosshair' && las.picked === 2 && las.moved === 100, `the lasso tool: a loop drawn with the mouse, starting on writing, selects what it goes round (${las.picked}), nothing moved by it`);
+    ok(las.after[0] === 150 && las.after[1] === 210 && las.after[2] === 400, `what the lasso took moves from inside it (${las.after})`);
+    ok(las.tap && las.back === false, 'a tap picks one thing; Select is Select again after it');
+  }
+
   console.log('a crowded canvas');
   await reset();
   const perf = await page.evaluate(() => {

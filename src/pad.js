@@ -124,13 +124,13 @@ function joinParts(parts) {
   });
   const lines = [], symbols = [], tree = [];
   let conf = 1, ms = 0;
-  for (const p of parts) {
+  parts.forEach((p, k) => {
     const r = p.result, m = i => p.idx[i];
-    if (!r || !r.lines.length) continue;
+    if (!r || !r.lines.length) return;
     lines.push(...r.lines); tree.push(...r.tree.map(row => remap(row, m)));
-    symbols.push(...r.symbols.map(sy => Object.assign({}, sy, { strokes: sy.strokes.map(m) })));
+    symbols.push(...r.symbols.map(sy => Object.assign({}, sy, { strokes: sy.strokes.map(m), part: k })));   // part: its index in parts
     conf = Math.min(conf, r.confidence); ms += r.ms || 0;
-  }
+  });
   return {
     latex: lines.length > 1 ? '\\begin{gathered}' + lines.map(l => l.latex).join(' \\\\ ') + '\\end{gathered}' : lines.length ? lines[0].latex : '',
     text: lines.map(l => l.text).join('\n'), lines, symbols, tree, confidence: lines.length ? conf : 0, skew: 0, ms, parts,
@@ -262,6 +262,7 @@ class Pad {
     this.touches = new Map();       // touch pointerId -> {x, y, t} on screen: for two-finger gestures
     this.gesture = null;            // a pan or pinch under way
     this.spacePan = false;          // the space bar is down: a drag pans
+    this.lassoOnly = false;         // select mode from the lasso tool: a drag always draws a lasso, wherever it starts
     this.editing = null;            // the text box being written in
     if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
@@ -395,7 +396,12 @@ class Pad {
       if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) < 0.75 / this.cam.z) continue;
       P.cur.push(p);
       if (P.mode === 'laser') continue;
-      if (P.snap) continue;                                // a shape already: the hand moving on changes nothing
+      if (P.snap) {
+        // held still, it turned into a shape; the hand moving on means it was writing after all (a pause mid-stroke):
+        // it goes on as ink, all of it, as if the hold had never happened
+        if (Math.hypot(p[0] - P.snapAt[0], p[1] - P.snapAt[1]) * this.cam.z <= 6) continue;
+        P.snap = null; P.snapAt = null; this.why = 'draw (moved on after a hold)'; this.redraw();
+      }
       // still for a moment at the end of a line, circle or box: it may become that shape
       if (Math.hypot(p[0] - P.stillAt[0], p[1] - P.stillAt[1]) * this.cam.z > 3) { P.stillAt = p; this._holdTimer(P); }
       if (this._live(P)) this._seg(P);
@@ -568,7 +574,7 @@ class Pad {
   }
   _cursor() {
     const m = this.mode;
-    this.canvas.style.cursor = this.spacePan || m === 'pan' ? 'grab' : m === 'select' ? 'default' : m === 'text' ? 'text' : m === 'laser' ? 'none' : 'crosshair';
+    this.canvas.style.cursor = this.spacePan || m === 'pan' ? 'grab' : m === 'select' ? (this.lassoOnly ? 'crosshair' : 'default') : m === 'text' ? 'text' : m === 'laser' ? 'none' : 'crosshair';
   }
   // ---------------------------------------------------------------- a pointer is lifted
   // a pointer's stroke is done (e: its pointerup / pointercancel, or null when its up was lost)
@@ -1152,7 +1158,8 @@ class Pad {
       const items = [];
       let li = 0, sample = null;
       if (this.o.solve) {
-        // an answer is written with the clearest of each symbol anywhere on the board, then the Replicator hand
+        // an answer is written with the writer's own symbols: the problem's own first, then the board's equations (the
+        // most typical of each, see sampleBook), then the Replicator hand, then the built-in one
         let hand = null;
         try { hand = this.o.hand ? handClean(handOf(this.o.hand)) : handLoad(); } catch (err) { hand = null; }
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
@@ -1162,6 +1169,7 @@ class Pad {
       const settle = style !== 'ink' ? Math.max(0, +this.o.settle || 0) : 0, now = performance.now();
       let holdUntil = 0;
       for (const part of res.parts || [{ strokes: at, result: res }]) {
+        const near = sample && res.parts ? sample.near(res.parts.indexOf(part)) : sample;
         let fresh = false;
         if (settle) {
           let end = 0;
@@ -1208,7 +1216,7 @@ class Pad {
         li += pr.tree.length;
         if (style === 'ink' && !(answers && answers.some(Boolean))) continue;
         let out = null;
-        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample }); } catch (err) { out = null; }
+        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample: near }); } catch (err) { out = null; }
         if (!out) continue;
         const groups = new Map();
         // an answer shown by a tap stays shown while its line (its strokes) and the answer itself are the same
@@ -1396,12 +1404,17 @@ class Pad {
     if (!this.o.hold || P.mode !== 'draw' || P.fix || P.snap || P.chip || typeof shapeRecognize !== 'function') return;
     P.hold = setTimeout(() => {
       if (this.ptrs.get(P.id) !== P || P.snap || !P.cur || P.cur.length < 6) return;
-      const b = sbox(P.cur);
-      if (Math.max(b[2] - b[0], b[3] - b[1]) * this.cam.z < 24) return;     // too small to be meant as a shape
+      const b = sbox(P.cur), big = Math.max(b[2] - b[0], b[3] - b[1]);
       let r = null;
       try { r = shapeRecognize(P.cur, { z: this.cam.z }); } catch (e) { r = null; }
       if (!r || !r.pts || (P.tool.kind === 'highlighter' && r.shape !== 'line')) return;
-      P.snap = r; this.why = 'shape: ' + r.shape;
+      // Only something bigger than the writing is meant as a shape: a 1, a 0 or a fraction bar held still a moment
+      // stays writing (and is read). A line at least 80 px on screen and 4 times the board's typical stroke, anything
+      // else 48 px and 2.5 times (with fewer than three strokes of writing on the board, the pixel sizes alone).
+      const ink = this.ink, line = r.shape === 'line' || r.shape === 'arrow';
+      const ref = ink.length >= 3 ? refSize(ink) : 0;
+      if (big * this.cam.z < (line ? 80 : 48) || big < (line ? 4 : 2.5) * ref) return;
+      P.snap = r; P.snapAt = P.cur[P.cur.length - 1]; this.why = 'shape: ' + r.shape;
       this.redraw();
     }, 600);
   }
@@ -1514,7 +1527,8 @@ class Pad {
       if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
       if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
     }
-    let hit = this.elementAt(p, true);
+    // the lasso tool: a loop drawn round what to select, starting anywhere (on writing too); a tap still picks one thing
+    let hit = this.lassoOnly ? null : this.elementAt(p, true);
     if (hit && !this.selection.has(hit)) {
       const t = this._tool(hit), E = this.info.get(hit) || {};
       if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
@@ -1529,7 +1543,7 @@ class Pad {
       this.redraw();
       return;
     }
-    P.lasso = [p]; P.box = P.type === 'mouse';
+    P.lasso = [p]; P.box = P.type === 'mouse' && !this.lassoOnly;
     if (this.selection.size) { this._setSel([]); this.redraw(); }
   }
   _selectMove(P, p) {
@@ -1650,10 +1664,12 @@ class Pad {
   }
   // what pointers do: 'draw' (this.tool), 'erase', 'fix', 'select', 'pan', 'shape' (this.shapeTool), 'text' (this.textTool), 'laser'
   setMode(m) {
+    const lasso = m === 'lasso';                          // select mode in which a drag always draws a lasso
+    if (lasso) m = 'select';
     m = ['draw', 'erase', 'fix', 'select', 'pan', 'shape', 'text', 'laser'].includes(m) ? m : 'draw';
     if (this.editing && m !== 'text' && m !== 'select') this._commitText();
     if (m !== 'select' && this.selection.size) this._setSel([]);
-    this.mode = m;
+    this.mode = m; this.lassoOnly = lasso;
     this._cursor();
     this.redraw();
   }
@@ -2450,7 +2466,8 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     strokeInfo(s) { return this.pad ? this.pad.strokeInfo(s) : { type: null, width: null }; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
     // 'draw' | 'erase' | 'fix' (a tap is sent on as nib:tap {x, y, pointerType} instead of writing a dot; writing still
-    // writes) | 'select' | 'pan' | 'shape' | 'text' | 'laser' (see Pad.setMode)
+    // writes) | 'select' | 'lasso' (select, a drag always a lasso; mode then reads 'select') | 'pan' | 'shape' | 'text' |
+    // 'laser' (see Pad.setMode)
     set mode(v) { if (this.pad) this.pad.setMode(v); }
     // the canvas: what draw mode writes with ({kind: 'pen' | 'marker' | 'highlighter', color, size}), the shape and text tools
     get tool() { return this.pad ? Object.assign({}, this.pad.tool) : null; }

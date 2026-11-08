@@ -266,6 +266,39 @@ ok(placed >= 100, `enough answers checked (${placed})`);
   ok(I.DEFAULT_GLYPHS['\\pm'].length === 3, '± is a plus over a bar');
   ok(book('7') === I.DEFAULT_GLYPHS['7'] || res.symbols.some(s => s.label === '7'), 'a digit never written comes from the built-in hand');
 }
+{
+  // On a board (8 Nov 2026, Croix's tablet: "What's up with that 15?" — the answer to √244 = was drawn "\5.620…"): the
+  // board's single straight strokes read as a 1 with great certainty (a stroke of an X, a letter of "What is the value
+  // of c?") must not draw an answer's 1, nor a letter of a word read as a 5 its 5. The answer's own writing first, then
+  // the board's equations, the most typical of each; words never.
+  const L = (x0, y0, x1, y1) => Array.from({ length: 9 }, (_, i) => [x0 + (x1 - x0) * i / 8, y0 + (y1 - y0) * i / 8]);
+  const S = (x, y) => Array.from({ length: 13 }, (_, i) => { const a = i / 12 * 2 * Math.PI; return [x + 8 * Math.sin(2 * a), y + 20 * i / 12]; });
+  const two = (x, y) => [[x, y + 8], [x + 8, y], [x + 16, y + 6], [x + 4, y + 24], [x + 18, y + 24]];
+  const board = [
+    L(100, 100, 100, 140), L(140, 100, 101, 140), L(180, 100, 181, 141), L(220, 100, 219, 140),   // 0-3: part 0, "1 1 1 1 =", but 1 is slanted
+    L(260, 115, 280, 115), L(260, 125, 280, 125),                                                   // 4-5: its "="
+    L(400, 300, 425, 340), L(400, 312, 420, 312), L(400, 322, 420, 322),                            // 6-8: part 1, "\ =": a stroke of an X, read as 1 at 0.99
+    S(600, 500),                                                                                     // 9: part 2, the s of "is", read as 5 at 0.95
+    two(100, 700), L(140, 710, 160, 710), L(140, 720, 160, 720),                                    // 10-12: part 3, the answer's own "2 ="
+  ];
+  board[1] = L(140, 100, 141, 140);                                                                // (a straight 1 after all; the slanted one is #6)
+  const sy = (label, strokes, p, part) => ({ label, strokes, candidates: [[label, p]], fixed: false, part });
+  const symbols = [sy('1', [0], 0.82, 0), sy('1', [1], 0.86, 0), sy('1', [2], 0.84, 0), sy('1', [3], 0.8, 0), sy('=', [4, 5], 0.97, 0),
+    sy('1', [6], 0.99, 1), sy('=', [7, 8], 0.97, 1), sy('5', [9], 0.95, 2), sy('2', [10], 0.9, 3), sy('=', [11, 12], 0.97, 3)];
+  const partOf = k => ({ idx: [], strokes: [], result: { symbols: symbols.filter(q => q.part === k).map(q => ({ label: q.label })) } });
+  const res = { symbols, parts: [0, 1, 2, 3].map(partOf) };
+  const book = I.sampleBook(res, board, null), mine = book.near(3);
+  const same = (a, b) => !!a && !!b && JSON.stringify(a.map(q => q.slice(0, 2))) === JSON.stringify(b.map(q => q.slice(0, 2)));
+  const one = mine('1'), slant = q => { const a = q[0][0], b = q[0][q[0].length - 1]; return Math.abs(b[0] - a[0]) / Math.abs(b[1] - a[1]); };
+  ok(one && slant(one) < 0.1 && !same(one[0], board[6]), `an answer's 1 is the board's most typical 1, not the stroke read as a 1 most surely (an X's \\, at 0.99): slant ${one && slant(one).toFixed(2)}`);
+  ok(mine('5') === I.DEFAULT_GLYPHS['5'], "a word's letter read as a 5 (no = beside it) never draws an answer's 5: the built-in 5");
+  ok(mine('2') && same(mine('2')[0], board[10]), "the answer's own writing comes first: its 2");
+  ok(!same(book.near(0)('1')[0], board[6]) && !same(book('1')[0], board[6]), 'the same from any part of the board');
+  const textOnly = I.sampleBook({ symbols: [sy('1', [6], 0.99, 0)], parts: [{ result: { symbols: [{ label: '1' }] } }, { result: { symbols: [{ label: '=' }] } }] }, board, null);
+  ok(textOnly.near(1)('1') === I.DEFAULT_GLYPHS['1'], 'a 1 only in writing with no = beside it: the built-in 1');
+  const letters = I.sampleBook({ symbols: [sy('x', [9], 0.7, 0)], parts: [{ result: { symbols: [{ label: 'x' }] } }, { result: { symbols: [{ label: '=' }] } }] }, board, null);
+  ok(letters.near(1)('x') && same(letters.near(1)('x')[0], board[9]), 'a letter is the writer\'s own wherever it was written (the question\'s x)');
+}
 
 
 // ------------------------------------------------------------------ equations: "x =" under an equation solves it
