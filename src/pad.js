@@ -1056,7 +1056,8 @@ class Pad {
         this._drawEl(P.cur, Object.assign({ tool: T.kind || 'pen', size: this._toolWidth(T) }, T.color ? { color: T.color } : {}));
       } else if (P.mode === 'shape' && P.prev) {
         const S = this.shapeTool;
-        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill ? { fill: S.fill } : {}, S.dash ? { dash: true } : {}));
+        const axes = P.prev.shape === 'numberline' || P.prev.shape === 'plane';
+        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill && !axes ? { fill: S.fill } : {}, S.dash && !axes ? { dash: true } : {}));
       }
     }
     for (const q of this.pending) this._drawEl(q.s);       // brief touches waiting to see whether the pen follows
@@ -1382,8 +1383,10 @@ class Pad {
     const S = this.shapeTool, s = prev.pts.map(q => [q[0], q[1]]);
     const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: null, tool: 'shape', shape: prev.shape, size: +S.size > 0 ? +S.size : 3 };
     if (S.color) info.color = S.color;
-    if (S.fill) info.fill = S.fill;
-    if (S.dash) info.dash = true;
+    // a number line or a plane is a placed thing to write on: it takes the colour and width, not a fill or dashes
+    const axes = prev.shape === 'numberline' || prev.shape === 'plane';
+    if (S.fill && !axes) info.fill = S.fill;
+    if (S.dash && !axes) info.dash = true;
     if (prev.opt) info.opt = Object.assign({}, prev.opt);
     this.info.set(s, info);
     this.strokes.push(s); this._push({ add: s });

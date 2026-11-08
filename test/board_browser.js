@@ -571,7 +571,7 @@ function makeHandFile() {
       const cv = document.querySelector('#pad canvas').getBoundingClientRect();
       return { name: d.name, type: blob.type, w: bmp.width, h: bmp.height, cw: cv.width, ch: cv.height, bg: px(10, 10), dot: px(56, 56), ink };
     });
-    ok(img && /^Nib-board-1-\d{4}-\d{2}-\d{2}\.png$/.test(img.name) && img.type === 'image/png', 'Export, Picture of this page downloads a PNG named Nib-board-<page>-<date>.png: ' + (img && img.name));
+    ok(img && /^Nib-board-1-\d{4}-\d{2}-\d{2}\.png$/.test(img.name) && img.type === 'image/png', 'Export, Picture of the screen downloads a PNG named Nib-board-<page>-<date>.png: ' + (img && img.name));
     ok(img && img.w === Math.round(img.cw * 2) && img.h === Math.round(img.ch * 2), `at twice the board's size (${img && img.w} x ${img && img.h} for ${img && img.cw} x ${img && img.ch})`);
     ok(img && img.bg.join() === '251,248,239,255' && img.dot.join() !== img.bg.join() && img.ink > 500, `on the board's colour, with the dot grid and the ink (${img && img.bg.join()} / ${img && img.dot.join()}, ${img && img.ink} ink pixels)`);
     await page.evaluate(() => { HTMLAnchorElement.prototype.click = window.__aclick; });

@@ -204,6 +204,11 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
 .mi:disabled { opacity: .4; cursor: default; }
 .mi svg { width: 20px; height: 20px; flex: none; }
 .mi kbd { margin-left: auto; font: 500 12px/1 var(--f-body); color: var(--muted); }
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 20px; }
+.keys dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0 0 10px; align-items: baseline; }
+.keys dt { font: 600 12px/1.2 var(--f-body); color: var(--ink); background: var(--board); border: 1px solid var(--rule); border-radius: 6px; padding: 3px 6px; white-space: nowrap; justify-self: start; }
+.keys dd { margin: 0; font: 400 13px/1.3 var(--f-body); color: var(--muted); }
+#helppop { width: min(640px, calc(100% - 16px)); }
 .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .fields label { display: flex; flex-direction: column; gap: 4px; font: 600 12px/1 var(--f-body); color: var(--muted); }
 .fields input { font: 500 16px/1 var(--f-body); color: var(--ink); background: var(--board); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; width: 100%; box-sizing: border-box; min-width: 0; }
@@ -452,7 +457,7 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
         <button type="button" role="radio" data-v="on">With its lines</button><button type="button" role="radio" data-v="white">Plain white</button></div></div>
       <div class="btns"><button type="button" class="opt primary wide" id="exportgo">Export</button></div>
       <div class="row sect" style="margin-top:14px"><p class="lab">The whole board, to open on another computer</p>
-        <div class="btns"><button type="button" class="opt" id="boardsave">Save the board</button><button type="button" class="opt" id="boardopen">Open a board</button><button type="button" class="opt" id="saveimg" title="This page as a picture">Picture of this page</button></div>
+        <div class="btns"><button type="button" class="opt" id="boardsave">Save the board</button><button type="button" class="opt" id="boardopen">Open a board</button><button type="button" class="opt" id="saveimg" title="What is on screen, as a picture">Picture of the screen</button></div>
         <div class="confirm" id="openask" hidden style="margin-top:10px"><p id="openq">A board of 3 pages. Put it…</p><button type="button" class="opt primary" id="openadd">After these pages</button><button type="button" class="opt solid" id="openreplace">Instead of this board</button><button type="button" class="opt" id="openno">Cancel</button></div>
       </div>
     </div>
@@ -461,9 +466,20 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
         <button type="button" class="mi" id="copy"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-latex"/></svg>Copy LaTeX<kbd>of this page</kbd></button>
         <button type="button" class="mi" id="hand"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-hand2"/></svg>My handwriting<kbd>from Replicator</kbd></button>
         <button type="button" class="mi" id="inspic"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-picture"/></svg>Insert a picture<kbd>or paste, or drop one</kbd></button>
+        <button type="button" class="mi" id="morepaste" disabled><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg>Paste what was copied<kbd>Ctrl+V</kbd></button>
         <button type="button" class="mi" id="selall"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-select"/></svg>Select everything<kbd>Ctrl+A</kbd></button>
         <button type="button" class="mi" id="moredfit"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-fit"/></svg>Show everything on the page<kbd>Ctrl+1</kbd></button>
+        <button type="button" class="mi" id="morehelp"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>Keys and gestures</button>
         <button type="button" class="mi" id="morefull"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-full"/></svg>Full screen<kbd>F</kbd></button>
+      </div>
+    </div>
+    <div class="pop wide" id="helppop" role="dialog" aria-label="Keys and gestures" hidden>
+      <h2>Keys and gestures</h2>
+      <div class="keys">
+        <section><p class="lab">Tools</p><dl><dt>V</dt><dd>Select</dd><dt>H</dt><dd>Move the board</dd><dt>P</dt><dd>Pen</dd><dt>M</dt><dd>Marker</dd><dt>I</dt><dd>Highlighter</dd><dt>E</dt><dd>Eraser (again: back)</dd><dt>R</dt><dd>Shapes</dd><dt>T</dt><dd>Text</dd><dt>L</dt><dd>Laser</dd><dt>[ ]</dt><dd>Smaller, bigger</dd></dl></section>
+        <section><p class="lab">The board</p><dl><dt>Space + drag</dt><dd>Move it</dd><dt>Wheel</dt><dd>Scroll (Shift: sideways)</dd><dt>Ctrl + wheel</dt><dd>Zoom</dd><dt>Two fingers</dt><dd>Pinch to zoom, drag to move</dd><dt>Ctrl+0</dt><dd>100%</dd><dt>Ctrl+1</dt><dd>Show everything</dd><dt>+ −</dt><dd>Zoom in, out</dd><dt>Arrows</dt><dd>Move it (or nudge what is selected)</dd></dl></section>
+        <section><p class="lab">Editing</p><dl><dt>Ctrl+Z</dt><dd>Undo</dd><dt>Ctrl+Y</dt><dd>Redo</dd><dt>Ctrl+C X V</dt><dd>Copy, cut, paste</dd><dt>Ctrl+D</dt><dd>Duplicate</dd><dt>Ctrl+A</dt><dd>Select everything</dd><dt>Delete</dt><dd>Delete what is selected</dd><dt>Esc</dt><dd>Close, let go</dd></dl></section>
+        <section><p class="lab">Nib</p><dl><dt>1 2 3 4</dt><dd>Ink, Tidy, My hand, Typeset</dd><dt>S</dt><dd>Answers on or off</dd><dt>X</dt><dd>Fix a misread symbol</dd><dt>F</dt><dd>Full screen</dd></dl><p class="hint" style="margin-top:8px">Draw a line, circle, box or triangle and hold still: it becomes a clean one.</p></section>
       </div>
     </div>
     <div class="pop" id="settings" role="dialog" aria-label="Settings" hidden>
@@ -4379,7 +4395,7 @@ const PAPER_BASE = { white: ['#ffffff', '#1b2a4a'], cream: ['#fbf8ef', '#1b2a4a'
 const PAPER_MIX = { line: [0.12, 0.12], rule: [0.16, 0.15], dot: [0.3, 0.3], major: [0.25, 0.24], axis: [0.6, 0.58], label: [0.65, 0.65] };
 const PAPER_CORAL = ['#d9654f', '#ef8a73'];   // the lined paper's margin: the Board's coral, faded into the paper
 const PAPER_FONT = '"DM Sans", system-ui, sans-serif';
-const PAPER_LABEL = 12;                       // label size, screen px, at every zoom
+const PAPER_LABEL = 12;                       // label size, screen px, at 100% and below (see drawPaper)
 const PAPER_ISO = 20 * Math.sqrt(3);          // between the columns of an isometric lattice of side 40
 const PAPER_TONE_MEMO = {};
 const PAPER_SCRATCH = [];                     // the strips, kept from frame to frame
@@ -4405,7 +4421,9 @@ function paperTone(tone, dark) {
 
 // Draw the paper into a context that already has the world transform (a scale and a translation, as the pad sets it).
 //   spec {kind, tone}; rect [x0, y0, x1, y1] the visible world rectangle; z the zoom; dark the Board's theme.
-function drawPaper(ctx, spec, rect, z, dark) { paperDraw(ctx, spec, rect, z, dark, PAPER_LABEL); }
+// Labels are PAPER_LABEL screen px at 100% and below; zoomed in they grow with the square root of the zoom (to 1.75
+// times), so a plane zoomed in on to plot points for a class keeps numbers that read from the back of the room.
+function drawPaper(ctx, spec, rect, z, dark) { paperDraw(ctx, spec, rect, z, dark, PAPER_LABEL * Math.min(1.75, Math.max(1, Math.sqrt(z > 0 ? z : 1)))); }
 
 function paperDraw(ctx, spec, rect, z, dark, lab) {
   const T = paperTone(spec && spec.tone, dark), kind = spec && spec.kind;
@@ -7150,7 +7168,8 @@ class Pad {
         this._drawEl(P.cur, Object.assign({ tool: T.kind || 'pen', size: this._toolWidth(T) }, T.color ? { color: T.color } : {}));
       } else if (P.mode === 'shape' && P.prev) {
         const S = this.shapeTool;
-        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill ? { fill: S.fill } : {}, S.dash ? { dash: true } : {}));
+        const axes = P.prev.shape === 'numberline' || P.prev.shape === 'plane';
+        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill && !axes ? { fill: S.fill } : {}, S.dash && !axes ? { dash: true } : {}));
       }
     }
     for (const q of this.pending) this._drawEl(q.s);       // brief touches waiting to see whether the pen follows
@@ -7476,8 +7495,10 @@ class Pad {
     const S = this.shapeTool, s = prev.pts.map(q => [q[0], q[1]]);
     const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: null, tool: 'shape', shape: prev.shape, size: +S.size > 0 ? +S.size : 3 };
     if (S.color) info.color = S.color;
-    if (S.fill) info.fill = S.fill;
-    if (S.dash) info.dash = true;
+    // a number line or a plane is a placed thing to write on: it takes the colour and width, not a fill or dashes
+    const axes = prev.shape === 'numberline' || prev.shape === 'plane';
+    if (S.fill && !axes) info.fill = S.fill;
+    if (S.dash && !axes) info.dash = true;
     if (prev.opt) info.opt = Object.assign({}, prev.opt);
     this.info.set(s, info);
     this.strokes.push(s); this._push({ add: s });
@@ -8741,6 +8762,13 @@ global.Nib = Nib;
   // nothing is written until the board has been put back and something changes (a reload never re-saves what it read)
   const persist = () => { if (!ready) return; clearTimeout(saveTimer); saveTimer = setTimeout(write, 500); };
   const flush = () => { if (saveTimer) write(); };
+  // the Board open twice (two tabs on the same computer): each saves over the other, so say so, once
+  let twice = false;
+  window.addEventListener('storage', e => {
+    if (e.key !== KEY || !ready || twice) return;
+    twice = true;
+    note('The Board is open in another tab or window as well, and the two save over each other. Close one of them.', null, null, true);
+  });
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
@@ -8784,7 +8812,7 @@ global.Nib = Nib;
   }
 
   // ---------------------------------------------------------------- popovers: one at a time, a tap elsewhere closes it
-  const POPS = ['settings', 'stylepop', 'shapepop', 'paperpop', 'axispop', 'pagespop', 'exportpop', 'morepop'];
+  const POPS = ['settings', 'stylepop', 'shapepop', 'paperpop', 'axispop', 'pagespop', 'exportpop', 'morepop', 'helppop'];
   const OPENERS = { settings: 'gear', stylepop: 'stylebtn', paperpop: 'paperbtn', pagespop: 'pageno', exportpop: 'exportbtn', morepop: 'morebtn' };
   const anyPop = () => POPS.some(id => !$(id).hidden);
   function openPop(id, anchor) {
@@ -9720,7 +9748,10 @@ global.Nib = Nib;
     };
     try { navigator.clipboard.writeText(t).then(done, manual); } catch (e) { manual(); }
   };
-  $('morebtn').onclick = () => { if (!$('morepop').hidden) { closePops(); return; } openPop('morepop'); };
+  $('morebtn').onclick = () => { if (!$('morepop').hidden) { closePops(); return; } $('morepaste').disabled = !clip; openPop('morepop'); };
+  // on a panel or a tablet there is no Ctrl+V: what the selection bar copied is pasted from here (onto any page)
+  $('morepaste').onclick = () => { closePops(); pasteClip(); };
+  $('morehelp').onclick = () => openPop('helppop', $('morebtn'));
   $('selall').onclick = () => { closePops(); selectAll(); };
   $('moredfit').onclick = () => { closePops(); fitAll(); };
 
@@ -9761,7 +9792,7 @@ global.Nib = Nib;
     if (E.tool === 'text') P._editText(s, false); else openAxis(s);
   };
   $('seldup').onclick = () => { if (pad.pad) pad.pad.duplicateSelection(); };
-  $('selcopy').onclick = () => copySel(false);
+  $('selcopy').onclick = () => { if (copySel(false)) note('Copied. More, Paste what was copied puts it on any page (or Ctrl+V).'); };
   $('selfront').onclick = () => { if (pad.pad) pad.pad.orderSelection(true); };
   $('selback').onclick = () => { if (pad.pad) pad.pad.orderSelection(false); };
   $('seldel').onclick = () => { if (pad.pad) pad.pad.deleteSelection(); };
@@ -10226,11 +10257,22 @@ global.Nib = Nib;
       return n;
     } catch (e) { return 0; }                                     // storage blocked: nothing to carry over
   }
-  // pictures no page uses any more (deleted, or their page deleted) are let go once the board has opened
+  // Pictures no page uses any more (deleted, or their page deleted) are let go once the board has opened. Never one
+  // this session has met (an undo can bring it back), one the board kept in storage names (another tab of the Board may
+  // have saved it since this one opened), or one put in less than a day ago (its id says when; another tab may not have
+  // saved its page yet).
   function tidyImages() {
     if (!K.images || !storageOk) return;
-    const used = usedImages(pages);
-    K.images.ids().then(ids => { for (const id of ids) if (!used.has(id)) K.images.delete(id); }, () => {});
+    K.images.ids().then(ids => {
+      const used = usedImages(pages.map((p, i) => (i === cur && pad.pad ? here() : p)));
+      for (const id of imgCache.keys()) used.add(id);
+      try { const st = JSON.parse(localStorage.getItem(KEY) || 'null'); if (st && Array.isArray(st.pages)) for (const id of usedImages(st.pages)) used.add(id); } catch (e) { return; }
+      const day = Date.now() - 864e5;
+      for (const id of ids) {
+        const m = /^img-([0-9a-z]+)-/.exec(id), t = m ? parseInt(m[1], 36) : NaN;
+        if (!used.has(id) && isFinite(t) && t < day) K.images.delete(id);
+      }
+    }, () => {});
   }
 
   // ---------------------------------------------------------------- start

@@ -196,6 +196,11 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
 .mi:disabled { opacity: .4; cursor: default; }
 .mi svg { width: 20px; height: 20px; flex: none; }
 .mi kbd { margin-left: auto; font: 500 12px/1 var(--f-body); color: var(--muted); }
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 20px; }
+.keys dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0 0 10px; align-items: baseline; }
+.keys dt { font: 600 12px/1.2 var(--f-body); color: var(--ink); background: var(--board); border: 1px solid var(--rule); border-radius: 6px; padding: 3px 6px; white-space: nowrap; justify-self: start; }
+.keys dd { margin: 0; font: 400 13px/1.3 var(--f-body); color: var(--muted); }
+#helppop { width: min(640px, calc(100% - 16px)); }
 .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .fields label { display: flex; flex-direction: column; gap: 4px; font: 600 12px/1 var(--f-body); color: var(--muted); }
 .fields input { font: 500 16px/1 var(--f-body); color: var(--ink); background: var(--board); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; width: 100%; box-sizing: border-box; min-width: 0; }
@@ -442,7 +447,7 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
         <button type="button" role="radio" data-v="on">With its lines</button><button type="button" role="radio" data-v="white">Plain white</button></div></div>
       <div class="btns"><button type="button" class="opt primary wide" id="exportgo">Export</button></div>
       <div class="row sect" style="margin-top:14px"><p class="lab">The whole board, to open on another computer</p>
-        <div class="btns"><button type="button" class="opt" id="boardsave">Save the board</button><button type="button" class="opt" id="boardopen">Open a board</button><button type="button" class="opt" id="saveimg" title="This page as a picture">Picture of this page</button></div>
+        <div class="btns"><button type="button" class="opt" id="boardsave">Save the board</button><button type="button" class="opt" id="boardopen">Open a board</button><button type="button" class="opt" id="saveimg" title="What is on screen, as a picture">Picture of the screen</button></div>
         <div class="confirm" id="openask" hidden style="margin-top:10px"><p id="openq">A board of 3 pages. Put it…</p><button type="button" class="opt primary" id="openadd">After these pages</button><button type="button" class="opt solid" id="openreplace">Instead of this board</button><button type="button" class="opt" id="openno">Cancel</button></div>
       </div>
     </div>
@@ -451,9 +456,20 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
         <button type="button" class="mi" id="copy"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-latex"/></svg>Copy LaTeX<kbd>of this page</kbd></button>
         <button type="button" class="mi" id="hand"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-hand2"/></svg>My handwriting<kbd>from Replicator</kbd></button>
         <button type="button" class="mi" id="inspic"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-picture"/></svg>Insert a picture<kbd>or paste, or drop one</kbd></button>
+        <button type="button" class="mi" id="morepaste" disabled><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg>Paste what was copied<kbd>Ctrl+V</kbd></button>
         <button type="button" class="mi" id="selall"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-select"/></svg>Select everything<kbd>Ctrl+A</kbd></button>
         <button type="button" class="mi" id="moredfit"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-fit"/></svg>Show everything on the page<kbd>Ctrl+1</kbd></button>
+        <button type="button" class="mi" id="morehelp"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>Keys and gestures</button>
         <button type="button" class="mi" id="morefull"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-full"/></svg>Full screen<kbd>F</kbd></button>
+      </div>
+    </div>
+    <div class="pop wide" id="helppop" role="dialog" aria-label="Keys and gestures" hidden>
+      <h2>Keys and gestures</h2>
+      <div class="keys">
+        <section><p class="lab">Tools</p><dl><dt>V</dt><dd>Select</dd><dt>H</dt><dd>Move the board</dd><dt>P</dt><dd>Pen</dd><dt>M</dt><dd>Marker</dd><dt>I</dt><dd>Highlighter</dd><dt>E</dt><dd>Eraser (again: back)</dd><dt>R</dt><dd>Shapes</dd><dt>T</dt><dd>Text</dd><dt>L</dt><dd>Laser</dd><dt>[ ]</dt><dd>Smaller, bigger</dd></dl></section>
+        <section><p class="lab">The board</p><dl><dt>Space + drag</dt><dd>Move it</dd><dt>Wheel</dt><dd>Scroll (Shift: sideways)</dd><dt>Ctrl + wheel</dt><dd>Zoom</dd><dt>Two fingers</dt><dd>Pinch to zoom, drag to move</dd><dt>Ctrl+0</dt><dd>100%</dd><dt>Ctrl+1</dt><dd>Show everything</dd><dt>+ −</dt><dd>Zoom in, out</dd><dt>Arrows</dt><dd>Move it (or nudge what is selected)</dd></dl></section>
+        <section><p class="lab">Editing</p><dl><dt>Ctrl+Z</dt><dd>Undo</dd><dt>Ctrl+Y</dt><dd>Redo</dd><dt>Ctrl+C X V</dt><dd>Copy, cut, paste</dd><dt>Ctrl+D</dt><dd>Duplicate</dd><dt>Ctrl+A</dt><dd>Select everything</dd><dt>Delete</dt><dd>Delete what is selected</dd><dt>Esc</dt><dd>Close, let go</dd></dl></section>
+        <section><p class="lab">Nib</p><dl><dt>1 2 3 4</dt><dd>Ink, Tidy, My hand, Typeset</dd><dt>S</dt><dd>Answers on or off</dd><dt>X</dt><dd>Fix a misread symbol</dd><dt>F</dt><dd>Full screen</dd></dl><p class="hint" style="margin-top:8px">Draw a line, circle, box or triangle and hold still: it becomes a clean one.</p></section>
       </div>
     </div>
     <div class="pop" id="settings" role="dialog" aria-label="Settings" hidden>

@@ -132,6 +132,13 @@
   // nothing is written until the board has been put back and something changes (a reload never re-saves what it read)
   const persist = () => { if (!ready) return; clearTimeout(saveTimer); saveTimer = setTimeout(write, 500); };
   const flush = () => { if (saveTimer) write(); };
+  // the Board open twice (two tabs on the same computer): each saves over the other, so say so, once
+  let twice = false;
+  window.addEventListener('storage', e => {
+    if (e.key !== KEY || !ready || twice) return;
+    twice = true;
+    note('The Board is open in another tab or window as well, and the two save over each other. Close one of them.', null, null, true);
+  });
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
@@ -175,7 +182,7 @@
   }
 
   // ---------------------------------------------------------------- popovers: one at a time, a tap elsewhere closes it
-  const POPS = ['settings', 'stylepop', 'shapepop', 'paperpop', 'axispop', 'pagespop', 'exportpop', 'morepop'];
+  const POPS = ['settings', 'stylepop', 'shapepop', 'paperpop', 'axispop', 'pagespop', 'exportpop', 'morepop', 'helppop'];
   const OPENERS = { settings: 'gear', stylepop: 'stylebtn', paperpop: 'paperbtn', pagespop: 'pageno', exportpop: 'exportbtn', morepop: 'morebtn' };
   const anyPop = () => POPS.some(id => !$(id).hidden);
   function openPop(id, anchor) {
@@ -1111,7 +1118,10 @@
     };
     try { navigator.clipboard.writeText(t).then(done, manual); } catch (e) { manual(); }
   };
-  $('morebtn').onclick = () => { if (!$('morepop').hidden) { closePops(); return; } openPop('morepop'); };
+  $('morebtn').onclick = () => { if (!$('morepop').hidden) { closePops(); return; } $('morepaste').disabled = !clip; openPop('morepop'); };
+  // on a panel or a tablet there is no Ctrl+V: what the selection bar copied is pasted from here (onto any page)
+  $('morepaste').onclick = () => { closePops(); pasteClip(); };
+  $('morehelp').onclick = () => openPop('helppop', $('morebtn'));
   $('selall').onclick = () => { closePops(); selectAll(); };
   $('moredfit').onclick = () => { closePops(); fitAll(); };
 
@@ -1152,7 +1162,7 @@
     if (E.tool === 'text') P._editText(s, false); else openAxis(s);
   };
   $('seldup').onclick = () => { if (pad.pad) pad.pad.duplicateSelection(); };
-  $('selcopy').onclick = () => copySel(false);
+  $('selcopy').onclick = () => { if (copySel(false)) note('Copied. More, Paste what was copied puts it on any page (or Ctrl+V).'); };
   $('selfront').onclick = () => { if (pad.pad) pad.pad.orderSelection(true); };
   $('selback').onclick = () => { if (pad.pad) pad.pad.orderSelection(false); };
   $('seldel').onclick = () => { if (pad.pad) pad.pad.deleteSelection(); };
@@ -1617,11 +1627,22 @@
       return n;
     } catch (e) { return 0; }                                     // storage blocked: nothing to carry over
   }
-  // pictures no page uses any more (deleted, or their page deleted) are let go once the board has opened
+  // Pictures no page uses any more (deleted, or their page deleted) are let go once the board has opened. Never one
+  // this session has met (an undo can bring it back), one the board kept in storage names (another tab of the Board may
+  // have saved it since this one opened), or one put in less than a day ago (its id says when; another tab may not have
+  // saved its page yet).
   function tidyImages() {
     if (!K.images || !storageOk) return;
-    const used = usedImages(pages);
-    K.images.ids().then(ids => { for (const id of ids) if (!used.has(id)) K.images.delete(id); }, () => {});
+    K.images.ids().then(ids => {
+      const used = usedImages(pages.map((p, i) => (i === cur && pad.pad ? here() : p)));
+      for (const id of imgCache.keys()) used.add(id);
+      try { const st = JSON.parse(localStorage.getItem(KEY) || 'null'); if (st && Array.isArray(st.pages)) for (const id of usedImages(st.pages)) used.add(id); } catch (e) { return; }
+      const day = Date.now() - 864e5;
+      for (const id of ids) {
+        const m = /^img-([0-9a-z]+)-/.exec(id), t = m ? parseInt(m[1], 36) : NaN;
+        if (!used.has(id) && isFinite(t) && t < day) K.images.delete(id);
+      }
+    }, () => {});
   }
 
   // ---------------------------------------------------------------- start

@@ -21,7 +21,7 @@ const PAPER_BASE = { white: ['#ffffff', '#1b2a4a'], cream: ['#fbf8ef', '#1b2a4a'
 const PAPER_MIX = { line: [0.12, 0.12], rule: [0.16, 0.15], dot: [0.3, 0.3], major: [0.25, 0.24], axis: [0.6, 0.58], label: [0.65, 0.65] };
 const PAPER_CORAL = ['#d9654f', '#ef8a73'];   // the lined paper's margin: the Board's coral, faded into the paper
 const PAPER_FONT = '"DM Sans", system-ui, sans-serif';
-const PAPER_LABEL = 12;                       // label size, screen px, at every zoom
+const PAPER_LABEL = 12;                       // label size, screen px, at 100% and below (see drawPaper)
 const PAPER_ISO = 20 * Math.sqrt(3);          // between the columns of an isometric lattice of side 40
 const PAPER_TONE_MEMO = {};
 const PAPER_SCRATCH = [];                     // the strips, kept from frame to frame
@@ -47,7 +47,9 @@ function paperTone(tone, dark) {
 
 // Draw the paper into a context that already has the world transform (a scale and a translation, as the pad sets it).
 //   spec {kind, tone}; rect [x0, y0, x1, y1] the visible world rectangle; z the zoom; dark the Board's theme.
-function drawPaper(ctx, spec, rect, z, dark) { paperDraw(ctx, spec, rect, z, dark, PAPER_LABEL); }
+// Labels are PAPER_LABEL screen px at 100% and below; zoomed in they grow with the square root of the zoom (to 1.75
+// times), so a plane zoomed in on to plot points for a class keeps numbers that read from the back of the room.
+function drawPaper(ctx, spec, rect, z, dark) { paperDraw(ctx, spec, rect, z, dark, PAPER_LABEL * Math.min(1.75, Math.max(1, Math.sqrt(z > 0 ? z : 1)))); }
 
 function paperDraw(ctx, spec, rect, z, dark, lab) {
   const T = paperTone(spec && spec.tone, dark), kind = spec && spec.kind;

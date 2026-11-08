@@ -3875,7 +3875,7 @@ const PAPER_BASE = { white: ['#ffffff', '#1b2a4a'], cream: ['#fbf8ef', '#1b2a4a'
 const PAPER_MIX = { line: [0.12, 0.12], rule: [0.16, 0.15], dot: [0.3, 0.3], major: [0.25, 0.24], axis: [0.6, 0.58], label: [0.65, 0.65] };
 const PAPER_CORAL = ['#d9654f', '#ef8a73'];   // the lined paper's margin: the Board's coral, faded into the paper
 const PAPER_FONT = '"DM Sans", system-ui, sans-serif';
-const PAPER_LABEL = 12;                       // label size, screen px, at every zoom
+const PAPER_LABEL = 12;                       // label size, screen px, at 100% and below (see drawPaper)
 const PAPER_ISO = 20 * Math.sqrt(3);          // between the columns of an isometric lattice of side 40
 const PAPER_TONE_MEMO = {};
 const PAPER_SCRATCH = [];                     // the strips, kept from frame to frame
@@ -3901,7 +3901,9 @@ function paperTone(tone, dark) {
 
 // Draw the paper into a context that already has the world transform (a scale and a translation, as the pad sets it).
 //   spec {kind, tone}; rect [x0, y0, x1, y1] the visible world rectangle; z the zoom; dark the Board's theme.
-function drawPaper(ctx, spec, rect, z, dark) { paperDraw(ctx, spec, rect, z, dark, PAPER_LABEL); }
+// Labels are PAPER_LABEL screen px at 100% and below; zoomed in they grow with the square root of the zoom (to 1.75
+// times), so a plane zoomed in on to plot points for a class keeps numbers that read from the back of the room.
+function drawPaper(ctx, spec, rect, z, dark) { paperDraw(ctx, spec, rect, z, dark, PAPER_LABEL * Math.min(1.75, Math.max(1, Math.sqrt(z > 0 ? z : 1)))); }
 
 function paperDraw(ctx, spec, rect, z, dark, lab) {
   const T = paperTone(spec && spec.tone, dark), kind = spec && spec.kind;
@@ -6646,7 +6648,8 @@ class Pad {
         this._drawEl(P.cur, Object.assign({ tool: T.kind || 'pen', size: this._toolWidth(T) }, T.color ? { color: T.color } : {}));
       } else if (P.mode === 'shape' && P.prev) {
         const S = this.shapeTool;
-        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill ? { fill: S.fill } : {}, S.dash ? { dash: true } : {}));
+        const axes = P.prev.shape === 'numberline' || P.prev.shape === 'plane';
+        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill && !axes ? { fill: S.fill } : {}, S.dash && !axes ? { dash: true } : {}));
       }
     }
     for (const q of this.pending) this._drawEl(q.s);       // brief touches waiting to see whether the pen follows
@@ -6972,8 +6975,10 @@ class Pad {
     const S = this.shapeTool, s = prev.pts.map(q => [q[0], q[1]]);
     const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: null, tool: 'shape', shape: prev.shape, size: +S.size > 0 ? +S.size : 3 };
     if (S.color) info.color = S.color;
-    if (S.fill) info.fill = S.fill;
-    if (S.dash) info.dash = true;
+    // a number line or a plane is a placed thing to write on: it takes the colour and width, not a fill or dashes
+    const axes = prev.shape === 'numberline' || prev.shape === 'plane';
+    if (S.fill && !axes) info.fill = S.fill;
+    if (S.dash && !axes) info.dash = true;
     if (prev.opt) info.opt = Object.assign({}, prev.opt);
     this.info.set(s, info);
     this.strokes.push(s); this._push({ add: s });
