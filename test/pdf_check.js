@@ -1,4 +1,4 @@
-// src/pdf.js: PDFs built from real JPEGs (one page; three pages of different sizes; a grey JPEG; a title with "–",
+// src/pdf.js: PDFs built from real JPEGs (one page; three pages of different sizes; a gray JPEG; a title with "–",
 // "é", brackets and an emoji; progressive and CMYK JPEGs; a JPEG from Chrome's canvas, and the same PDF made inside
 // Chrome) checked by qpdf --check, pdfinfo, pypdf (strict) and pdftoppm -r 40: a red and a blue square drawn at known
 // places in each picture must land where the page puts the picture. Also: the cross-reference table byte for byte,
@@ -25,7 +25,7 @@ const PICS = [
   { name: 'landscape', w: 1600, h: 1000, marks: [['red', 1200, 100, 240, 240], ['blue', 80, 700, 300, 200]] },
   { name: 'a4', w: 1000, h: 1414, marks: [['red', 400, 600, 200, 200], ['blue', 60, 60, 120, 120]] },
   { name: 'wide', w: 800, h: 500, marks: [['red', 0, 0, 160, 120], ['blue', 640, 380, 160, 120]] },
-  { name: 'grey', w: 800, h: 600, mode: 'L', marks: [['dark', 500, 120, 180, 180]] },
+  { name: 'gray', w: 800, h: 600, mode: 'L', marks: [['dark', 500, 120, 180, 180]] },
   { name: 'progressive', w: 900, h: 700, progressive: true, marks: [['red', 600, 400, 200, 200], ['blue', 100, 100, 150, 150]] },
   { name: 'cmyk', w: 900, h: 700, mode: 'CMYK', marks: [['red', 120, 420, 220, 200], ['blue', 600, 80, 200, 200, 'inkblue']] },   // cyan + magenta ink is a dark violet-blue
   { name: 'exif', w: 600, h: 400, exif: true, marks: [['red', 250, 150, 100, 100]] },
@@ -124,11 +124,11 @@ function checkPage(file, no, page, R, I, label) {
     const want = [(place[0] + mx * kx) * s, (place[1] + my * ky) * s, (place[0] + (mx + mw) * kx) * s, (place[1] + (my + mh) * ky) * s];
     const got = blob(img, seen || kind), cx = (want[0] + want[2]) / 2, cy = (want[1] + want[3]) / 2;
     const off = got ? Math.hypot(got.cx - cx, got.cy - cy) : Infinity, edge = got ? Math.max(...got.box.map((v, k) => Math.abs(v - want[k]))) : Infinity;
-    ok(off < 1.5 && edge <= 2, `${label}: the ${kind} square lands where it should (centre off by ${off.toFixed(2)} px, edges by ≤ ${edge.toFixed(1)} px at 40 dpi)`);
+    ok(off < 1.5 && edge <= 2, `${label}: the ${kind} square lands where it should (center off by ${off.toFixed(2)} px, edges by ≤ ${edge.toFixed(1)} px at 40 dpi)`);
   }
   if (p.mode === 'L') {
     const g = blob(img, 'dark'), k = g ? ((Math.round(g.cy) * img.w + Math.round(g.cx)) * 3) : 0;
-    ok(g && img.px[k] === img.px[k + 1] && img.px[k + 1] === img.px[k + 2], `${label}: grey stays grey (${g && [img.px[k], img.px[k + 1], img.px[k + 2]].join(',')})`);
+    ok(g && img.px[k] === img.px[k + 1] && img.px[k + 1] === img.px[k + 2], `${label}: gray stays gray (${g && [img.px[k], img.px[k + 1], img.px[k + 2]].join(',')})`);
   }
   // outside the picture the page is white (where the picture leaves room)
   const corners = [[1, 1], [img.w - 2, 1], [1, img.h - 2], [img.w - 2, img.h - 2]].filter(([x, y]) => x < place[0] * s - 1 || y < place[1] * s - 1 || x > (place[0] + place[2]) * s + 1 || y > (place[1] + place[3]) * s + 1);
@@ -198,9 +198,9 @@ function checkPdf(name, pages, meta, extra) {
     { pic: 'wide', pw: 400, ph: 250, place: [0, 0, 400, 250] },                           // a page fitted to its content
   ], { title: 'Three sizes', author: 'Mr. Shaffer', subject: 'pages of different sizes', date: DATE });
 
-  // ------------------------------------------------------------------ 4. grey, progressive, CMYK, EXIF
-  section('4. grey, progressive, CMYK and EXIF JPEGs');
-  checkPdf('grey', [{ pic: 'grey', pw: LL[0], ph: LL[1] }], { title: 'Grey', date: DATE });           // place left out: fitted, centred
+  // ------------------------------------------------------------------ 4. gray, progressive, CMYK, EXIF
+  section('4. gray, progressive, CMYK and EXIF JPEGs');
+  checkPdf('gray', [{ pic: 'gray', pw: LL[0], ph: LL[1] }], { title: 'Gray', date: DATE });           // place left out: fitted, centered
   checkPdf('progressive', [{ pic: 'progressive', pw: L[0], ph: L[1], place: [72, 72, 450, 350] }], { title: 'Progressive', date: DATE });
   const cm = checkPdf('cmyk', [{ pic: 'cmyk', pw: LL[0], ph: LL[1], place: [36, 36, 720, 560] }], { title: 'CMYK', date: DATE });
   ok(cm.R.pages && JSON.stringify(cm.R.pages[0].decode) === '[1,0,1,0,1,0,1,0]', 'the Adobe CMYK JPEG gets /Decode [1 0 1 0 1 0 1 0] (its ink is stored inverted)');
@@ -231,7 +231,7 @@ function checkPdf(name, pages, meta, extra) {
   // ------------------------------------------------------------------ 6. defaults, odd sizes, bad input
   section('6. defaults and bad input');
   const D1 = P.pdfMake([{ jpeg: JPEG.wide }], { title: 'defaults', date: DATE }), d1s = Buffer.from(D1).toString('latin1');
-  ok(/\/MediaBox \[0 0 612 792\]/.test(d1s) && /q 612 0 0 382\.5 0 204\.75 cm \/Im0 Do Q/.test(d1s), 'page size left out: Letter; place left out: fitted to the page, centred');
+  ok(/\/MediaBox \[0 0 612 792\]/.test(d1s) && /q 612 0 0 382\.5 0 204\.75 cm \/Im0 Do Q/.test(d1s), 'page size left out: Letter; place left out: fitted to the page, centered');
   const D2 = P.pdfMake([{ jpeg: JPEG.wide, iw: 400, ih: 250, pw: 300, ph: 200, place: [0, 0, 300, 200] }], { date: DATE });
   ok(/\/Width 800 \/Height 500/.test(Buffer.from(D2).toString('latin1')), 'iw / ih that disagree with the JPEG: the JPEG\'s own size is written (it is what a reader decodes)');
   const D3 = P.pdfMake([{ jpeg: JPEG.wide, pw: 28800, ph: 18000, place: [0, 0, 28800, 18000] }], { date: DATE });

@@ -1733,7 +1733,7 @@ const cneg = c => (isFl(c) ? { f: -c.f } : { n: -c.n, d: c.d });
 function cadd(a, b) {
   if (!isFl(a) && !isFl(b)) return Q(a.n * b.d + b.n * a.d, a.d * b.d);
   const x = cval(a), y = cval(b), s = x + y;
-  // two nearly equal numbers cancelling leave only rounding error: zero or not cannot be told (π − 3.14159265358979,
+  // two nearly equal numbers canceling leave only rounding error: zero or not cannot be told (π − 3.14159265358979,
   // and π − 3.141592653589793, which comes out as exactly 0); two approximations that cancel exactly (π − π) are 0
   if (Math.abs(s) <= 1e-10 * Math.max(Math.abs(x), Math.abs(y)) && (s !== 0 || isFl(a) !== isFl(b))) sfail('lost to rounding');
   return Fl(s);
@@ -2866,8 +2866,8 @@ function latexRow(s) {
 
 // ================================================================== in place: tidy, my handwriting, typeset
 // Lays a reading out again where it was written. Every symbol becomes a glyph — the writer's own strokes cleaned
-// up ('tidy'), the writer's Replicator handwriting ('hand'), or typeset maths ('typeset') — placed by TeX-like rules
-// (spacing by kind, raised exponents, centred fractions, roots that cover their body, brackets as tall as what
+// up ('tidy'), the writer's Replicator handwriting ('hand'), or typeset math ('typeset') — placed by TeX-like rules
+// (spacing by kind, raised exponents, centered fractions, roots that cover their body, brackets as tall as what
 // they hold) at the writer's size, on a level line through the writer's own baseline, starting where they began.
 //
 // Units: layout happens in em of the writer's size (em = the height of a digit / 0.7), y up from the baseline;
@@ -2952,7 +2952,7 @@ function emOf(lines) {
   const m = median2(top.length ? top : all);
   return m > 0 ? m : 0;
 }
-// how far apart the writer puts the digits of a number, and other neighbouring symbols (em)
+// how far apart the writer puts the digits of a number, and other neighboring symbols (em)
 function gapsOf(lines, em) {
   const dd = [], oo = [];
   const visit = row => {
@@ -3041,7 +3041,7 @@ function rowBox(units, s, P, ctx) {
 }
 
 // The writer's line keeps its length: the gaps between top-level symbols stretch or shrink together (from half to
-// two and a half times their typeset size) so the tidied line spans about what was written; typeset maths, whose
+// two and a half times their typeset size) so the tidied line spans about what was written; typeset math, whose
 // glyphs are wider than handwriting, may also come down in size by up to a fifth. Returns the factor for the size.
 function fitRow(box, rawW, P) {
   const G = box.gaps || [];
@@ -3123,7 +3123,7 @@ function planOf(res, input, P, opts) {
   const ink = inkOf(input);
   const out = { em: 0, skew: res ? res.skew || 0 : 0, lines: [], items: [] };
   if (!res || !res.tree || !res.tree.length) return out;
-  // level coordinates: the slope the recogniser removed, removed again here the same way
+  // level coordinates: the slope the recognizer removed, removed again here the same way
   let sx = 0, n = 0;
   for (const s of ink) for (const p of s) { sx += p[0]; n++; }
   const c0 = n ? sx / n : 0, t = Math.tan((out.skew || 0) * Math.PI / 180);
@@ -3336,7 +3336,7 @@ function radicalParts(paths) {
 // a radical's strokes (ink, y down): the tick fitted into [0, cw] x [low, top], then a straight overline to `total`
 function tidyRadical(paths, cw, top, low, total, s) {
   if (!paths.length) return synthRadical(cw, top, low, total);
-  const fitted = fitInk(paths, { by: 'h', size: 1, bottom: 0 }, 1).paths;      // y up, normalised
+  const fitted = fitInk(paths, { by: 'h', size: 1, bottom: 0 }, 1).paths;      // y up, normalized
   const { tick, corner } = radicalParts(fitted);
   const tb = bboxOf(tick.length ? tick : fitted);
   const kx = cw / Math.max(tb[2] - tb[0], 1e-9), ky = (top - low) / Math.max(tb[3] - tb[1], 1e-9);
@@ -3660,7 +3660,7 @@ function typeProvider() {
     fence(u, h, d, s) {
       const text = TYPE_CHAR[u.label] || u.label, m = typeMetrics(text, 'm');
       const nat = (m.h + m.d) * s, k = Math.max(1, (h + d) / Math.max(nat, 1e-9));
-      // a taller bracket is the same glyph drawn taller; its middle stays on the line of maths
+      // a taller bracket is the same glyph drawn taller; its middle stays on the line of math
       const mid = (h - d) / 2, nmid = (m.h - m.d) * s / 2;
       return { w: m.w * s * Math.min(k, 1.4) ** 0.35, h: Math.max(h, m.h * s), d: Math.max(d, m.d * s),
         draw: [{ t: 'text', text, font: 'm', size: s, x: 0, y: mid - nmid * k, sx: Math.min(k, 1.4) ** 0.35, sy: k }] };
@@ -3700,7 +3700,7 @@ function pathsOf(items) {
   return out;
 }
 
-// Nib.neaten / Nib.typeset: recognise (or take options.result), then lay out in place
+// Nib.neaten / Nib.typeset: recognize (or take options.result), then lay out in place
 function inPlace(strokes, style, options) {
   const o = Object.assign({}, options || {});
   const res = o.result || defaultRecognizer().recognize(strokes, o);
@@ -3747,7 +3747,7 @@ function typeFontsReady() {
   })).then(() => true, () => false);
   return TYPE_FONTS;
 }
-// Draws drawable items on a 2D context (ink coordinates). o: {ink: colour, width: pen width, alpha}
+// Draws drawable items on a 2D context (ink coordinates). o: {ink: color, width: pen width, alpha}
 function drawItems(ctx, items, o) {
   ctx.save();
   ctx.strokeStyle = ctx.fillStyle = o.ink; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -3854,11 +3854,11 @@ function mapParts(parts, X, Y, k) {
 }
 
 // ================================================================== paper: the Board's backgrounds
-// A page's paper is {kind, tone}: the kind is the pattern, the tone its colours. drawPaper fills the visible world
+// A page's paper is {kind, tone}: the kind is the pattern, the tone its colors. drawPaper fills the visible world
 // rectangle with the paper and tiles the pattern over it from the world origin, so the pattern moves exactly with the
 // ink when the board pans. Everything is placed in device pixels: widths are whole pixels and positions snap to the
-// pixel grid, so a 1 px line stays crisp at any zoom and devicePixelRatio. Marks are opaque colours (a faded family is
-// its colour mixed toward the paper), so where lines cross they stay one colour.
+// pixel grid, so a 1 px line stays crisp at any zoom and devicePixelRatio. Marks are opaque colors (a faded family is
+// its color mixed toward the paper), so where lines cross they stay one color.
 
 const PAPER_KINDS = [{ kind: 'blank', label: 'Blank' }, { kind: 'dots', label: 'Dots' }, { kind: 'grid', label: 'Grid' },
   { kind: 'graph', label: 'Graph paper' }, { kind: 'lined', label: 'Lined' }, { kind: 'iso', label: 'Isometric' },
@@ -3887,7 +3887,7 @@ function paperMix(a, b, t) {
   return '#' + p.map((v, i) => Math.round(v + (q[i] - v) * t).toString(16).padStart(2, '0')).join('');
 }
 
-// Colours for a tone (dark: the Board's theme is dark; only 'theme' follows it), a frozen object shared by all callers:
+// Colors for a tone (dark: the Board's theme is dark; only 'theme' follows it), a frozen object shared by all callers:
 // { paper, ink, line, major, axis, label, margin, dark } and, for the dot lattices and lined paper, dot and rule.
 function paperTone(tone, dark) {
   const fixed = paperOwn(PAPER_BASE, tone), key = fixed ? tone : dark ? 'theme dark' : 'theme';
@@ -3928,13 +3928,13 @@ function paperDraw(ctx, spec, rect, z, dark, lab) {
 // a mark px screen px wide, in whole device pixels (1.5 px: 1 on a plain screen, 3 on a retina one)
 function paperWidth(V, px) { return Math.max(1, Math.round(px * V.P - 0.01)); }
 // How strongly a family of marks shows when they are px screen px apart: gone below lo, full from hi. Zooming out
-// fades a fine pattern away instead of letting it turn into grey mush (and keeps the cost down): lines from 12 px apart
+// fades a fine pattern away instead of letting it turn into gray mush (and keeps the cost down): lines from 12 px apart
 // down to 6, dots from 12 down to 8.
 function paperFade(px, lo, hi) { return px <= lo ? 0 : px >= hi ? 1 : (px - lo) / (hi - lo); }
-// a tone's colour faded toward the paper by a (0 … 1), as an opaque colour
+// a tone's color faded toward the paper by a (0 … 1), as an opaque color
 function paperShade(T, key, a) { return a >= 1 ? T[key] : paperMix(T.paper, T[key], a); }
 
-// The lines x = k·step (paperCols) or y = k·step (paperRows) across the view, w device px wide, in the fill colour;
+// The lines x = k·step (paperCols) or y = k·step (paperRows) across the view, w device px wide, in the fill color;
 // every skip-th one is left to a coarser family drawn over them. One fillRect a line: a pixel-aligned rect is the
 // cheapest mark a canvas draws, where one path of hundreds of rects (or a stroke over 1 px wide) rasterizes 3–5× slower.
 function paperCols(V, step, skip, w) {
@@ -3958,7 +3958,7 @@ function paperStrip(i, w, h) {
   c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.clearRect(0, 0, w, h);
   return c;
 }
-// One dot of radius R device px on the centre pixel of a (2·pad + 1)² sprite, kept while R and the colour stay. Every
+// One dot of radius R device px on the center pixel of a (2·pad + 1)² sprite, kept while R and the color stay. Every
 // dot is a copy of it, so every dot is the same pixels: one path of many dots is shaded a level or two differently
 // depending on where the path is clipped, which would make dots flicker by a shade as the board pans.
 function paperSprite(R, pad, color) {
@@ -3979,7 +3979,7 @@ function paperStamp(V, c, xa, y) {
 // A lattice of dots of radius r screen px, in rows rowStep apart; in a row the dots are colStep apart, odd rows shifted
 // by colOff. All rows are the same row of dots, so one row is stamped from the dot sprite into a strip (two strips for
 // a shifted lattice) and the strip is stamped row by row: a screen of dense dots costs a few hundred blits, where one
-// path of 30 000 arcs costs 20–50 ms. A dot's centre is the centre of the pixel its world point falls in.
+// path of 30 000 arcs costs 20–50 ms. A dot's center is the center of the pixel its world point falls in.
 function paperDots(V, rowStep, colStep, colOff, r, color) {
   const R = r * V.P, pad = Math.ceil(R) + 1, h = 2 * pad + 1, xa = Math.floor(V.X0), w = Math.ceil(V.X1) - xa;
   const dot = paperSprite(R, pad, color), mx = R / V.sx, my = pad / V.sy, strips = [];   // a dot just outside still shows a sliver
@@ -4000,7 +4000,7 @@ function paperGlyphs(ctx) {
   return s => { let t = 0; for (let i = 0; i < s.length; i++) t += w[s[i]] || 0; return t; };
 }
 function paperNum(n) { return n < 0 ? '−' + -n : String(n); }
-// label every 1, 2, 5, 10, 20, 50 … units: the first step that leaves need device px between label centres
+// label every 1, 2, 5, 10, 20, 50 … units: the first step that leaves need device px between label centers
 function paperStep(unit, need) {
   for (let s = 1; s < 1e12; s *= 10) for (const m of [1, 2, 5]) if (s * m * unit >= need) return s * m;
   return 1e12;
@@ -4057,7 +4057,7 @@ function paperPlaneLabels(V, wa, origin) {
   const { ctx, T, P } = V, U = 40, fs = V.lab * P, cap = 0.7 * fs, g = 5 * P + wa / 2, e = 4 * P, pl = Math.round(2 * P);
   ctx.font = '500 ' + fs + 'px ' + PAPER_FONT;
   const tw = paperGlyphs(ctx);
-  // the units in view (maths y points up: world y = −40 is y = 1)
+  // the units in view (math y points up: world y = −40 is y = 1)
   const i0 = Math.ceil(V.x0 / U), i1 = Math.floor(V.x1 / U), j0 = Math.ceil(-V.y1 / U), j1 = Math.floor(-V.y0 / U);
   const step = paperStep(U * V.sx, Math.max(tw(paperNum(i0)), tw(paperNum(i1))) + 0.9 * fs);
   // the x axis's labels: under it, over it when there is no room under it, or pinned to the top or bottom edge
@@ -4098,7 +4098,7 @@ function paperPlaneLabels(V, wa, origin) {
 
 // Number lines at y = 100 + 200k with a tick every 40 and integer labels under the ticks (0 at x = 0). They are all
 // alike, so one is drawn into a strip with its ticks and labels and stamped at each line in view. When the labels
-// thin out, the labelled ticks stay long and the others are short; the labels fade as the lines crowd together.
+// thin out, the labeled ticks stay long and the others are short; the labels fade as the lines crowd together.
 function paperDrawNumberLines(V) {
   const { T, P } = V, U = 40, G = 200, Y = 100;
   const wl = paperWidth(V, 2), wt = paperWidth(V, 1.5), tl = Math.round(7 * P), ts = Math.round(4 * P);
@@ -4110,7 +4110,7 @@ function paperDrawNumberLines(V) {
   const tw = paperGlyphs(c), i0 = Math.ceil(V.x0 / U), i1 = Math.floor(V.x1 / U);
   const step = paperStep(U * V.sx, Math.max(tw(paperNum(i0)), tw(paperNum(i1))) + 0.9 * fs), il = Math.ceil(i0 / step) * step;
   const X = i => Math.round(i * U * V.sx + V.ox - xa - wt / 2);   // a tick's left edge in the strip
-  if (ta > 0 && step > 1) {   // the unlabelled ticks, under the rest
+  if (ta > 0 && step > 1) {   // the unlabeled ticks, under the rest
     c.fillStyle = paperShade(T, 'axis', ta);
     for (let i = i0; i <= i1; i++) if (i % step) c.fillRect(X(i), top - ts, wt, wl + 2 * ts);
   }
@@ -4164,7 +4164,7 @@ const SHAPE_KINDS = [
   { kind: 'numberline', label: 'Number line' }, { kind: 'plane', label: 'Coordinate plane' }];
 const SHAPE_NL = { min: -10, max: 10, step: 1, labels: true, frac: false };
 const SHAPE_PLANE = { xmin: -10, xmax: 10, ymin: -10, ymax: 10, step: 1, labels: true, grid: true };
-// a drag shorter than SHAPE_TAP (world units at zoom 1) is a tap: it makes the kind's default size, centred on it
+// a drag shorter than SHAPE_TAP (world units at zoom 1) is a tap: it makes the kind's default size, centered on it
 const SHAPE_TAP = 4;
 const SHAPE_DEFAULT = { line: [200, 0], arrow: [200, 0], arrow2: [200, 0], rect: [200, 140], square: [160, 160],
   ellipse: [200, 140], circle: [160, 160], triangle: [180, 156], rtriangle: [180, 150], numberline: [480, 0], plane: [320, 320] };
@@ -4182,7 +4182,7 @@ function shapeLen(a, b) { return Math.hypot(b[0] - a[0], b[1] - a[1]); }
 function shapeNum(x) { return (Math.round(x * 1e9) / 1e9) || 0; }   // tick values and snapped points without float noise
 function shapeFilled(E) { return !!(E && E.fill && E.fill !== 'none' && E.fill !== 'transparent'); }
 function shapeClamp(x, a, b) { return x < a ? a : x > b ? b : x; }
-// a CSS colour as [r, g, b, a] when it is #rgb, #rrggbb, rgb() or rgba(), else null
+// a CSS color as [r, g, b, a] when it is #rgb, #rrggbb, rgb() or rgba(), else null
 function shapeRGB(c) {
   if (typeof c !== 'string') return null;
   let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim());
@@ -4192,7 +4192,7 @@ function shapeRGB(c) {
   const a = m[4] == null ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : +m[4];
   return [+m[1], +m[2], +m[3], shapeClamp(a, 0, 1)];
 }
-// colour b laid over colour a at opacity t (b's own alpha included), as an opaque rgb()
+// color b laid over color a at opacity t (b's own alpha included), as an opaque rgb()
 function shapeOver(a, b, t) {
   const k = t * b[3];
   return [0, 1, 2].map(i => a[i] + (b[i] - a[i]) * k).concat([1]);
@@ -4220,7 +4220,7 @@ function shapeFromDrag(kind, a, b, o) {
   let A = [+a[0] || 0, +a[1] || 0], B = [+b[0] || 0, +b[1] || 0];
   const dx = B[0] - A[0], dy = B[1] - A[1], tap = SHAPE_TAP / z;
   if (shape === 'numberline' ? Math.abs(dx) < tap && Math.abs(dy) < tap : Math.hypot(dx, dy) < tap) {
-    // a tap: the default size, centred under it (on the grid when snapping)
+    // a tap: the default size, centered under it (on the grid when snapping)
     const d = SHAPE_DEFAULT[kind] || SHAPE_DEFAULT.rect;
     let w = d[0] / z, h = flat ? 0 : d[1] / z;
     if (shape === 'plane') w = h * asp;
@@ -4374,7 +4374,7 @@ function shapeThinSteps(step, count) {
   if (ks.length < 4) for (const k of [2, 3, 4, 5, 10, 20, 50, 100, 200, 500, 1000]) if (k <= 2 * count + 2) ks.push(k);
   return [...new Set(ks)].sort((x, y) => x - y);
 }
-// the ticks labelled when labelling every k steps: those on multiples of k steps (so 0 stays labelled), or every kth
+// the ticks labeled when labeling every k steps: those on multiples of k steps (so 0 stays labeled), or every kth
 function shapeEvery(items, k, step) {
   if (k === 1) return items;
   const q = k * step, on = items.filter(it => Math.abs(it.v / q - Math.round(it.v / q)) < 1e-6);
@@ -4416,10 +4416,10 @@ function shapeNlLayout(E, pts, z) {
   const th = Math.max(1.6 * size + 3, 0.36 * fs), thM = majors ? 1.4 * th : th;
   const out = { A, B, len, ux, uy, nx, ny, heads: [hA, hB], ticks, th, thM, tw: Math.max(0.8 * size, 1), fs, ff, fmt, labels: [] };
   if (!opt.labels || len < 1e-6) return out;
-  const hh = fmt.den ? 0.92 * ff : 0.35 * fs;                      // labels' half height about their centre line
-  const off = thM + 0.38 * fs + size / 2 + hh;                    // the centre line, below the line
+  const hh = fmt.den ? 0.92 * ff : 0.35 * fs;                      // labels' half height about their center line
+  const off = thM + 0.38 * fs + size / 2 + hh;                    // the center line, below the line
   const items = ticks.map(tk => { const L = shapeLabelOf(tk.v, fmt); return { v: tk.v, t: tk.t, L, w: shapeLabelW(L, fs, ff) }; });
-  const room = 0.4 * fs;                                          // clear space between neighbouring labels
+  const room = 0.4 * fs;                                          // clear space between neighboring labels
   for (const k of shapeThinSteps(opt.step, items.length)) {
     const sel = shapeEvery(items, k, opt.step);
     let fits = true;
@@ -4480,7 +4480,7 @@ function shapePlaneLayout(E, pts, z) {
   const xi = xs.filter(v => !(origin && v === 0)).map(v => Object.assign(lab(v, X(v), AY + gap + hh), { v }));
   const yi = ys.filter(v => v !== ay).map(v => Object.assign(lab(v, AX - gap, Y(v), true), { v }));
   const o0 = origin ? [lab(0, AX - 0.75 * gap, AY + 0.75 * gap + hh, true)] : [];
-  // clear space between neighbouring labels, and more round the origin's 0 (so "-1 0" never reads as -10)
+  // clear space between neighboring labels, and more round the origin's 0 (so "-1 0" never reads as -10)
   const m = 0.4 * fs, m0 = 0.6 * fs;
   for (const k of shapeThinSteps(opt.step, Math.max(xs.length, ys.length))) {
     const sx_ = shapeEvery(xi, k, opt.step), sy_ = shapeEvery(yi, k, opt.step);
@@ -4676,7 +4676,7 @@ function shapeDrawPoly(ctx, E, pts, w) {
 
 // Labels as the pieces they draw: text runs { s, x, y (baseline), size, align }, largest first so the font changes
 // least, and fraction bars [x, y, w, h]. Whole numbers at fs; a fraction's digits at ff, stacked over a bar on the
-// labels' centre line, with a mixed number's whole part and a minus sign beside it at fs.
+// labels' center line, with a mixed number's whole part and a minus sign beside it at fs.
 function shapeLabelParts(items, fs, ff, z) {
   const bar = Math.max(0.075 * ff, 0.6 / z), text = [], bars = [];
   for (const it of items) {
@@ -4744,7 +4744,7 @@ function shapeDrawPlane(ctx, E, pts, o, z, col) {
     const t = sn.y(y0, gw), b = sn.y(y1, gw), l = sn.x(x0, gw), r = sn.x(x1, gw), w = sn.w(gw);
     const pc = shapeRGB(o.paper), ic = shapeRGB(col), fc = fill ? shapeRGB(fill) : null;
     if (pc && ic && ic[3] === 1 && (!fill || fc) && ga === 1) {
-      // known colours: opaque rectangles in the mixed colour (crossings stay one colour; far cheaper to draw than
+      // known colors: opaque rectangles in the mixed color (crossings stay one color; far cheaper to draw than
       // wide strokes, which matters for big planes on a 4K panel)
       const g = shapeOver(fc ? shapeOver(pc, fc, 1) : pc, ic, 0.3);
       ctx.fillStyle = 'rgb(' + g.slice(0, 3).map(Math.round).join(',') + ')';
@@ -4762,7 +4762,7 @@ function shapeDrawPlane(ctx, E, pts, o, z, col) {
   }
   const parts = Ly.labels.length ? shapeLabelParts(Ly.labels, Ly.fs, Ly.ff, z) : null;
   if (parts && opt.grid && o.paper) {
-    // halos round the labels in the paper's colour (and the plane's fill over it), so grid lines stop short of
+    // halos round the labels in the paper's color (and the plane's fill over it), so grid lines stop short of
     // the digits; kept to the grid, and drawn before the axes so they never bite an axis or an arrowhead
     ctx.save();
     ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
@@ -4793,7 +4793,7 @@ function shapeDrawPlane(ctx, E, pts, o, z, col) {
   }
 }
 
-// draw it; ctx has the world transform; o = { ink: colour when E.color is null, paper: the paper colour, z: zoom,
+// draw it; ctx has the world transform; o = { ink: color when E.color is null, paper: the paper color, z: zoom,
 // font: the labels' font family list }
 function shapeDraw(ctx, E, pts, o) {
   if (!ctx || !E || !pts || !pts.length) return;
@@ -4829,7 +4829,7 @@ const SHAPE_REC = {
   past: 0.12,       // ... beyond the first bit past the closing point
   turnNet: 0.15,    // one turn: net turning within this of 360° (as a fraction of a turn) ...
   turnAbs: 1.6,     // ... no more than this many turns' worth of turning in all ...
-  sharp: 168,       // ... and no switchback (degrees over two neighbouring points of 32)
+  sharp: 168,       // ... and no switchback (degrees over two neighboring points of 32)
   dp: 0.035,        // polygon corners: Douglas-Peucker tolerance (of the size) ...
   merge: 20,        // ... corners turning less than this (degrees) dropped ...
   chamfer: 0.08,    // ... and two corners closer than this (of the size) that turn as one corner (at most
@@ -4844,7 +4844,7 @@ const SHAPE_REC = {
   square: 0.08,     // sides within this of each other make it a square
   ellRms: 0.04,     // an ellipse: radial error (of the radius) ...
   ellMax: 0.11,
-  ellOpen: 45,      // ... and no opening wider than this (degrees about its centre)
+  ellOpen: 45,      // ... and no opening wider than this (degrees about its center)
   round: 1.12,      // axes within this ratio make it a circle
   ellTilt: 12,      // a longer ellipse must be upright within this (the Board's ellipses are axis-aligned)
   snap: 4,          // lines within this many degrees of a 15° step are put on it
@@ -4991,7 +4991,7 @@ function shapeLoop(R, S) {
   for (let j = 0; j < i0; j++) if (strays(j)) return null;
   return loop;
 }
-// net turning (in turns) round a closed loop, its total, and the sharpest turn over two neighbouring points (degrees)
+// net turning (in turns) round a closed loop, its total, and the sharpest turn over two neighboring points (degrees)
 function shapeTurning(R) {
   const n = R.length, ts = [];
   let net = 0, abs = 0, sharp = 0;
@@ -5016,7 +5016,7 @@ function shapeSolve(M, v) { // Gaussian elimination with partial pivoting; null 
   for (let r = n - 1; r >= 0; r--) { let s = A[r][n]; for (let k = r + 1; k < n; k++) s -= A[r][k] * x[k]; x[r] = s / A[r][r]; }
   return x;
 }
-// an ellipse through a closed loop's points: centre, semi-axes along its principal axes, tilt, radial errors
+// an ellipse through a closed loop's points: center, semi-axes along its principal axes, tilt, radial errors
 function shapeFitEllipse(Q, S) {
   const n = Q.length;
   let cx = 0, cy = 0;
@@ -5124,7 +5124,7 @@ function shapeRecPoly(loop, S) {
     if (dmid > C.sideDev * chord + 0.012 * S || dall > C.sideEnd * chord + 0.03 * S || Math.sqrt(ss / n) > C.sideRms * chord + 0.004 * S) return null;
     lines.push(f);
   }
-  // vertices where neighbouring sides' lines meet
+  // vertices where neighboring sides' lines meet
   const V = [];
   for (let s = 0; s < K; s++) {
     const f = lines[(s + K - 1) % K], g = lines[s], den = f.ux * g.uy - f.uy * g.ux, P = R[cs[s]];
@@ -5254,8 +5254,8 @@ function pdfBytes(x) {
   return null;
 }
 
-// A JPEG's pixel size and colour components, read from its frame header (SOF):
-// {w, h, comps (1 grey, 3 colour, 4 CMYK), bits (8 for every JPEG a PDF can hold), adobe (an Adobe APP14 segment came
+// A JPEG's pixel size and color components, read from its frame header (SOF):
+// {w, h, comps (1 gray, 3 color, 4 CMYK), bits (8 for every JPEG a PDF can hold), adobe (an Adobe APP14 segment came
 // first)}, or null when the bytes are not a JPEG (no SOI, a damaged marker, no frame header before the scan).
 function pdfJpegSize(bytes) {
   const b = pdfBytes(bytes);
@@ -5281,7 +5281,7 @@ function pdfJpegSize(bytes) {
   return null;
 }
 
-// where a picture of iw × ih px goes to fill a pw × ph pt page without distortion, centred inside a margin (pt):
+// where a picture of iw × ih px goes to fill a pw × ph pt page without distortion, centered inside a margin (pt):
 // [x, y, w, h] in pt from the page's top-left
 function pdfFit(iw, ih, pw, ph, margin) {
   const mg = Math.max(0, +margin || 0), aw = Math.max(1e-3, pw - 2 * mg), ah = Math.max(1e-3, ph - 2 * mg);
@@ -5334,10 +5334,10 @@ function pdfIdOf(parts) {
 //   pages: [{ jpeg: the bytes of a baseline (or progressive) JPEG, as canvas.toBlob gives (a Uint8Array, an
 //             ArrayBuffer or a data URL); iw, ih: its pixel size (read from the JPEG itself, which wins when they
 //             differ: it is what a reader decodes); pw, ph: the page size in pt (default Letter); place: [x, y, w, h]
-//             where the picture goes, in pt from the page's TOP-left (default: fitted to the page, centred) }]
+//             where the picture goes, in pt from the page's TOP-left (default: fitted to the page, centered) }]
 //   meta:  { title, author?, subject?, date? (a Date; default now) }
 // Returns a Uint8Array holding a PDF 1.4 file. Pages may differ in size; a page side above 200 in is scaled down to it
-// (picture and all). A grey JPEG goes in as /DeviceGray, a colour one as /DeviceRGB, a CMYK one as /DeviceCMYK.
+// (picture and all). A gray JPEG goes in as /DeviceGray, a color one as /DeviceRGB, a CMYK one as /DeviceCMYK.
 // Throws an Error naming the page when there are no pages or a page has no usable JPEG.
 function pdfMake(pages, meta) {
   if (!Array.isArray(pages) || !pages.length) throw new Error('pdfMake: no pages');
@@ -5592,13 +5592,13 @@ function storeImagesDurable() { return storeOpen().then(db => !!db && storeMem.s
 
 // ================================================================== writing pad
 const PAD_DEFAULTS = {
-  ink: null,            // stroke colour; default: the element's CSS --nib-ink, else its text colour
+  ink: null,            // stroke color; default: the element's CSS --nib-ink, else its text color
   width: 3,             // stroke width in CSS px
-  auto: true,           // recognise automatically after the pen rests
-  delay: 450,           // ms of rest before recognising
+  auto: true,           // recognize automatically after the pen rests
+  delay: 450,           // ms of rest before recognizing
   settle: 0,            // ms of rest before read ink changes into its tidy / handwritten / typeset form (the answers do not wait)
   penOnly: false,       // ignore touch and mouse (stylus-only boards)
-  boxes: false,         // draw recognised symbol boxes over the ink
+  boxes: false,         // draw recognized symbol boxes over the ink
   smooth: 0,            // smooth shaky ink along its path before reading (sigma as a share of the writing size)
   view: 'ink',          // how read ink is shown: 'ink' as written, 'tidy', 'hand' (the writer's Replicator handwriting), 'typeset'
   motion: true,         // animate ink into its tidy / handwritten / typeset form (off when the reader asks for less motion)
@@ -5625,7 +5625,7 @@ const PAD_DEFAULTS = {
   onChange: null,       // (pad) => void, after every stroke / undo / clear
 };
 
-// Writing in different places on a board: strokes near each other belong together — neighbours on a line (within
+// Writing in different places on a board: strokes near each other belong together — neighbors on a line (within
 // 1.5 writing heights across, 0.6 up or down) or stacked (fractions, steps of working: within 1.6 heights down and
 // overlapping across). Returns groups of stroke indices in reading order.
 function clustersOf(strokes) {
@@ -5729,9 +5729,9 @@ function joinParts(parts) {
   };
 }
 
-// ================================================================== canvas: colours, elements
-// Colours are named so they can read on any paper: '@red' is a deep red on cream or white paper and a lighter one on a
-// chalkboard or a dark board. A plain CSS colour is used as it is. null is the paper's own ink (navy, or cream on dark).
+// ================================================================== canvas: colors, elements
+// Colors are named so they can read on any paper: '@red' is a deep red on cream or white paper and a lighter one on a
+// chalkboard or a dark board. A plain CSS color is used as it is. null is the paper's own ink (navy, or cream on dark).
 const PAD_COLORS = {
   '@ink': [null, null], '@black': ['#16181d', '#f5f3ee'], '@red': ['#d1352b', '#ff7d6e'], '@blue': ['#1f5fbf', '#7fb0ff'],
   '@green': ['#1d8a4b', '#6fd49c'], '@orange': ['#e0750f', '#ffb15c'], '@purple': ['#7a3db4', '#c79dff'],
@@ -5745,8 +5745,8 @@ function padColor(c, dark, ink) {
   const k = PAD_COLORS[c];
   return k ? (k[dark ? 1 : 0] || ink) : c;
 }
-// a shape's fill: 'tint' (its own colour, see-through), 'solid' (its own colour), '@red:0.25' (a named colour at that
-// opacity) or a CSS colour
+// a shape's fill: 'tint' (its own color, see-through), 'solid' (its own color), '@red:0.25' (a named color at that
+// opacity) or a CSS color
 function padFill(f, dark, col) {
   if (!f || f === 'none') return null;
   if (f === 'tint' || f === 'solid') return padAlpha(col, f === 'tint' ? (dark ? 0.28 : 0.18) : 1);
@@ -5754,14 +5754,14 @@ function padFill(f, dark, col) {
   if (m) return padAlpha(padColor(m[1], dark, col), +m[2]);
   return padColor(f, dark, col);
 }
-// a #rgb / #rrggbb colour at an opacity
+// a #rgb / #rrggbb color at an opacity
 function padAlpha(c, a) {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim());
   if (!m || a >= 1) return c;
   const h = m[1].length === 3 ? m[1].replace(/./g, ch => ch + ch) : m[1];
   return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`;
 }
-// how light a CSS colour is (0 black … 1 white); unknown colours count as light
+// how light a CSS color is (0 black … 1 white); unknown colors count as light
 function padLum(color) {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color || '').trim());
   let r, g, b;
@@ -5881,7 +5881,7 @@ class Pad {
     Object.assign(this.o, o || {});
     if (!!this.o.train !== tb) { if (this.o.train) this._trainSee(); else { clearTimeout(this._trainTimer); this._trainTimer = null; this._seen.clear(); } }
     if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
-    // only options that change the reading read the ink again; a view, colour or pen width just redraws
+    // only options that change the reading read the ink again; a view, color or pen width just redraws
     const reread = this._readKey() !== rk;
     if (reread) { this.optsVersion++; this.parts.clear(); }
     if (!this.o.infinite && (this.cam.x || this.cam.y || this.cam.z !== 1)) this.cam = { x: 0, y: 0, z: 1 };
@@ -5936,7 +5936,8 @@ class Pad {
       if (this.o.penOnly || this.o.fingers === 'ignore') { this.why = 'ignored: pen only'; return; }
       if (now < this.penUntil || [...this.ptrs.values()].some(P => P.type === 'pen')) { this.why = 'ignored: pen in use'; return; }
       if (this._wide(e) && this.mode !== 'erase') { this.why = 'ignored: palm'; return; }   // with Erase on, a hand rubs out
-      const sp = this._spt(e); this.touches.set(e.pointerId, { x: sp[0], y: sp[1], t: now });
+      for (const [id, T] of this.touches) if (now - (T.m || T.t) > 1500) this.touches.delete(id);   // fingers whose pointerup was lost
+      const sp = this._spt(e); this.touches.set(e.pointerId, { x: sp[0], y: sp[1], t: now, m: now });
     }
     // panning and zooming: the hand tool, space or the middle button with a mouse, fingers set to move the board, two fingers
     if (this.o.infinite && this._gestureDown(e, now)) return;
@@ -5967,7 +5968,7 @@ class Pad {
     const now = performance.now();
     if (e.pointerType === 'pen') { this.penUntil = now + 1000; this.penSeen = now; if (this.pending.length) this._brushed(); }
     const T = this.touches.get(e.pointerId);
-    if (T) { const sp = this._spt(e); T.x = sp[0]; T.y = sp[1]; }
+    if (T) { const sp = this._spt(e); T.x = sp[0]; T.y = sp[1]; T.m = now; }
     if (this.gesture && this._gestureMove(e)) return;
     const P = this.ptrs.get(e.pointerId);
     if (!P) return;
@@ -6006,8 +6007,13 @@ class Pad {
   // the board. Two fingers put down together (within 0.3 s and a hand's width of each other) pan and zoom; the first
   // finger's stroke, if it had begun, is taken back. Fingers in a gesture never write, even after one lifts.
   _gestureDown(e, now) {
-    const type = e.pointerType, touch = type === 'touch', sp = this._spt(e), G = this.gesture;
+    const type = e.pointerType, touch = type === 'touch', sp = this._spt(e);
+    // a gesture whose fingers have been quiet for 1.5 s lost a pointerup somewhere, and a pen ends a gesture of fingers:
+    // neither may keep the board from listening
+    if (this.gesture && (now - (this.gesture.last || 0) > 1500 || (type === 'pen' && this.gesture.touch))) { this.gesture = null; this._cursor(); this._camMoved(true); }
+    const G = this.gesture;
     if (G) {
+      G.last = now;
       if (touch && G.touch && G.ids.length === 1) { G.ids.push(e.pointerId); this._gestureStart(G.ids, true); }
       e.preventDefault(); this._capture(e);
       return true;
@@ -6016,7 +6022,7 @@ class Pad {
       || (type !== 'mouse' && this.mode === 'pan') || (touch && this.o.fingers === 'pan');
     if (pan) {
       e.preventDefault(); this._capture(e);
-      this.gesture = { ids: [e.pointerId], touch, kind: 'pan', cam0: Object.assign({}, this.cam), s0: sp, cur: sp };
+      this.gesture = { ids: [e.pointerId], touch, kind: 'pan', cam0: Object.assign({}, this.cam), s0: sp, cur: sp, last: now };
       if (touch) this._gestureStart([e.pointerId], true);
       this.why = 'pan';
       this.canvas.style.cursor = 'grabbing';
@@ -6025,10 +6031,10 @@ class Pad {
     if (touch && this.o.pinch && this.touches.size === 2) {
       const [oid, o] = [...this.touches.entries()].find(([id]) => id !== e.pointerId) || [];
       const other = oid !== undefined ? this.ptrs.get(oid) : null;
-      if (o && Math.hypot(o.x - sp[0], o.y - sp[1]) < 420 && now - o.t < 300 && (!other || other.mode === 'draw' || other.mode === 'erase' || other.mode === 'laser')) {
-        if (other) this._drop(other);
+      if (o && Math.hypot(o.x - sp[0], o.y - sp[1]) < 420 && now - o.t < 300) {
+        if (other) this._drop(other);                     // whatever the first finger began (a stroke, a lasso, a shape, a move) is taken back
         e.preventDefault(); this._capture(e);
-        this.gesture = { ids: [oid, e.pointerId], touch: true };
+        this.gesture = { ids: [oid, e.pointerId], touch: true, last: now };
         this._gestureStart(this.gesture.ids, true);
         this.why = 'pinch';
         return true;
@@ -6050,6 +6056,7 @@ class Pad {
     const G = this.gesture;
     if (!G || !G.ids.includes(e.pointerId)) return false;
     e.preventDefault();
+    G.last = performance.now();
     if (G.touch) {
       const pts = G.ids.map(id => this.touches.get(id)).filter(Boolean);
       if (!pts.length) return true;
@@ -6171,9 +6178,13 @@ class Pad {
     if (P.mode === 'select') { this._selectUp(P, e); return; }
     if (P.mode === 'shape') { this._shapeUp(P, e); return; }
     if (P.mode === 'laser') { if (P.cur && P.cur.length) this.lasers.push({ pts: P.cur, end: performance.now() }); this._laserLoop(); return; }
-    if (P.mode === 'text') { if (e && e.type === 'pointerup' && P.cur) this._textAt(P.cur[0]); return; }
+    if (P.mode === 'text') {
+      if (P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; return; }   // the heel of the hand
+      if (e && e.type === 'pointerup' && P.cur) this._textAt(P.cur[0]);
+      return;
+    }
     const s = P.cur;
-    if (e && e.type === 'pointercancel' && s && s.length < 3) { this.redraw(); return; }   // a cancelled tap
+    if (e && e.type === 'pointercancel' && s && s.length < 3) { this.redraw(); return; }   // a canceled tap
     // a tap on an answer's chip (up within 10 px and 400 ms of the down, inside the chip) shows that answer
     if (P.chip && e && e.type === 'pointerup' && s && s.length) {
       const q = this._pt(e);
@@ -6194,9 +6205,10 @@ class Pad {
     const T = P.tool || {};
     let el = s;
     if (P.snap) {
-      // drawn and held: the shape it was, in the pen's colour and width
+      // drawn and held: the shape it was, in the pen's color and width
       el = P.snap.pts.map(q => [q[0], q[1]]);
-      Object.assign(info, { tool: 'shape', shape: P.snap.shape, size: T.size || this.o.width * (T.kind === 'marker' ? 3 : 1) });
+      if (T.kind === 'highlighter') Object.assign(info, { tool: 'highlighter', size: T.size || 22 });
+      else Object.assign(info, { tool: 'shape', shape: P.snap.shape, size: T.size || this.o.width * (T.kind === 'marker' ? 3 : 1) });
       if (T.color) info.color = T.color;
     } else {
       if (T.kind && T.kind !== 'pen') info.tool = T.kind;
@@ -6245,7 +6257,7 @@ class Pad {
       else this.strokes.splice(Math.min(o.rm, this.strokes.length), 0, o.s);
     }
     for (const x of P.erased.slice().reverse()) this.strokes.splice(x.i, 0, x.s);
-    if (P.mode === 'select' && P.op && P.op.orig) for (const [s, was] of P.op.orig) { s.length = 0; for (const q of was) s.push(q.slice()); this._touched(s); }
+    if (P.mode === 'select' && P.op && P.op.orig) { for (const [s, was] of P.op.orig) { s.length = 0; for (const q of was) s.push(q.slice()); this._touched(s); } this._planTo(P.op.items, x => x, y => y, 1); }
     for (const k of P.hid) this.revealed.add(k);
     if (P.hid.length) this._syncHidden();
     this.redraw();
@@ -6684,11 +6696,11 @@ class Pad {
     try { this._paint(true, { paper: !(o.background || o.dots) }); } finally { this.ctx = keep.ctx; this.anim = keep.anim; }
     return c;
   }
-  // everything on the page, in world units (with m around it), or null when it is empty
-  contentRect(m) {
+  // everything on the page, in world units (with m around it; o.hidden: answers still behind their chips too), or null
+  contentRect(m, o) {
     let b = null;
     for (const s of this.strokes) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); }
-    if (this.plan) for (const it of this.plan.items) if (it.answer && !it.hidden && it.box) b = b ? ubox(b, it.box) : it.box.slice();
+    if (this.plan) for (const it of this.plan.items) if (it.answer && (!it.hidden || (o && o.hidden)) && it.box) b = b ? ubox(b, it.box) : it.box.slice();
     if (!b) return null;
     m = m || 0;
     return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
@@ -6702,7 +6714,7 @@ class Pad {
     const sel = o.only ? new Set(o.only) : null;
     let rect = o.rect;
     if (!rect && sel) { let b = null; for (const s of sel) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); } const m = o.margin === undefined ? 16 : o.margin; rect = b && [b[0] - m, b[1] - m, b[2] + m, b[3] + m]; }
-    if (!rect) rect = this.contentRect(o.margin === undefined ? 40 : o.margin) || this.viewRect;
+    if (!rect) rect = this.contentRect(o.margin === undefined ? 40 : o.margin, { hidden: o.answers === 'all' }) || this.viewRect;
     const W = Math.max(1, rect[2] - rect[0]), H = Math.max(1, rect[3] - rect[1]);
     let k = o.scale || 2;
     const most = o.maxPixels || 4e7;
@@ -6937,6 +6949,24 @@ class Pad {
     return true;
   }
   // the view moved with the ink: t = [ax, ay, bx, by, k] maps x to bx + (x - ax)·k (back: the other way)
+  // the view's items drawn from these elements (and the answers after their "="), kept as they are now, to move with them
+  _planOf(set) {
+    if (!this.plan) return [];
+    return this.plan.items.filter(it => (it.from.length && it.from.every(s => set.has(s))) || (it.answer && it.eqFrom && it.eqFrom.length && it.eqFrom.every(s => set.has(s))))
+      .map(it => ({ it, parts: it.parts, box: it.box.slice(), group: it.group ? it.group.slice() : null, em: it.em }));
+  }
+  // those items, mapped from where they were kept by x → X(x), y → Y(y) (k: how much sizes change)
+  _planTo(kept, X, Y, k) {
+    if (!kept || !kept.length || !this.plan) return;
+    for (const v of kept) {
+      const it = v.it;
+      it.parts = mapParts(v.parts, X, Y, k); it.box = [X(v.box[0]), Y(v.box[1]), X(v.box[2]), Y(v.box[3])];
+      if (v.group) it.group = [X(v.group[0]), Y(v.group[1]), X(v.group[2]), Y(v.group[3])];
+      if (v.em) it.em = v.em * k;
+    }
+    this.plan.chips = this._chips(this.plan.items);
+    this.anim = null;
+  }
   _movePlan(t, back) {
     if (!this.plan) return;
     const [ax, ay, bx, by, k0] = t, k = back ? 1 / k0 : k0;
@@ -6970,12 +7000,14 @@ class Pad {
   // ---- shapes dragged out with the shape tool (a tap makes one of a standard size)
   _shapeUp(P, e) {
     let prev = P.prev;
+    // a finger's tap within 3 s of the pen is the heel of the hand (a finger placing a shape or text later is a finger)
+    if (!prev && P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
     if (!prev && e && e.type === 'pointerup' && typeof shapeFromDrag === 'function') prev = shapeFromDrag(this.shapeTool.kind, P.a, P.a, { snap: this.o.snap, angle: true, z: this.cam.z });
     if (!prev || !prev.pts || !prev.pts.length) { this.redraw(); return; }
     const S = this.shapeTool, s = prev.pts.map(q => [q[0], q[1]]);
     const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: null, tool: 'shape', shape: prev.shape, size: +S.size > 0 ? +S.size : 3 };
     if (S.color) info.color = S.color;
-    // a number line or a plane is a placed thing to write on: it takes the colour and width, not a fill or dashes
+    // a number line or a plane is a placed thing to write on: it takes the color and width, not a fill or dashes
     const axes = prev.shape === 'numberline' || prev.shape === 'plane';
     if (S.fill && !axes) info.fill = S.fill;
     if (S.dash && !axes) info.dash = true;
@@ -7071,10 +7103,17 @@ class Pad {
     const sel = this._liveSel(), sp = this.toScreen(p);
     if (sel.length) {
       const b = this._selBox(sel), h = this._handleAt(b, sp, P.type !== 'mouse');
-      if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]) }; return; }
-      if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]) }; return; }
+      if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
+      if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
     }
-    const hit = this.elementAt(p, true);
+    let hit = this.elementAt(p, true);
+    if (hit && !this.selection.has(hit)) {
+      const t = this._tool(hit), E = this.info.get(hit) || {};
+      if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
+        const b = this._bounds(hit), m = 14 / this.cam.z;
+        if (p[0] - b[0] > m && b[2] - p[0] > m && p[1] - b[1] > m && b[3] - p[1] > m) hit = null;
+      }
+    }
     if (hit) {
       P.tapped = this.selection.size === 1 && this.selection.has(hit) ? hit : null;
       this._setSel([hit]);
@@ -7093,6 +7132,7 @@ class Pad {
       if (O.kind === 'move') {
         const dx = p[0] - P.p0[0], dy = p[1] - P.p0[1];
         for (const [s, was] of O.orig) { for (let i = 0; i < s.length; i++) { s[i][0] = was[i][0] + dx; s[i][1] = was[i][1] + dy; } this._touched(s); }
+        this._planTo(O.items, x => x + dx, y => y + dy, 1);
       } else {
         const b = O.b0, h = O.h, W = Math.max(b[2] - b[0], 1e-6), H = Math.max(b[3] - b[1], 1e-6);
         const ax = h.includes('w') ? b[2] : b[0], ay = h.includes('n') ? b[3] : b[1];
@@ -7108,6 +7148,7 @@ class Pad {
           for (let i = 0; i < s.length; i++) { s[i][0] = ax + (was[i][0] - ax) * kxx; s[i][1] = ay + (was[i][1] - ay) * kyy; }
           this._touched(s);
         }
+        this._planTo(O.items, x => ax + (x - ax) * kx, y => ay + (y - ay) * ky, Math.sqrt(kx * ky));
       }
       O.moved = true;
       this._frame();
@@ -7153,10 +7194,15 @@ class Pad {
     }
     this.redraw();
   }
-  // in the lasso: most of a stroke's points, or the middle of a shape, text or picture
+  // in the lasso: most of a stroke's points, the middle of a shape or text, or all of a picture, number line or plane
+  // (things writing goes on: a lasso round the writing on one leaves it where it is)
   _inLasso(s, poly) {
-    const t = this._tool(s);
-    if (t === 'shape' || t === 'text' || t === 'image') { const b = this._bounds(s); return padInPoly([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], poly); }
+    const t = this._tool(s), E = this.info.get(s) || {};
+    if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
+      const b = this._bounds(s);
+      return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].every(q => padInPoly(q, poly));
+    }
+    if (t === 'shape' || t === 'text') { const b = this._bounds(s); return padInPoly([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], poly); }
     let n = 0;
     for (const q of s) if (padInPoly(q, poly)) n++;
     return n >= Math.max(1, 0.6 * s.length);
@@ -7225,7 +7271,7 @@ class Pad {
     this._clip = clip;
     return clip;
   }
-  // put copied elements on the board (one undoable step), centred on world point at (default: offset from where they were
+  // put copied elements on the board (one undoable step), centered on world point at (default: offset from where they were
   // copied, or the middle of the view when that is out of sight); they come selected
   paste(clip, at) {
     clip = clip || this._clip;
@@ -7290,7 +7336,8 @@ class Pad {
   nudgeSelection(dx, dy) {
     const sel = this._liveSel();
     if (!sel.length) return;
-    const wx = dx / this.cam.z, wy = dy / this.cam.z, move = [];
+    const wx = dx / this.cam.z, wy = dy / this.cam.z, move = [], items = this._planOf(new Set(sel));
+    this._planTo(items, x => x + wx, y => y + wy, 1);
     for (const s of sel) { const was = s.map(q => q.slice()); for (const q of s) { q[0] += wx; q[1] += wy; } this._touched(s); move.push([s, was, s.map(q => q.slice())]); }
     this._inkMoved(sel, false);
     this._push({ move, t: null }); this._changed(); this._selChanged();
@@ -7470,7 +7517,7 @@ class Pad {
     this._emit(res);
     return res;
   }
-  // the recogniser's options (the pad's own)
+  // the recognizer's options (the pad's own)
   _ropts() { const o = Object.assign({}, this.o); o.smooth = +o.smooth > 0 ? +o.smooth : 0; return o; }
   // the classifier work for the next read, one stroke group per step (newest ink first)
   *_warm(ro) {
@@ -7515,7 +7562,7 @@ class Pad {
   }
   _partCached(st, ro) { return this.parts.has(this._partKey(st, ro)); }
   _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
-  // re-label one recognised symbol (from result.symbols[i].candidates) and re-run
+  // re-label one recognized symbol (from result.symbols[i].candidates) and re-run
   // the reading's LaTeX with the answers written in after their "="
   solvedLatex() {
     const res = this.result;
@@ -8090,7 +8137,7 @@ const Nib = {
   _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
-// The canvas's parts, for a page that holds a board (the Board): named colours, papers, shapes, PDF and storage.
+// The canvas's parts, for a page that holds a board (the Board): named colors, papers, shapes, PDF and storage.
 Nib.canvas = {
   colors: PAD_COLORS, color: padColor,
   paperKinds: typeof PAPER_KINDS !== 'undefined' ? PAPER_KINDS : [], paperTones: typeof PAPER_TONES !== 'undefined' ? PAPER_TONES : [],

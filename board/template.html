@@ -68,7 +68,7 @@ body { margin: 0; background: var(--board); color: var(--ink); font-family: var(
 .tools .tool { padding: 0; width: 40px; min-width: 40px; }
 .swatchbtn, #solve, #fix, #paperbtn, #undo, #redo, #clear, #exportbtn, #morebtn, #gear, #full { min-width: 40px; }
 #prev, #next { width: 36px; min-width: 36px; }
-/* the colour the pen writes with shows under its tool */
+/* the color the pen writes with shows under its tool */
 .tool .ink { position: absolute; left: 9px; right: 9px; bottom: 4px; height: 3px; border-radius: 2px; background: var(--tint, transparent); }
 .tool .more { position: absolute; right: 3px; bottom: 3px; width: 0; height: 0; border-left: 4px solid transparent; border-bottom: 4px solid currentColor; opacity: .55; }
 .seg button:focus-visible, .tool:focus-visible, .notebtn:focus-visible, .opt:focus-visible, .sw:focus-visible, .kb:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
@@ -130,7 +130,7 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
 .cand[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); }
 .cand:hover:not([aria-pressed="true"]) { border-color: var(--ink); }
 .cand:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-/* popovers: settings, colours, shapes, paper, insert, export, pages, more */
+/* popovers: settings, colors, shapes, paper, insert, export, pages, more */
 .pop {
   position: absolute; z-index: 7; width: min(340px, calc(100% - 16px)); box-sizing: border-box; max-height: calc(100% - 16px); overflow-y: auto; overscroll-behavior: contain;
   background: var(--rail); border: 1px solid var(--rule); border-radius: 16px; padding: 14px 16px 16px; box-shadow: var(--shadow);
@@ -170,7 +170,7 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
 .count { margin: 4px 0 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .hint { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.35; }
-/* colours and sizes */
+/* colors and sizes */
 .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .sw { width: 100%; aspect-ratio: 1; max-width: 44px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); justify-self: center; }
 .sw[aria-checked="true"] { box-shadow: 0 0 0 3px var(--rail), 0 0 0 5px var(--gold); }
@@ -233,7 +233,7 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
 /* the top or bottom rail stays one row as the screen narrows: labels go first, then the views become icons, then the mark */
 .tool .t { display: none; }
 .wide-only { display: none !important; }
-@media (min-width: 1500px) { .wide-only { display: inline-flex !important; } }
+@media (min-width: 1500px) { .wide-only:not([hidden]) { display: inline-flex !important; } }
 @media (min-width: 1880px) { .tool .t2 { display: inline; } .tool:has(.t2) { padding: 0 10px; } }
 @media (max-width: 1499px) { .seg .vi { display: block; } .seg .vt { display: none; } .seg button { padding: 0 8px; } }
 @media (max-width: 1239px) { .mark { display: none; } }
@@ -327,15 +327,15 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
     <div class="grp tools" role="radiogroup" aria-label="Tools" id="toolbar">
       <button type="button" class="tool" data-tool="select" role="radio" aria-checked="false" aria-pressed="false" title="Select: lasso or tap, then move or resize (V)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-select"/></svg></button>
       <button type="button" class="tool" data-tool="hand" role="radio" aria-checked="false" aria-pressed="false" title="Move the board (H, or hold Space)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-hand"/></svg></button>
-      <button type="button" class="tool" data-tool="pen" role="radio" aria-checked="true" aria-pressed="true" title="Pen (P) — tap again for colour and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pen"/></svg><span class="ink"></span></button>
-      <button type="button" class="tool" data-tool="marker" role="radio" aria-checked="false" aria-pressed="false" title="Marker (M) — tap again for colour and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-marker"/></svg><span class="ink"></span></button>
-      <button type="button" class="tool" data-tool="highlighter" role="radio" aria-checked="false" aria-pressed="false" title="Highlighter (I) — tap again for colour and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-highlighter"/></svg><span class="ink"></span></button>
+      <button type="button" class="tool" data-tool="pen" role="radio" aria-checked="true" aria-pressed="true" title="Pen (P) — tap again for color and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pen"/></svg><span class="ink"></span></button>
+      <button type="button" class="tool" data-tool="marker" role="radio" aria-checked="false" aria-pressed="false" title="Marker (M) — tap again for color and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-marker"/></svg><span class="ink"></span></button>
+      <button type="button" class="tool" data-tool="highlighter" role="radio" aria-checked="false" aria-pressed="false" title="Highlighter (I) — tap again for color and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-highlighter"/></svg><span class="ink"></span></button>
       <button type="button" class="tool" id="erase" data-tool="eraser" role="radio" aria-checked="false" aria-pressed="false" aria-label="Erase" title="Eraser (E) — tap again: whole strokes or part of a stroke"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eraser"/></svg></button>
       <button type="button" class="tool" data-tool="shape" role="radio" aria-checked="false" aria-pressed="false" title="Shapes (R) — tap again to pick one"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#s-rect" id="shapeicon"/></svg><span class="more"></span></button>
       <button type="button" class="tool" data-tool="text" role="radio" aria-checked="false" aria-pressed="false" title="Text (T) — tap the board to type"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-text"/></svg></button>
       <button type="button" class="tool" data-tool="laser" role="radio" aria-checked="false" aria-pressed="false" title="Laser pointer (L): points, keeps nothing"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-laser"/></svg></button>
     </div>
-    <button type="button" class="tool swatchbtn" id="stylebtn" aria-label="Colour and size" aria-expanded="false" aria-controls="stylepop" title="Colour and size"><span class="dot"></span></button>
+    <button type="button" class="tool swatchbtn" id="stylebtn" aria-label="Color and size" aria-expanded="false" aria-controls="stylepop" title="Color and size"><span class="dot"></span></button>
     <span class="sep"></span>
     <div class="seg" role="radiogroup" aria-label="How writing is shown" id="views">
       <button type="button" role="radio" data-view="ink" aria-checked="true" title="Ink: as written (1)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15c2.5-6 4.5-6 6 0s3.5 6 6 0 3.5-6 6 0"/></svg><span class="vt">Ink</span></button>
@@ -371,7 +371,7 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
     <nib-pad id="pad" view="ink" stroke-width="3.5" settle="2500" separate times="false" reveal infinite paper="dots" aria-label="Board"></nib-pad>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
     <div class="selbar" id="selbar" role="toolbar" aria-label="What is selected" hidden>
-      <button type="button" id="selcolor" title="Colour and size" aria-label="Colour and size"><span class="dot"></span></button>
+      <button type="button" id="selcolor" title="Color and size" aria-label="Color and size"><span class="dot"></span></button>
       <button type="button" id="seledit" title="Change it" aria-label="Change it" hidden><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-edit"/></svg></button>
       <button type="button" id="seldup" title="Duplicate (Ctrl+D)" aria-label="Duplicate"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-dup"/></svg></button>
       <button type="button" id="selcopy" title="Copy (Ctrl+C)" aria-label="Copy"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg></button>
@@ -396,9 +396,9 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
       </div>
     </div>
 
-    <div class="pop" id="stylepop" role="dialog" aria-label="Colour and size" hidden>
+    <div class="pop" id="stylepop" role="dialog" aria-label="Color and size" hidden>
       <h2 id="styletitle">Pen</h2>
-      <div class="row"><p class="lab">Colour</p><div class="swatches" id="swatches" role="radiogroup" aria-label="Colour"></div></div>
+      <div class="row"><p class="lab">Color</p><div class="swatches" id="swatches" role="radiogroup" aria-label="Color"></div></div>
       <div class="row" id="sizerow"><p class="lab">Size</p><div class="sizes" id="sizes" role="radiogroup" aria-label="Size"></div></div>
       <div class="row" id="fillrow"><p class="lab" id="lab-fill">Fill</p><div class="seg" role="radiogroup" aria-labelledby="lab-fill" data-set="fill">
         <button type="button" role="radio" data-v="none">None</button><button type="button" role="radio" data-v="tint">Light</button><button type="button" role="radio" data-v="solid">Solid</button></div></div>
@@ -417,7 +417,7 @@ nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--
     <div class="pop wide" id="paperpop" role="dialog" aria-label="Paper" hidden>
       <h2>Paper</h2>
       <div class="row"><div class="papers" id="papers" role="radiogroup" aria-label="Paper"></div></div>
-      <div class="row"><p class="lab" id="lab-tone">Colour</p><div class="seg" role="radiogroup" aria-labelledby="lab-tone" id="tones"></div></div>
+      <div class="row"><p class="lab" id="lab-tone">Color</p><div class="seg" role="radiogroup" aria-labelledby="lab-tone" id="tones"></div></div>
       <p class="hint" id="paperhint">For this page. New pages take the paper last chosen.</p>
     </div>
     <div class="pop" id="axispop" role="dialog" aria-label="Number line" hidden>

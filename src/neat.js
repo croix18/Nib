@@ -1,7 +1,7 @@
 // ================================================================== in place: tidy, my handwriting, typeset
 // Lays a reading out again where it was written. Every symbol becomes a glyph — the writer's own strokes cleaned
-// up ('tidy'), the writer's Replicator handwriting ('hand'), or typeset maths ('typeset') — placed by TeX-like rules
-// (spacing by kind, raised exponents, centred fractions, roots that cover their body, brackets as tall as what
+// up ('tidy'), the writer's Replicator handwriting ('hand'), or typeset math ('typeset') — placed by TeX-like rules
+// (spacing by kind, raised exponents, centered fractions, roots that cover their body, brackets as tall as what
 // they hold) at the writer's size, on a level line through the writer's own baseline, starting where they began.
 //
 // Units: layout happens in em of the writer's size (em = the height of a digit / 0.7), y up from the baseline;
@@ -86,7 +86,7 @@ function emOf(lines) {
   const m = median2(top.length ? top : all);
   return m > 0 ? m : 0;
 }
-// how far apart the writer puts the digits of a number, and other neighbouring symbols (em)
+// how far apart the writer puts the digits of a number, and other neighboring symbols (em)
 function gapsOf(lines, em) {
   const dd = [], oo = [];
   const visit = row => {
@@ -175,7 +175,7 @@ function rowBox(units, s, P, ctx) {
 }
 
 // The writer's line keeps its length: the gaps between top-level symbols stretch or shrink together (from half to
-// two and a half times their typeset size) so the tidied line spans about what was written; typeset maths, whose
+// two and a half times their typeset size) so the tidied line spans about what was written; typeset math, whose
 // glyphs are wider than handwriting, may also come down in size by up to a fifth. Returns the factor for the size.
 function fitRow(box, rawW, P) {
   const G = box.gaps || [];
@@ -257,7 +257,7 @@ function planOf(res, input, P, opts) {
   const ink = inkOf(input);
   const out = { em: 0, skew: res ? res.skew || 0 : 0, lines: [], items: [] };
   if (!res || !res.tree || !res.tree.length) return out;
-  // level coordinates: the slope the recogniser removed, removed again here the same way
+  // level coordinates: the slope the recognizer removed, removed again here the same way
   let sx = 0, n = 0;
   for (const s of ink) for (const p of s) { sx += p[0]; n++; }
   const c0 = n ? sx / n : 0, t = Math.tan((out.skew || 0) * Math.PI / 180);
@@ -470,7 +470,7 @@ function radicalParts(paths) {
 // a radical's strokes (ink, y down): the tick fitted into [0, cw] x [low, top], then a straight overline to `total`
 function tidyRadical(paths, cw, top, low, total, s) {
   if (!paths.length) return synthRadical(cw, top, low, total);
-  const fitted = fitInk(paths, { by: 'h', size: 1, bottom: 0 }, 1).paths;      // y up, normalised
+  const fitted = fitInk(paths, { by: 'h', size: 1, bottom: 0 }, 1).paths;      // y up, normalized
   const { tick, corner } = radicalParts(fitted);
   const tb = bboxOf(tick.length ? tick : fitted);
   const kx = cw / Math.max(tb[2] - tb[0], 1e-9), ky = (top - low) / Math.max(tb[3] - tb[1], 1e-9);
@@ -794,7 +794,7 @@ function typeProvider() {
     fence(u, h, d, s) {
       const text = TYPE_CHAR[u.label] || u.label, m = typeMetrics(text, 'm');
       const nat = (m.h + m.d) * s, k = Math.max(1, (h + d) / Math.max(nat, 1e-9));
-      // a taller bracket is the same glyph drawn taller; its middle stays on the line of maths
+      // a taller bracket is the same glyph drawn taller; its middle stays on the line of math
       const mid = (h - d) / 2, nmid = (m.h - m.d) * s / 2;
       return { w: m.w * s * Math.min(k, 1.4) ** 0.35, h: Math.max(h, m.h * s), d: Math.max(d, m.d * s),
         draw: [{ t: 'text', text, font: 'm', size: s, x: 0, y: mid - nmid * k, sx: Math.min(k, 1.4) ** 0.35, sy: k }] };
@@ -834,7 +834,7 @@ function pathsOf(items) {
   return out;
 }
 
-// Nib.neaten / Nib.typeset: recognise (or take options.result), then lay out in place
+// Nib.neaten / Nib.typeset: recognize (or take options.result), then lay out in place
 function inPlace(strokes, style, options) {
   const o = Object.assign({}, options || {});
   const res = o.result || defaultRecognizer().recognize(strokes, o);
@@ -881,7 +881,7 @@ function typeFontsReady() {
   })).then(() => true, () => false);
   return TYPE_FONTS;
 }
-// Draws drawable items on a 2D context (ink coordinates). o: {ink: colour, width: pen width, alpha}
+// Draws drawable items on a 2D context (ink coordinates). o: {ink: color, width: pen width, alpha}
 function drawItems(ctx, items, o) {
   ctx.save();
   ctx.strokeStyle = ctx.fillStyle = o.ink; ctx.lineCap = 'round'; ctx.lineJoin = 'round';

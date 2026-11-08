@@ -72,7 +72,7 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
   ok(api.t.theme.paper === '#fbf8ef' && api.t.theme.ink === '#1b2a4a' && !api.t.theme.dark && api.t['theme dark'].paper === '#101a2e' && api.t['theme dark'].ink === '#f1eadb' && api.t['theme dark'].dark, "'theme' is the Board's own: navy on cream, or cream on navy when the Board is dark");
   ok(api.t.white.paper === '#ffffff' && api.t.white.ink === '#1b2a4a' && !api.t.white.dark && api.t.cream.paper === '#fbf8ef' && api.t.cream.ink === '#1b2a4a' && !api.t.cream.dark && api.same, "white and cream take navy ink; white, cream, chalkboard and black do not change with the Board's theme");
   ok(api.t.green.dark && api.t.green.ink === '#f1eadb' && api.t.black.dark && api.t.black.ink === '#f1eadb' && /^#1[0-9a-f]3[0-9a-f]2[0-9a-f]$/.test(api.t.green.paper) && /^#1[0-9a-f]1[0-9a-f]1[0-9a-f]$/.test(api.t.black.paper), `the chalkboard (${api.t.green.paper}) and black (${api.t.black.paper}) are dark, with cream ink`);
-  ok(api.unknown && api.frozen, "an unknown tone (even '__proto__' or 'toString') is the Board's own; the colours are shared and frozen");
+  ok(api.unknown && api.frozen, "an unknown tone (even '__proto__' or 'toString') is the Board's own; the colors are shared and frozen");
   {
     const lum = h => { const n = parseInt(h.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
     const cr = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
@@ -110,7 +110,7 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
     const T = Paper.paperTone('white'), H = 20 * Math.sqrt(3), r = {};
     const shot = kind => paint({ kind, tone: 'white' }, { w: 640, h: 400, z: 1, cx: -100, cy: -60 }).ctx;
     const px = (ctx, pts) => pts.map(([x, y]) => hex(ctx.getImageData(x, y, 1, 1).data, 0));
-    // the darkest pixel in a box, as a fraction of the way from the paper to the label colour (1 = fully label)
+    // the darkest pixel in a box, as a fraction of the way from the paper to the label color (1 = fully label)
     const ink = (ctx, x0, y0, x1, y1) => { const d = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data; let m = 255; for (let i = 0; i < d.length; i += 4) m = Math.min(m, d[i + 1]); return (255 - m) / (255 - parseInt(T.label.slice(3, 5), 16)); };
     r.T = T;
     let c = shot('grid'); r.grid = px(c, [[140, 80], [139, 80], [141, 80], [160, 80], [160, 100], [160, 99], [100, 80], [380, 80]]);
@@ -127,12 +127,12 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
   });
   {
     const { T } = at, P = T.paper, eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
-    ok(eq(at.grid, [T.line, P, P, P, T.line, P, T.line, T.line]), 'grid: 1 px lines at x = 40k and y = 40k in the line colour, paper between (' + at.grid.join(' ') + ')');
+    ok(eq(at.grid, [T.line, P, P, P, T.line, P, T.line, T.line]), 'grid: 1 px lines at x = 40k and y = 40k in the line color, paper between (' + at.grid.join(' ') + ')');
     ok(eq(at.dots.slice(0, 3), [T.dot, T.dot, T.dot]) && eq(at.dots.slice(3), [P, P]), 'dots: a dot at (28i, 28j), paper between (' + at.dots.join(' ') + ')');
     ok(eq(at.graph, [T.major, T.line, P, P, P, P]), 'graph: minor lines every 20, a darker major line every 100, 1 px at this zoom (' + at.graph.join(' ') + ')');
     ok(eq(at.lined, [T.rule, P, T.rule, T.margin, P, P]), 'lined: rules every 40, the coral margin line at x = 0 (' + at.lined.join(' ') + ')');
     ok(eq(at.iso, [T.dot, T.dot, T.dot, T.dot, P, P]), 'isometric: lattice points at (0, 0), (20√3, 20), (40√3, 0), (0, 40); paper inside a triangle (' + at.iso.join(' ') + ')');
-    ok(eq(at.plane.slice(0, 4), [T.axis, T.axis, P, P]) && eq(at.plane.slice(4, 8), [T.axis, T.axis, P, P]) && at.plane[8] === T.line && at.plane[9] === P, 'plane: both axes 2 px in the axis colour through the origin, the unit grid in the line colour (' + at.plane.join(' ') + ')');
+    ok(eq(at.plane.slice(0, 4), [T.axis, T.axis, P, P]) && eq(at.plane.slice(4, 8), [T.axis, T.axis, P, P]) && at.plane[8] === T.line && at.plane[9] === P, 'plane: both axes 2 px in the axis color through the origin, the unit grid in the line color (' + at.plane.join(' ') + ')');
     ok(at.planeInk[0] > 0.6 && at.planeInk[1] > 0.6 && at.planeInk[2] > 0.6 && at.planeInk[3] === 0, 'plane: a "1" under x = 1, the one "0" below-left of the origin, a "1" left of y = 1 (' + at.planeInk.map(x => x.toFixed(2)).join(' ') + ')');
     ok(eq(at.numberlines, [T.axis, P, P, T.axis, T.axis, P, P]) && eq(at.numberRows, [T.axis, T.axis]) && at.numberInk[0] > 0.6 && at.numberInk[1] > 0.6 && at.numberInk[2] === 0, 'number lines: the 2 px line at y = 100, a tick at x = 40, labels "1" and "0" under their ticks (' + at.numberlines.join(' ') + ')');
   }
@@ -197,7 +197,7 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
     // the label ink in a band: [first, last] marked column or row
     const band = (v, x0, y0, x1, y1, vertical) => { const d = v.ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data, w = x1 - x0, hits = []; for (let i = 0; i < d.length; i += 4) if (d[i + 1] < lim) { const p = i / 4; hits.push(vertical ? Math.floor(p / w) + y0 : p % w + x0); } return hits.length ? [Math.min(...hits), Math.max(...hits), hits.length] : null; };
     // the labels along the x axis's label row: ink columns grouped (a gap over 3 px splits two labels) → how many, and
-    // the narrowest gap between neighbours; the y axis (at x = W/2 in these views) is not a label
+    // the narrowest gap between neighbors; the y axis (at x = W/2 in these views) is not a label
     const count = (v, y0, y1) => {
       const d = v.ctx.getImageData(0, y0, W, y1 - y0).data, col = new Array(W).fill(false);
       for (let i = 0; i < d.length; i += 4) if (d[i + 1] < lim && Math.abs((i / 4) % W - W / 2) > 3) col[(i / 4) % W] = true;
@@ -209,7 +209,7 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
     for (const z of [0.1, 0.25, 0.5, 1, 4]) { const v = paint({ kind: 'plane', tone: 'white' }, { w: W, h: H, z, cx: -W / 2 / z, cy: -H / 2 / z }); res['z' + z] = count(v, H / 2 + 5, H / 2 + 20); }
     // the labels either side of the origin mirror each other: the first one right of the y axis has its negative
     // twin as far to the left (the "0", below-left of the origin, never pushes it out)
-    // Swept finely over zoom, in narrow and wide views with the origin a little off centre: where the label step is
+    // Swept finely over zoom, in narrow and wide views with the origin a little off center: where the label step is
     // tightest the twin sits only a few px from the "0", and pixel rounding decides whether they touch.
     const Z = []; for (let z = 0.12; z <= 1.001; z += 0.02) Z.push(+z.toFixed(2));
     res.mirror = [200, 240, 600].flatMap(vw => [0, -7, 3, 11].flatMap(o => Z.map(z => {
@@ -240,18 +240,18 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
   ok([0.1, 0.25, 0.5, 1, 4].every(z => lab['z' + z].n >= 3 && lab['z' + z].minGap >= 6), `the x axis's labels thin out as the units get small so they never touch, and never vanish: ${[0.1, 0.25, 0.5, 1, 4].map(z => `zoom ${z}: ${lab['z' + z].n} labels, ${lab['z' + z].minGap} px apart at least`).join('; ')} (600 px view)`);
   {
     const bad = lab.mirror.filter(m => !m.left);
-    ok(!bad.length, `the x labels mirror each other about the origin, the "0" between them, in all ${lab.mirror.length} views (zoom 0.12 … 1 in 0.02 steps; 200, 240 and 600 px wide; origin off centre)` + bad.slice(0, 6).map(m => ` | missing: ${m.vw} px, offset ${m.o}, zoom ${m.z}, ±${Math.round(m.right)} px`).join(''));
+    ok(!bad.length, `the x labels mirror each other about the origin, the "0" between them, in all ${lab.mirror.length} views (zoom 0.12 … 1 in 0.02 steps; 200, 240 and 600 px wide; origin off center)` + bad.slice(0, 6).map(m => ` | missing: ${m.vw} px, offset ${m.o}, zoom ${m.z}, ±${Math.round(m.right)} px`).join(''));
   }
   ok(lab.top && lab.top[0] >= 3 && lab.top[1] <= 18 && lab.topN >= 12 && lab.bottom && lab.bottom[1] <= 397 && lab.bottom[0] >= 380 && lab.bottomN >= 12, `with the x axis off screen its labels are pinned to the top edge (rows ${lab.top}) or the bottom edge (rows ${lab.bottom})`);
   ok(lab.right && lab.right[1] <= 597 && lab.right[1] >= 590 && lab.left && lab.left[0] >= 3 && lab.left[0] <= 8, `with the y axis off screen its labels are pinned to the right edge (columns ${lab.right}) or the left edge (columns ${lab.left})`);
   ok(lab.corner.col && lab.corner.row, 'with both axes off screen both label rows show, pinned to the nearest edges');
 
-  // a fading family is an opaque colour, so where its lines cross the pixel is the line's own colour, not darker
+  // a fading family is an opaque color, so where its lines cross the pixel is the line's own color, not darker
   const cross = await page.evaluate(() => {
     const v = paint({ kind: 'grid', tone: 'white' }, { w: 200, h: 200, z: 0.2, cx: 0, cy: 0 }), p = (x, y) => hex(v.ctx.getImageData(x, y, 1, 1).data, 0);
     return { line: p(8, 3), crossing: p(8, 8), full: Paper.paperTone('white').line, paper: Paper.paperTone('white').paper };
   });
-  ok(cross.line === cross.crossing && cross.line !== cross.full && cross.line !== cross.paper, `a grid fading out at zoom 0.2 is one lighter colour, crossings included (line ${cross.line}, crossing ${cross.crossing}, full ${cross.full})`);
+  ok(cross.line === cross.crossing && cross.line !== cross.full && cross.line !== cross.paper, `a grid fading out at zoom 0.2 is one lighter color, crossings included (line ${cross.line}, crossing ${cross.crossing}, full ${cross.full})`);
 
   // ---------------------------------------------------------------- crisp at devicePixelRatio 2
   console.log('crisp at devicePixelRatio 2');
@@ -282,7 +282,7 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
   ok(frac[1.5].minor.join() === '1' && frac[1.5].major.join() === '2' && frac[2.25].minor.join() === '2' && frac[2.25].major.join() === '3' && !frac[1.5].other.length && !frac[2.25].other.length,
     `at devicePixelRatio 1.5 and 2.25 graph lines are whole device px, all alike, no blended edges (1.5: minor ${frac[1.5].minor}, major ${frac[1.5].major}; 2.25: minor ${frac[2.25].minor}, major ${frac[2.25].major})`);
 
-  // drawPaper leaves the context as it found it: transform, colours, alpha, compositing, font, alignment
+  // drawPaper leaves the context as it found it: transform, colors, alpha, compositing, font, alignment
   const kept = await page.evaluate(() => {
     const v = view(300, 200, 2, 1.5, -40, -30), ctx = v.ctx;
     ctx.fillStyle = '#123456'; ctx.strokeStyle = '#654321'; ctx.globalAlpha = 0.5; ctx.globalCompositeOperation = 'multiply'; ctx.font = '700 9px serif'; ctx.textAlign = 'end'; ctx.lineWidth = 7;
@@ -291,7 +291,7 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
     for (const { kind } of Paper.PAPER_KINDS) Paper.drawPaper(ctx, { kind, tone: 'green' }, v.rect, 1.5, false);
     return before === state();
   });
-  ok(kept, 'drawPaper leaves the context\'s transform, colours, alpha, compositing, font and alignment as they were');
+  ok(kept, 'drawPaper leaves the context\'s transform, colors, alpha, compositing, font and alignment as they were');
 
   // ---------------------------------------------------------------- timing
   // ms a draw of the whole view takes: the calls alone, then with the raster (a 1 px read makes the canvas draw)

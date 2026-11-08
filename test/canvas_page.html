@@ -38,7 +38,7 @@
   };
   // a picture as a data: URL (w × h, a red square on blue)
   window.picture = (w, h) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.fillStyle = '#2050c0'; g.fillRect(0, 0, w, h); g.fillStyle = '#e02020'; g.fillRect(w / 4, h / 4, w / 2, h / 2); return cv.toDataURL('image/png'); };
-  // the colour of a canvas pixel at screen point (x, y)
+  // the color of a canvas pixel at screen point (x, y)
   window.px = (x, y) => { const cv = c.querySelector('canvas'), d = c.pad.dpr || 1; return Array.from(cv.getContext('2d').getImageData(Math.round(x * d), Math.round(y * d), 1, 1).data); };
 </script>
 </body>

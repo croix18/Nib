@@ -528,14 +528,15 @@ function makeHandFile() {
     ok(await pageno() === '1 / 1' && await nStrokesX() === p1.strokes.length && await page.evaluate(() => window.__confirms === 0) && await page.$eval('#settings', e => e.hidden), '"Delete" removes page 2 and shows page 1 (no browser confirm box)');
     // a board saved before there were pages is page 1
     await wait(800);
-    await page.evaluate(st => localStorage.setItem('nib-board-v1', JSON.stringify({ view: 'tidy', solve: true, strokes: st })), p1.strokes);
+    // (the first time a 1.6 Board opens: no board of its own yet, and the old one under the old key)
+    await page.evaluate(st => { localStorage.removeItem('nib-board-v3'); localStorage.setItem('nib-board-v1', JSON.stringify({ view: 'tidy', solve: true, strokes: st })); }, p1.strokes);
     await page.reload({ waitUntil: 'load' }); await wait(600); await sameReadX();
     ok(await pageno() === '1 / 1' && await nStrokesX() === p1.strokes.length && await view() === 'tidy', 'an older saved board ({view, solve, strokes}) opens as page 1');
   }
 
   console.log('saving');
   {
-    const stored = () => page.evaluate(() => { const s = JSON.parse(localStorage.getItem('nib-board-v1')); const p = s.pages[s.page]; return (p.pk || p.strokes).length; });
+    const stored = () => page.evaluate(() => { const s = JSON.parse(localStorage.getItem('nib-board-v3')); const p = s.pages[s.page]; return (p.pk || p.strokes).length; });
     const tick = async (x, y) => { const cb = await (await page.$('#pad canvas')).boundingBox(); await page.mouse.move(cb.x + x, cb.y + y); await page.mouse.down(); await page.mouse.move(cb.x + x + 12, cb.y + y + 4, { steps: 3 }); await page.mouse.up(); };
     await wait(800);
     const n0 = await stored();
@@ -573,7 +574,7 @@ function makeHandFile() {
     });
     ok(img && /^Nib-board-1-\d{4}-\d{2}-\d{2}\.png$/.test(img.name) && img.type === 'image/png', 'Export, Picture of the screen downloads a PNG named Nib-board-<page>-<date>.png: ' + (img && img.name));
     ok(img && img.w === Math.round(img.cw * 2) && img.h === Math.round(img.ch * 2), `at twice the board's size (${img && img.w} x ${img && img.h} for ${img && img.cw} x ${img && img.ch})`);
-    ok(img && img.bg.join() === '251,248,239,255' && img.dot.join() !== img.bg.join() && img.ink > 500, `on the board's colour, with the dot grid and the ink (${img && img.bg.join()} / ${img && img.dot.join()}, ${img && img.ink} ink pixels)`);
+    ok(img && img.bg.join() === '251,248,239,255' && img.dot.join() !== img.bg.join() && img.ink > 500, `on the board's color, with the dot grid and the ink (${img && img.bg.join()} / ${img && img.dot.join()}, ${img && img.ink} ink pixels)`);
     await page.evaluate(() => { HTMLAnchorElement.prototype.click = window.__aclick; });
     const art = fs.readFileSync(path.join(__dirname, '..', 'dist', 'artifact', 'board.html'), 'utf8');
     ok(/window\.claude\.use\('downloads'\)/.test(art), "the published build asks for the downloads capability (with the <a download> fallback)");
@@ -1258,7 +1259,7 @@ function makeHandFile() {
   await ph.goto(url, { waitUntil: 'load' }); await wait(1500);
   ok(await ph.evaluate(() => document.documentElement.scrollWidth - innerWidth) <= 0, 'no sideways scrolling on a phone');
   const bg = await ph.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  ok(bg !== 'rgb(251, 248, 239)', 'dark mode changes the board colour: ' + bg);
+  ok(bg !== 'rgb(251, 248, 239)', 'dark mode changes the board color: ' + bg);
   await ph.screenshot({ path: path.join(out, 'board-test-phone-dark.png') });
   await browser.close();
   ok(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join(' | ') : ''));

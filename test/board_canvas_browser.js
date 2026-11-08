@@ -1,4 +1,4 @@
-// Nib Board as a canvas, in a real browser: the tools and their keys, pens, markers and highlighters in colours and
+// Nib Board as a canvas, in a real browser: the tools and their keys, pens, markers and highlighters in colors and
 // sizes (and that Nib reads only the pen and marker), shapes (draw-and-hold too, number lines and planes with their
 // own numbers), text, select and its bar, copy and paste across pages, the eraser that spares placed things, papers
 // per page, zoom and pan, pictures (paste, drop, kept in IndexedDB), what is kept (v3) and older boards, Export (PDF
@@ -10,6 +10,7 @@ const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'pu
 const out = path.join(__dirname, 'shots'); fs.mkdirSync(out, { recursive: true });
 let fails = 0;
 const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fails++; };
+const near = (a, b, e = 0.5) => Math.abs(a - b) <= e;
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 const NibN = require(path.join(__dirname, '..', 'dist', 'nib.js'));
@@ -64,8 +65,8 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
   const tool = t => page.click(`#toolbar [data-tool="${t}"]`);
   const hidden = id => page.$eval('#' + id, e => e.hidden);
   const esc = async () => { await page.keyboard.press('Escape'); await wait(80); };
-  // a tool's colours and sizes open (the tool tapped, and tapped again when it was not in hand)
-  // a tool taken up by its key (a second tap on the rail would open its colours instead)
+  // a tool's colors and sizes open (the tool tapped, and tapped again when it was not in hand)
+  // a tool taken up by its key (a second tap on the rail would open its colors instead)
   const use = async t => { await page.keyboard.press({ select: 'v', hand: 'h', pen: 'p', marker: 'm', highlighter: 'i', shape: 'r', text: 't', laser: 'l' }[t]); await wait(40); };
   const shapeKind = async k => { await tool('shape'); await wait(60); if (await hidden('shapepop')) { await tool('shape'); await wait(80); } await page.click(`#kinds [data-kind="${k}"]`); await wait(40); };
   const styleOf = async t => { await tool(t); await wait(60); if (await hidden('stylepop')) { await tool(t); await wait(80); } };
@@ -78,7 +79,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     let text = ''; for (let i = 0; i < u.length; i += 8192) text += String.fromCharCode.apply(null, u.subarray(i, i + 8192));
     return { name: d.name, type: blob.type, size: u.length, text };
   });
-  // the pictures inside a PDF: each JPEG decoded, with its size and a few pixels and colour counts
+  // the pictures inside a PDF: each JPEG decoded, with its size and a few pixels and color counts
   const pdfPictures = () => P(async () => {
     const d = window.__dl[window.__dl.length - 1], u = new Uint8Array(await (await fetch(d.href)).arrayBuffer());
     let s = ''; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, i + 8192));
@@ -119,36 +120,36 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     await page.keyboard.press('e'); await wait(40);
     ok(er === 'erase' && await P(() => document.getElementById('pad').tool.kind) === 'marker' && await P(() => document.getElementById('pad').mode) === 'draw', 'E: the eraser, and E again goes back to the marker it was taken from');
     await tool('hand');
-    ok(await page.$eval('#stylebtn', b => b.disabled), 'the colour button rests while the hand is in use');
+    ok(await page.$eval('#stylebtn', b => b.disabled), 'the color button rests while the hand is in use');
     await tool('pen');
   }
 
-  console.log('pens, markers and highlighters: colours and sizes');
+  console.log('pens, markers and highlighters: colors and sizes');
   {
     await tool('pen'); await wait(50);
-    ok(!(await hidden('stylepop')), 'the pen tapped again opens its colours and sizes');
+    ok(!(await hidden('stylepop')), 'the pen tapped again opens its colors and sizes');
     const sw = await P(() => [...document.querySelectorAll('#swatches .sw')].map(b => b.dataset.c || 'custom'));
-    ok(sw.length === 12 && sw[0] === '@ink' && sw.includes('@red') && sw[11] === 'custom', `12 colours, the ink first and any colour last (${sw.join(' ')})`);
+    ok(sw.length === 12 && sw[0] === '@ink' && sw.includes('@red') && sw[11] === 'custom', `12 colors, the ink first and any color last (${sw.join(' ')})`);
     await page.click('#swatches [data-c="@blue"]'); await wait(80);
-    ok(await hidden('stylepop') && (await P(() => document.getElementById('pad').tool.color)) === '@blue', 'a colour picked: the pen writes in it, and the popover closes');
+    ok(await hidden('stylepop') && (await P(() => document.getElementById('pad').tool.color)) === '@blue', 'a color picked: the pen writes in it, and the popover closes');
     const tint = await P(() => getComputedStyle(document.querySelector('[data-tool="pen"] .ink')).backgroundColor);
-    ok(tint === 'rgb(31, 95, 191)', 'the pen\'s colour shows under it: ' + tint);
+    ok(tint === 'rgb(31, 95, 191)', 'the pen\'s color shows under it: ' + tint);
     await styleOf('pen');
     await page.click('#sizes [data-v="5"]'); await wait(50); await esc();
     ok(await P(() => document.getElementById('pad').tool.size) === 5, 'size 5');
     await drag([[100, 120], [180, 160], [240, 120]]);
     let L = await looks();
-    ok(L.length === 1 && L[0].color === '@blue' && L[0].size === 5 && !L[0].tool, 'a pen stroke keeps its colour and size: ' + JSON.stringify(L[0]));
+    ok(L.length === 1 && L[0].color === '@blue' && L[0].size === 5 && !L[0].tool, 'a pen stroke keeps its color and size: ' + JSON.stringify(L[0]));
     await use('marker'); await drag([[100, 220], [300, 230]]);
     await use('highlighter'); await drag([[90, 120], [300, 125]]);
     L = await looks();
     ok(L[1].tool === 'marker' && L[1].color === '@red' && L[1].size === 12 && L[2].tool === 'highlighter' && L[2].color === '@hl-yellow' && L[2].size === 24,
       'the marker is red and 12 wide, the highlighter yellow and 24 wide: ' + JSON.stringify([L[1], L[2]].map(e => [e.tool, e.color, e.size])));
-    // any colour: the browser's picker
+    // any color: the browser's picker
     await styleOf('pen');
     await P(() => { const i = document.querySelector('#swatches .custom input'); i.value = '#123456'; i.dispatchEvent(new Event('change')); });
     await wait(50);
-    ok(await P(() => document.getElementById('pad').tool.color) === '#123456', 'another colour from the picker: #123456');
+    ok(await P(() => document.getElementById('pad').tool.color) === '#123456', 'another color from the picker: #123456');
     await styleOf('pen'); await page.click('#swatches [data-c="@ink"]'); await wait(50);
     await styleOf('pen'); await page.click('#sizes [data-v="3.5"]'); await esc();
     // [ and ]: the next size
@@ -180,7 +181,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     ok(kinds.length === 11 && kinds.includes('numberline') && kinds.includes('plane'), 'the shapes: ' + kinds.join(' '));
     await page.click('#kinds [data-kind="ellipse"]'); await wait(50);
     ok(await page.$eval('#shapeicon', u => u.getAttribute('href')) === '#s-ellipse' && await P(() => document.getElementById('pad').shapeTool.kind) === 'ellipse', 'the shape picked shows on the rail');
-    // its look: colour, fill, dashes
+    // its look: color, fill, dashes
     await page.click('#stylebtn'); await wait(60);
     await page.click('#swatches [data-c="@green"]'); await wait(40);
     await page.click('#stylebtn'); await wait(60);
@@ -256,7 +257,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     const bar = await P(() => { const b = document.getElementById('selbar').getBoundingClientRect(), c = document.querySelector('#pad canvas').getBoundingClientRect(); return { top: b.top - c.top, bottom: b.bottom - c.top, hidden: document.getElementById('selbar').hidden }; });
     ok(sel === 3 && !bar.hidden && bar.bottom <= 150, `a box around three things selects them, and the bar sits above them (${JSON.stringify(bar)})`);
     await page.click('#selcolor'); await wait(80);
-    ok(!(await hidden('stylepop')) && await page.$eval('#styletitle', e => e.textContent) === '3 things', 'its colour button opens the colours for what is selected');
+    ok(!(await hidden('stylepop')) && await page.$eval('#styletitle', e => e.textContent) === '3 things', 'its color button opens the colors for what is selected');
     await page.click('#swatches [data-c="@purple"]'); await wait(80);
     ok((await looks()).every(e => e.color === '@purple'), 'all three turn purple');
     await page.click('#seldup'); await wait(80);
@@ -305,7 +306,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     await clear();
     await use('pen'); await drag([[100, 400], [500, 400]], 20);
     await tool('eraser'); await page.click('#stylebtn'); await wait(80);
-    ok(!(await hidden('stylepop')) && !(await hidden('eraserrow')), 'with the eraser, the colour button asks what it takes');
+    ok(!(await hidden('stylepop')) && !(await hidden('eraserrow')), 'with the eraser, the color button asks what it takes');
     await page.click('#eraserrow [data-v="area"]'); await esc();
     await drag([[300, 380], [300, 420]], 10);
     ok(await count() === 2 && await P(() => document.getElementById('pad').getAttribute('eraser')) === 'area', 'set to "only where it rubs", it cuts a stroke in two');
@@ -319,7 +320,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     const th = await P(() => [...document.querySelectorAll('#papers .pb')].map(b => [b.dataset.kind, !!b.querySelector('canvas')]));
     ok(th.length === 8 && th.every(t => t[1]), 'eight papers, each with a picture of it: ' + th.map(t => t[0]).join(' '));
     const tones = await P(() => [...document.querySelectorAll('#tones button')].map(b => b.dataset.v));
-    ok(JSON.stringify(tones) === JSON.stringify(['theme', 'white', 'cream', 'green', 'black']), 'and five colours: ' + tones.join(' '));
+    ok(JSON.stringify(tones) === JSON.stringify(['theme', 'white', 'cream', 'green', 'black']), 'and five colors: ' + tones.join(' '));
     await page.click('#papers [data-kind="lined"]'); await wait(80); await page.click('#tones [data-v="green"]'); await wait(120);
     const a = await P(() => ({ paper: document.getElementById('pad').getAttribute('paper'), snap: document.getElementById('pad').getAttribute('snap') }));
     ok(a.paper === 'lined green' && a.snap === '40', 'lined chalkboard: the board draws it, and shapes snap to its rules (40): ' + JSON.stringify(a));
@@ -400,7 +401,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
       document.getElementById('surface').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, clientX: x, clientY: y, bubbles: true, cancelable: true })); }), [png, cb.x + 900, cb.y + 450]);
     await page.waitForFunction(() => document.getElementById('pad').pad.strokes.length === 2, { timeout: 5000 }).catch(() => {});
     const at = await P(() => { const s = document.getElementById('pad').pad.strokes[1]; return [(s[0][0] + s[1][0]) / 2, (s[0][1] + s[1][1]) / 2]; });
-    ok(Math.abs(at[0] - 900) < 1 && Math.abs(at[1] - 450) < 1, 'a picture dropped on the board is centred where it was dropped');
+    ok(Math.abs(at[0] - 900) < 1 && Math.abs(at[1] - 450) < 1, 'a picture dropped on the board is centered where it was dropped');
     await P(() => document.getElementById('pad').pad.clearSelection());
     await wait(900);
     await page.reload({ waitUntil: 'load' }); await wait(1200);
@@ -409,6 +410,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     ok(px[0] > 200 && px[1] < 60 && px[2] < 60, 'after a reload the picture is back on the board (its red middle: ' + px.join() + ')');
     // a picture from two days ago that no page uses, and today's two taken off the page
     const oldId = await P(src => { const id = 'img-' + (Date.now() - 2 * 864e5).toString(36) + '-old'; return Nib.canvas.images.put(id, src).then(() => id); }, png);
+    const fresh = (await P(() => Nib.canvas.images.ids())).filter(id => id !== oldId).sort();
     await clear(); await wait(900);
     await page.reload({ waitUntil: 'load' });
     cdp = await page.target().createCDPSession();
@@ -417,7 +419,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     for (let t0 = Date.now(); Date.now() - t0 < 15000; await wait(400)) { left = await P(() => Nib.canvas.images.ids()); if (!left.includes(oldId)) break; }
     await wait(800);
     left = await P(() => Nib.canvas.images.ids());
-    ok(!left.includes(oldId) && left.length === 2, `a picture no page uses is let go when the board opens; today's are kept a day, in case another tab of the Board has them (${left.length} left)`);
+    ok(!left.includes(oldId) && JSON.stringify(left.slice().sort()) === JSON.stringify(fresh) && fresh.length >= 2, `a picture no page uses is let go when the board opens; today's (${fresh.length}) are kept a day, in case another tab of the Board has them`);
   }
 
   console.log('what is kept: compact, and older boards');
@@ -425,7 +427,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     await use('pen'); await write(e1, [0.1, 0.2, 0.25, 0.12]);
     await shapeKind('arrow'); await drag([[500, 300], [700, 300]]);
     await use('pen'); await wait(900);
-    const st = await P(() => { const s = JSON.parse(localStorage.getItem('nib-board-v1')), p = s.pages[s.page]; return { v: s.v, pk: p.pk, meta: p.meta, paper: p.paper, cam: p.cam, len: localStorage.getItem('nib-board-v1').length, pts: document.getElementById('pad').pad.strokes.reduce((n, s) => n + s.length, 0) }; });
+    const st = await P(() => { const s = JSON.parse(localStorage.getItem('nib-board-v3')), p = s.pages[s.page]; return { v: s.v, pk: p.pk, meta: p.meta, paper: p.paper, cam: p.cam, pts: document.getElementById('pad').pad.strokes.reduce((n, s) => n + s.length, 0) }; });
     ok(st.v === 3 && Array.isArray(st.pk) && st.pk.every(x => typeof x === 'string' && /^[AB]/.test(x)) && st.paper && st.paper.kind === 'dots' && st.cam && st.cam.z === 1,
       'kept as version 3: each element\'s points packed in a short string, the page\'s paper and view');
     ok(st.meta && st.meta[st.meta.length - 1] && st.meta[st.meta.length - 1].sh === 'arrow', 'with each element\'s look (the arrow: ' + JSON.stringify(st.meta && st.meta[st.meta.length - 1]) + ')');
@@ -437,13 +439,16 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     // a board kept before 1.6 (version 2, strokes as arrays, the thick pen)
     const pts = await P(() => document.getElementById('pad').getState().strokes);
     await wait(900);                                       // the board's own save after its reading, out of the way
-    await P(s => localStorage.setItem('nib-board-v1', JSON.stringify({ v: 2, view: 'ink', solve: true, pen: 'thick', page: 0, pages: [{ strokes: s, fixes: [], revealed: [] }] })), pts.slice(0, -1));
+    await P(s => { localStorage.removeItem('nib-board-v3'); localStorage.setItem('nib-board-v1', JSON.stringify({ v: 2, view: 'ink', solve: true, pen: 'thick', page: 0, pages: [{ strokes: s, fixes: [], revealed: [] }] })); }, pts.slice(0, -1));
     await page.reload({ waitUntil: 'load' }); await wait(800); await read();
     cdp = await page.target().createCDPSession();
     const L2 = await looks();
     const L2x = await P(() => document.getElementById('pad').latex), t2 = await P(() => document.getElementById('pad').tool.size);
     ok(L2.length === pts.length - 1 && L2.every(e => e.size === 5) && L2x === before && t2 === 5,
       'a board kept by an older Board opens as it was: its strokes as thick as they were written (5), the pen still thick ' + JSON.stringify({ n: L2.length, of: pts.length - 1, sizes: [...new Set(L2.map(e => e.size))], latex: L2x, before, pen: t2 }));
+    await wait(900);
+    const keys = await P(() => ({ v1: JSON.parse(localStorage.getItem('nib-board-v1')).v, v3: JSON.parse(localStorage.getItem('nib-board-v3') || '{}').v }));
+    ok(keys.v1 === 2 && keys.v3 === 3, 'it is kept under its own key from then on, and the old one is left as it was for an older Board (' + JSON.stringify(keys) + ')');
     await clear(); await wait(700);
   }
 
@@ -511,7 +516,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     await page.click('#exportbtn'); await wait(120); await page.click('#boardsave'); await wait(600);
     const d = await lastDownload();
     const file = d && JSON.parse(d.text);
-    ok(file && /^Nib-board-\d{4}-\d{2}-\d{2}\.nibboard$/.test(d.name) && file.format === 'nib-board' && file.version === 3 && file.pages.length === 3, `Save the board: ${d && d.name}, its ${file && file.pages.length} pages`);
+    ok(file && /^Nib-board-\d{4}-\d{2}-\d{2}\.nibboard\.json$/.test(d.name) && file.format === 'nib-board' && file.version === 3 && file.pages.length === 3, `Save the board: ${d && d.name}, its ${file && file.pages.length} pages`);
     const fp = path.join(out, 'test-board.nibboard'); fs.writeFileSync(fp, d.text, 'latin1');
     // on another computer: a fresh browser profile
     const ctx = await browser.createBrowserContext();
@@ -521,7 +526,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     const [fc] = await Promise.all([p2.waitForFileChooser(), p2.click('#boardopen')]);
     await fc.accept([fp]); await wait(900);
     const got = await p2.evaluate(() => ({ pageno: document.getElementById('pageno').textContent, latex: document.getElementById('pad').latex, n: document.getElementById('pad').pad.strokes.length }));
-    ok(got.pageno === '1 / 3' && got.n > 0, `opened on an empty board it is the board: ${got.pageno}, ${got.n} strokes on page 1`);
+    ok(got.pageno === `${file.page + 1} / 3` && got.n > 0, `opened on an empty board it is the board, at the page it was saved on: ${got.pageno}, ${got.n} strokes on it`);
     // opened again, onto a board with writing: it asks
     await p2.click('#exportbtn'); await wait(120);
     const [fc2] = await Promise.all([p2.waitForFileChooser(), p2.click('#boardopen')]);
@@ -545,6 +550,76 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     ok(await page.$eval('#pageno', e => e.textContent) === '1 / 4', 'Move it left: it is page 1 now');
     await page.click('#pagegrid .pg:nth-child(4)'); await wait(300);
     ok(await page.$eval('#pageno', e => e.textContent) === '4 / 4' && await hidden('pagespop'), 'tapping a page goes to it');
+  }
+
+  console.log('what the review of 1.6 found');
+  {
+    // a second tab of the Board shows the board and saves nothing
+    await wait(1200);                                      // this tab's own save of what came before, out of the way
+    const t0 = await P(() => JSON.parse(localStorage.getItem('nib-board-v3')).t);
+    const p2 = await browser.newPage(); p2.on('pageerror', e => errors.push(String(e)));
+    await p2.setViewport({ width: 1280, height: 760 }); await p2.goto(url, { waitUntil: 'load' }); await wait(900);
+    const n2 = await p2.$eval('#notetext', e => e.textContent);
+    const c2 = await (await p2.$('#pad canvas')).boundingBox();
+    await p2.mouse.move(c2.x + 300, c2.y + 300); await p2.mouse.down(); await p2.mouse.move(c2.x + 400, c2.y + 340, { steps: 4 }); await p2.mouse.up(); await wait(900);
+    const t1 = await P(() => JSON.parse(localStorage.getItem('nib-board-v3')).t);
+    ok(/open in another tab or window as well: this one shows the board but saves nothing/.test(n2) && t1 === t0, 'a second tab of the Board says it saves nothing, and does not: ' + n2);
+    await p2.close(); await wait(300);
+    // a text box still open when the page changes is kept on its page
+    await use('text'); await tap(200, 200); await wait(150);
+    await page.keyboard.type('Kept'); await page.click('#newpage'); await wait(300);
+    await page.click('#prev'); await wait(300);
+    ok((await looks()).some(e => e.tool === 'text' && e.text === 'Kept'), 'text still being typed when + is tapped is kept on its page');
+    await page.click('#next'); await wait(200);
+    await page.click('#gear'); await wait(100); await page.click('#delpage'); await page.click('#delyes'); await wait(300);
+    // in the Tidy view, writing dragged with Select is drawn where it is dragged, at once
+    await page.click('#newpage'); await wait(200);
+    if (e1) {
+      await use('pen'); await write(e1, [0.1, 0.3, 0.25, 0.12]); await read();
+      await page.keyboard.press('2'); await wait(3400);
+      const b0 = await P(() => { const it = document.getElementById('pad').pad.plan.items.find(i => !i.answer); return it ? it.box.slice() : null; });
+      await use('select'); await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control'); await wait(100);
+      const sb = await P(() => { const P = document.getElementById('pad').pad, b = P._selBox(P.selected); return P.toScreen([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]); });
+      await drag([sb, [sb[0] + 120, sb[1] + 60]], 6);
+      const b1 = await P(() => { const it = document.getElementById('pad').pad.plan.items.find(i => !i.answer); return it ? it.box.slice() : null; });
+      ok(b0 && b1 && near(b1[0] - b0[0], 120, 1) && near(b1[1] - b0[1], 60, 1), `dragged in the Tidy view, the tidied writing goes with it at once (moved ${b0 && b1 ? [b1[0] - b0[0], b1[1] - b0[1]].map(v => v.toFixed(1)).join(', ') : '?'})`);
+      await page.keyboard.press('1'); await use('pen');
+    }
+    // files dropped on the board: a board file opens; anything else is said, and the Board stays
+    const dropFile = (name, type, text) => P(([name, type, text]) => { const dt = new DataTransfer(); dt.items.add(new File([text], name, { type }));
+      document.getElementById('surface').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, clientX: 600, clientY: 400, bubbles: true, cancelable: true })); }, [name, type, text]);
+    await dropFile('notes.txt', 'text/plain', 'hello'); await wait(300);
+    ok(/Only pictures, and boards saved from Nib Board, can be dropped/.test(await page.$eval('#notetext', e => e.textContent)), 'a file that is not a picture or a board, dropped: said, and nothing else happens');
+    // a board file whose looks are not what the Board writes: kept out (a color must be a color)
+    const pk = await P(() => Nib.canvas.pack([[100, 100], [200, 150]]));
+    const boardText = JSON.stringify({ format: 'nib-board', version: 3, page: 0, images: {}, pages: [{ pk: [pk], fixes: [], revealed: [], types: ['pen'], meta: [{ c: 'url(https://example.com/x.png)', s: 4 }], paper: { kind: 'grid', tone: 'white' } }] });
+    await dropFile('crafted.nibboard.json', 'application/json', boardText); await wait(400);
+    if (!(await hidden('openask'))) { await page.click('#openadd'); await wait(400); }
+    const got = await P(() => { const P = document.getElementById('pad').pad; return { n: P.strokes.length, look: P.lookOf(P.strokes[0]), paper: document.getElementById('pad').getAttribute('paper') }; });
+    ok(got.n === 1 && got.look && got.look.size === 4 && !got.look.color && got.paper === 'grid white', 'a board file dropped on the board opens (after asking); a "color" in it that is not one is left out: ' + JSON.stringify(got.look));
+    // an answer key on a page the writing's size takes in the answers behind their chips
+    await page.click('#pageno'); await wait(300); await page.click('#pagegrid .pg:nth-child(1)'); await wait(500);
+    const fitW = async ans => {
+      if (await hidden('exportpop')) { await page.click('#exportbtn'); await wait(120); }
+      for (const [k, v] of Object.entries({ what: 'page', as: 'pdf', psize: 'fit', ans, xpaper: 'on' })) { await page.click(`#exportpop [data-set="${k}"] [data-v="${v}"]`); await wait(30); }
+      const n = await P(() => window.__dl.length);
+      await page.click('#exportgo'); await page.waitForFunction(n => window.__dl.length > n, { timeout: 30000 }, n).catch(() => {}); await wait(150);
+      const d = await lastDownload(), m = d && /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(d.text);
+      return m ? +m[1] : 0;
+    };
+    const wNone = await fitW('none'), wAll = await fitW('all');
+    ok(wAll > wNone + 20, `an answer key the writing's size is wide enough for the answers still behind their chips (${wNone} → ${wAll} pt)`);
+    await page.keyboard.press('Escape');
+    // published, a file the viewer's app will not take is said, never "Saved"
+    const ctx3 = await browser.createBrowserContext();
+    const p3 = await ctx3.newPage(); p3.on('pageerror', e => errors.push(String(e)));
+    await p3.evaluateOnNewDocument(() => { window.__saves = 0; window.claude = { use: name => Promise.resolve(name === 'downloads' ? { save: () => { window.__saves++; return Promise.reject({ code: 'rejected_extension', message: 'not allowed' }); } } : null) }; });
+    await p3.setViewport({ width: 1280, height: 760 }); await p3.goto(url, { waitUntil: 'load' }); await wait(900);
+    await p3.evaluate(() => { window.__dl = []; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl.push(this.download); }; });
+    await p3.click('#exportbtn'); await wait(120); await p3.click('#boardsave'); await wait(600);
+    const r3 = await p3.evaluate(() => ({ saves: window.__saves, dl: window.__dl.length, note: document.getElementById('notetext').textContent }));
+    ok(r3.saves === 1 && r3.dl === 0 && /can't be saved from here \(rejected_extension\)/.test(r3.note), 'published, a save the viewer\'s app refuses is said as such, with no download tried and no "Saved": ' + r3.note);
+    await ctx3.close();
   }
 
   console.log('the laser pointer');

@@ -1,10 +1,10 @@
 'use strict';
 // ================================================================== paper: the Board's backgrounds
-// A page's paper is {kind, tone}: the kind is the pattern, the tone its colours. drawPaper fills the visible world
+// A page's paper is {kind, tone}: the kind is the pattern, the tone its colors. drawPaper fills the visible world
 // rectangle with the paper and tiles the pattern over it from the world origin, so the pattern moves exactly with the
 // ink when the board pans. Everything is placed in device pixels: widths are whole pixels and positions snap to the
-// pixel grid, so a 1 px line stays crisp at any zoom and devicePixelRatio. Marks are opaque colours (a faded family is
-// its colour mixed toward the paper), so where lines cross they stay one colour.
+// pixel grid, so a 1 px line stays crisp at any zoom and devicePixelRatio. Marks are opaque colors (a faded family is
+// its color mixed toward the paper), so where lines cross they stay one color.
 
 const PAPER_KINDS = [{ kind: 'blank', label: 'Blank' }, { kind: 'dots', label: 'Dots' }, { kind: 'grid', label: 'Grid' },
   { kind: 'graph', label: 'Graph paper' }, { kind: 'lined', label: 'Lined' }, { kind: 'iso', label: 'Isometric' },
@@ -33,7 +33,7 @@ function paperMix(a, b, t) {
   return '#' + p.map((v, i) => Math.round(v + (q[i] - v) * t).toString(16).padStart(2, '0')).join('');
 }
 
-// Colours for a tone (dark: the Board's theme is dark; only 'theme' follows it), a frozen object shared by all callers:
+// Colors for a tone (dark: the Board's theme is dark; only 'theme' follows it), a frozen object shared by all callers:
 // { paper, ink, line, major, axis, label, margin, dark } and, for the dot lattices and lined paper, dot and rule.
 function paperTone(tone, dark) {
   const fixed = paperOwn(PAPER_BASE, tone), key = fixed ? tone : dark ? 'theme dark' : 'theme';
@@ -74,13 +74,13 @@ function paperDraw(ctx, spec, rect, z, dark, lab) {
 // a mark px screen px wide, in whole device pixels (1.5 px: 1 on a plain screen, 3 on a retina one)
 function paperWidth(V, px) { return Math.max(1, Math.round(px * V.P - 0.01)); }
 // How strongly a family of marks shows when they are px screen px apart: gone below lo, full from hi. Zooming out
-// fades a fine pattern away instead of letting it turn into grey mush (and keeps the cost down): lines from 12 px apart
+// fades a fine pattern away instead of letting it turn into gray mush (and keeps the cost down): lines from 12 px apart
 // down to 6, dots from 12 down to 8.
 function paperFade(px, lo, hi) { return px <= lo ? 0 : px >= hi ? 1 : (px - lo) / (hi - lo); }
-// a tone's colour faded toward the paper by a (0 … 1), as an opaque colour
+// a tone's color faded toward the paper by a (0 … 1), as an opaque color
 function paperShade(T, key, a) { return a >= 1 ? T[key] : paperMix(T.paper, T[key], a); }
 
-// The lines x = k·step (paperCols) or y = k·step (paperRows) across the view, w device px wide, in the fill colour;
+// The lines x = k·step (paperCols) or y = k·step (paperRows) across the view, w device px wide, in the fill color;
 // every skip-th one is left to a coarser family drawn over them. One fillRect a line: a pixel-aligned rect is the
 // cheapest mark a canvas draws, where one path of hundreds of rects (or a stroke over 1 px wide) rasterizes 3–5× slower.
 function paperCols(V, step, skip, w) {
@@ -104,7 +104,7 @@ function paperStrip(i, w, h) {
   c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.clearRect(0, 0, w, h);
   return c;
 }
-// One dot of radius R device px on the centre pixel of a (2·pad + 1)² sprite, kept while R and the colour stay. Every
+// One dot of radius R device px on the center pixel of a (2·pad + 1)² sprite, kept while R and the color stay. Every
 // dot is a copy of it, so every dot is the same pixels: one path of many dots is shaded a level or two differently
 // depending on where the path is clipped, which would make dots flicker by a shade as the board pans.
 function paperSprite(R, pad, color) {
@@ -125,7 +125,7 @@ function paperStamp(V, c, xa, y) {
 // A lattice of dots of radius r screen px, in rows rowStep apart; in a row the dots are colStep apart, odd rows shifted
 // by colOff. All rows are the same row of dots, so one row is stamped from the dot sprite into a strip (two strips for
 // a shifted lattice) and the strip is stamped row by row: a screen of dense dots costs a few hundred blits, where one
-// path of 30 000 arcs costs 20–50 ms. A dot's centre is the centre of the pixel its world point falls in.
+// path of 30 000 arcs costs 20–50 ms. A dot's center is the center of the pixel its world point falls in.
 function paperDots(V, rowStep, colStep, colOff, r, color) {
   const R = r * V.P, pad = Math.ceil(R) + 1, h = 2 * pad + 1, xa = Math.floor(V.X0), w = Math.ceil(V.X1) - xa;
   const dot = paperSprite(R, pad, color), mx = R / V.sx, my = pad / V.sy, strips = [];   // a dot just outside still shows a sliver
@@ -146,7 +146,7 @@ function paperGlyphs(ctx) {
   return s => { let t = 0; for (let i = 0; i < s.length; i++) t += w[s[i]] || 0; return t; };
 }
 function paperNum(n) { return n < 0 ? '−' + -n : String(n); }
-// label every 1, 2, 5, 10, 20, 50 … units: the first step that leaves need device px between label centres
+// label every 1, 2, 5, 10, 20, 50 … units: the first step that leaves need device px between label centers
 function paperStep(unit, need) {
   for (let s = 1; s < 1e12; s *= 10) for (const m of [1, 2, 5]) if (s * m * unit >= need) return s * m;
   return 1e12;
@@ -203,7 +203,7 @@ function paperPlaneLabels(V, wa, origin) {
   const { ctx, T, P } = V, U = 40, fs = V.lab * P, cap = 0.7 * fs, g = 5 * P + wa / 2, e = 4 * P, pl = Math.round(2 * P);
   ctx.font = '500 ' + fs + 'px ' + PAPER_FONT;
   const tw = paperGlyphs(ctx);
-  // the units in view (maths y points up: world y = −40 is y = 1)
+  // the units in view (math y points up: world y = −40 is y = 1)
   const i0 = Math.ceil(V.x0 / U), i1 = Math.floor(V.x1 / U), j0 = Math.ceil(-V.y1 / U), j1 = Math.floor(-V.y0 / U);
   const step = paperStep(U * V.sx, Math.max(tw(paperNum(i0)), tw(paperNum(i1))) + 0.9 * fs);
   // the x axis's labels: under it, over it when there is no room under it, or pinned to the top or bottom edge
@@ -244,7 +244,7 @@ function paperPlaneLabels(V, wa, origin) {
 
 // Number lines at y = 100 + 200k with a tick every 40 and integer labels under the ticks (0 at x = 0). They are all
 // alike, so one is drawn into a strip with its ticks and labels and stamped at each line in view. When the labels
-// thin out, the labelled ticks stay long and the others are short; the labels fade as the lines crowd together.
+// thin out, the labeled ticks stay long and the others are short; the labels fade as the lines crowd together.
 function paperDrawNumberLines(V) {
   const { T, P } = V, U = 40, G = 200, Y = 100;
   const wl = paperWidth(V, 2), wt = paperWidth(V, 1.5), tl = Math.round(7 * P), ts = Math.round(4 * P);
@@ -256,7 +256,7 @@ function paperDrawNumberLines(V) {
   const tw = paperGlyphs(c), i0 = Math.ceil(V.x0 / U), i1 = Math.floor(V.x1 / U);
   const step = paperStep(U * V.sx, Math.max(tw(paperNum(i0)), tw(paperNum(i1))) + 0.9 * fs), il = Math.ceil(i0 / step) * step;
   const X = i => Math.round(i * U * V.sx + V.ox - xa - wt / 2);   // a tick's left edge in the strip
-  if (ta > 0 && step > 1) {   // the unlabelled ticks, under the rest
+  if (ta > 0 && step > 1) {   // the unlabeled ticks, under the rest
     c.fillStyle = paperShade(T, 'axis', ta);
     for (let i = i0; i <= i1; i++) if (i % step) c.fillRect(X(i), top - ts, wt, wl + 2 * ts);
   }

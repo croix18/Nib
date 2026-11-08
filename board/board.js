@@ -3,11 +3,11 @@
   // ================================================================ Nib Board: a canvas for the classroom
   // The board is one <nib-pad infinite>: an endless surface that pans and zooms, with pens, markers, highlighters,
   // shapes, text and pictures over a paper (dots, grid, lined, a coordinate plane, number lines …), one per page. Nib
-  // reads what the pen and marker write (maths → LaTeX), shows it as written, tidied, in the writer's hand or typeset,
+  // reads what the pen and marker write (math → LaTeX), shows it as written, tidied, in the writer's hand or typeset,
   // and works out answers after "=". Everything is kept in this browser; Export makes a PDF or a picture to post.
   const $ = id => document.getElementById(id);
   const pad = $('pad'), board = $('board'), surface = $('surface');
-  const KEY = 'nib-board-v1', TKEY = 'nib-train-v1', DKEY = 'nib-drill-v1';
+  const KEY = 'nib-board-v3', OLDKEY = 'nib-board-v1', TKEY = 'nib-train-v1', DKEY = 'nib-drill-v1';
   const K = (window.Nib && window.Nib.canvas) || {};
   const VIEWS = ['ink', 'tidy', 'hand', 'typeset'], RAILS = ['top', 'bottom', 'left', 'right'], THEMES = ['light', 'dark', 'system'];
   const TOOLS = ['select', 'hand', 'pen', 'marker', 'highlighter', 'eraser', 'shape', 'text', 'laser'];
@@ -16,7 +16,7 @@
   const COLORS = ['@ink', '@red', '@blue', '@green', '@orange', '@purple', '@gold', '@pink', '@brown', '@gray', '@black'];
   const HLS = ['@hl-yellow', '@hl-green', '@hl-pink', '@hl-blue', '@hl-orange'];
   const CNAME = { '@ink': 'Ink: navy, or cream on a dark paper', '@red': 'Red', '@blue': 'Blue', '@green': 'Green', '@orange': 'Orange', '@purple': 'Purple', '@gold': 'Gold',
-    '@pink': 'Pink', '@brown': 'Brown', '@gray': 'Grey', '@black': 'Black', '@hl-yellow': 'Yellow', '@hl-green': 'Green', '@hl-pink': 'Pink', '@hl-blue': 'Blue', '@hl-orange': 'Orange' };
+    '@pink': 'Pink', '@brown': 'Brown', '@gray': 'Gray', '@black': 'Black', '@hl-yellow': 'Yellow', '@hl-green': 'Green', '@hl-pink': 'Pink', '@hl-blue': 'Blue', '@hl-orange': 'Orange' };
   const SIZES = { pen: [1.5, 2.5, 3.5, 5, 8], marker: [6, 9, 12, 16, 24], highlighter: [14, 20, 28, 40], shape: [1.5, 3, 5, 8], text: [20, 28, 40, 56, 80] };
   const STYLE0 = { pen: { color: '@ink', size: 3.5 }, marker: { color: '@red', size: 12 }, highlighter: { color: '@hl-yellow', size: 24 },
     shape: { kind: 'rect', color: '@ink', size: 3, fill: 'none', dash: false }, text: { color: '@ink', size: 40 } };
@@ -35,10 +35,13 @@
 
   // ---------------------------------------------------------------- what is kept
   // The board survives a reload: its pages, view and settings are kept in this browser (one key; points packed small),
-  // pictures in IndexedDB by id.
+  // pictures in IndexedDB by id. A Board before 1.6 kept its board under nib-board-v1: the first time this one opens, it
+  // takes that board over and leaves the old key as it was, so an older Board opened later (every file:// page shares
+  // one storage) finds its own board, not one it cannot read and would save over.
   let saved = null, storageOk = true;
-  try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { storageOk = false; }
+  try { saved = JSON.parse(localStorage.getItem(KEY) || 'null') || JSON.parse(localStorage.getItem(OLDKEY) || 'null'); } catch (e) { storageOk = false; }
   if (!saved || typeof saved !== 'object') saved = {};
+  const newer = +saved.v > 3;            // kept by a newer Board: shown as far as this one can, never saved over
   const pick = (v, list, d) => (list.includes(v) ? v : d);
   const bool = (v, d) => (typeof v === 'boolean' ? v : d);
   const okColor = c => typeof c === 'string' && (own(K.colors, c) || /^#[0-9a-f]{6}$/i.test(c));
@@ -84,6 +87,22 @@
   // pages: each its own elements, corrections, shown answers, view and paper (a board saved before pages is page 1)
   const arr = v => (Array.isArray(v) ? v : []);
   const blank = () => ({ strokes: [], fixes: [], revealed: [], paper: Object.assign({}, S.paper) });
+  // an element's look as kept: only what the pad knows, with values it can use (a color from a file must be a color)
+  const okFill = f => typeof f === 'string' && (f === 'tint' || f === 'solid' || okColor(f) || /^@[a-z-]+:(0(\.\d+)?|1(\.0+)?)$/.test(f));
+  function okMeta(m) {
+    if (!m || typeof m !== 'object') return null;
+    const o = {};
+    if (['marker', 'highlighter', 'shape', 'text', 'image'].includes(m.k)) o.k = m.k;
+    if (okColor(m.c)) o.c = m.c;
+    if (+m.s > 0 && +m.s <= 1000) o.s = +m.s;
+    if (typeof m.sh === 'string' && /^[a-z0-9]{1,16}$/.test(m.sh)) o.sh = m.sh;
+    if (okFill(m.f)) o.f = m.f;
+    if (m.d) o.d = 1;
+    if (m.o && typeof m.o === 'object') { const q = {}; for (const [k, v] of Object.entries(m.o)) if (/^[a-z]{1,8}$/.test(k) && (typeof v === 'boolean' || (typeof v === 'number' && isFinite(v)))) q[k] = v; o.o = q; }
+    if (typeof m.x === 'string') o.x = m.x.slice(0, 5000);
+    if (typeof m.im === 'string' && /^[\w-]{1,80}$/.test(m.im)) o.im = m.im;
+    return Object.keys(o).length ? o : null;
+  }
   function okPage(p, legacyW) {
     if (!p || typeof p !== 'object') return null;
     let strokes = null, press = null;
@@ -94,7 +113,7 @@
     } else if (Array.isArray(p.strokes)) { strokes = p.strokes; if (Array.isArray(p.press)) press = p.press; }
     if (!strokes) return null;
     const out = { strokes, fixes: arr(p.fixes), revealed: arr(p.revealed), types: arr(p.types), paper: okPaper(p.paper) || Object.assign({}, PAPER0) };
-    if (Array.isArray(p.meta)) out.meta = p.meta;
+    if (Array.isArray(p.meta)) out.meta = p.meta.map(okMeta);
     else if (legacyW) out.meta = strokes.map(() => ({ s: legacyW }));   // written before pens had sizes: the width it had
     if (press) out.press = press;
     if (p.cam && typeof p.cam === 'object') out.cam = p.cam;
@@ -121,23 +140,48 @@
     ink: S.ink, styles: S.styles, eraser: S.eraser, hold: S.hold, snap: S.snap, pressure: S.pressure, read: S.read, paper: S.paper, xp: S.xp });
   // the page on the board as it is now, with its paper
   const here = () => Object.assign(pad.getState(), { paper: pages[cur].paper });
+  // a text box still open is part of the page: kept before the page is (it would be lost with a page change or a close)
+  const commitText = () => { if (pad.pad && pad.pad.editing) pad.pad._commitText(); };
+  // One Board saves at a time: a second tab (or window) of it shows the board and saves nothing, and says so; when the
+  // first one closes, the second offers to reload and carry on from what was saved.
+  let writer = true, locks = false;
+  try {
+    if (navigator.locks && typeof navigator.locks.request === 'function') {
+      locks = true;
+      navigator.locks.request('nib-board', { ifAvailable: true }, lock => {
+        if (lock) return new Promise(() => {});          // held while this page is open
+        writer = false;
+        note('Nib Board is open in another tab or window as well: this one shows the board but saves nothing. Close one of them.', null, null, true);
+        navigator.locks.request('nib-board', () => {
+          note('The other Nib Board has closed. Reload this one to carry on from what it saved.', () => location.reload(), 'Reload', true);
+          return new Promise(() => {});
+        });
+        return undefined;
+      }).catch(() => {});
+    }
+  } catch (e) { locks = false; }
   let ready = false, saveTimer = null, warned = false;
   function write() {
     clearTimeout(saveTimer); saveTimer = null;
-    if (!ready) return;
+    if (!ready || !writer || newer) return;
     pages[cur] = here();
-    try { localStorage.setItem(KEY, JSON.stringify(Object.assign({ v: 3 }, settingsOut(), { page: cur, pages: pages.map(packPage) }))); }
-    catch (e) { if (!warned) { warned = true; note("The board can't be saved in this browser. Export, Save the board keeps it as a file."); } }
+    try {
+      localStorage.setItem(KEY, JSON.stringify(Object.assign({ v: 3, t: Date.now() }, settingsOut(), { page: cur, pages: pages.map(packPage) })));
+      warned = false;
+    } catch (e) {
+      // not saved: said until it is (this browser's storage is shared by every page opened from files, and can fill up)
+      if (!warned) { warned = true; note("The board can't be saved in this browser. Export, Save the board keeps it as a file.", () => $('boardsave').click(), 'Save the board', true); }
+    }
   }
-  // nothing is written until the board has been put back and something changes (a reload never re-saves what it read)
+  // saved half a second after a change, and at once when the page goes or is hidden (with a text box still open in it)
   const persist = () => { if (!ready) return; clearTimeout(saveTimer); saveTimer = setTimeout(write, 500); };
-  const flush = () => { if (saveTimer) write(); };
-  // the Board open twice (two tabs on the same computer): each saves over the other, so say so, once
+  const flush = () => { commitText(); if (saveTimer) write(); };
+  // where the browser has no locks: a second Board saving is at least said, once
   let twice = false;
   window.addEventListener('storage', e => {
-    if (e.key !== KEY || !ready || twice) return;
+    if (locks || e.key !== KEY || !ready || twice) return;
     twice = true;
-    note('The Board is open in another tab or window as well, and the two save over each other. Close one of them.', null, null, true);
+    note('Nib Board is open in another tab or window as well, and the two save over each other. Close one of them.', null, null, true);
   });
   window.addEventListener('pagehide', flush);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
@@ -146,7 +190,7 @@
   let trainTimer = null, trainWarned = false;
   function writeTrain() {
     clearTimeout(trainTimer); trainTimer = null;
-    if (!pad.pad) return;
+    if (!pad.pad || !writer) return;
     try {
       if (pad.pad.training.length) localStorage.setItem(TKEY, JSON.stringify({ v: 1, records: pad.pad.training }));
       else localStorage.removeItem(TKEY);
@@ -159,7 +203,7 @@
   // state the functions below share (declared before any of them runs)
   let fixing = false, fixFor = null, emptyTaps = 0;        // Fix: on, the symbol whose choices are open, empty taps in a row
   let D = null, dCur = null, dTimer = null, dHow = '';     // the drill
-  let styleFor = null, popAnchor = null, axisEl = null;     // what the colour popover changes, what opened a popover, the axes being edited
+  let styleFor = null, popAnchor = null, axisEl = null;     // what the color popover changes, what opened a popover, the axes being edited
   let clip = null, clipMark = '';                           // copied elements, and the text put on the clipboard with them
   let R = null, exporting = false, opened = null, saver = null;
   const imgCache = new Map();                               // picture id → data URL, this session
@@ -242,14 +286,14 @@
   const modeOf = t => ({ select: 'select', hand: 'pan', eraser: 'erase', shape: 'shape', text: 'text', laser: 'laser' })[t] || 'draw';
   const colorOut = c => (c && c !== '@ink' ? c : null);
   function themeDark() { if (S.theme !== 'system') return S.theme === 'dark'; try { return matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) { return false; } }
-  // the page's paper colours: {paper, ink, dark}
+  // the page's paper colors: {paper, ink, dark}
   function tone() {
     const p = pages[cur].paper;
     if (K.paperTone) { try { return K.paperTone(p.tone, themeDark()); } catch (e) { /* the theme's */ } }
     const cs = getComputedStyle(document.documentElement);
     return { dark: themeDark(), ink: cs.getPropertyValue('--ink').trim(), paper: cs.getPropertyValue('--board').trim() };
   }
-  // a named colour as it draws on this page's paper
+  // a named color as it draws on this page's paper
   function shade(c, T) { T = T || tone(); return (K.color && K.color(c, T.dark, T.ink)) || (typeof c === 'string' && c[0] === '#' ? c : T.ink); }
   function setTool(t, quiet) {
     if (!TOOLS.includes(t)) return;
@@ -275,7 +319,7 @@
     if (!fixing) pad.mode = modeOf(t);
     marksTools();
   }
-  // what the colour button changes now: the tool's look, or what is selected
+  // what the color button changes now: the tool's look, or what is selected
   function styleTarget() {
     if (S.tool === 'select') return pad.pad && pad.pad.selected.length ? 'sel' : null;
     return ['pen', 'marker', 'highlighter', 'shape', 'text', 'eraser'].includes(S.tool) ? S.tool : null;
@@ -292,7 +336,7 @@
     else if (st && st !== 'eraser') c = S.styles[st].color;
     dot.style.setProperty('--tint', st === 'eraser' || !st ? 'transparent' : c ? shade(c, T) : 'conic-gradient(#d1352b, #e8c35a, #1d8a4b, #1f5fbf, #d1352b)');
     if (st === 'eraser' || !st) dot.style.boxShadow = '0 0 0 2px var(--rail), inset 0 0 0 2px var(--muted)'; else dot.style.boxShadow = '';
-    sb.title = st === 'eraser' ? 'What the eraser takes' : st === 'sel' ? 'Colour and size of what is selected' : 'Colour and size';
+    sb.title = st === 'eraser' ? 'What the eraser takes' : st === 'sel' ? 'Color and size of what is selected' : 'Color and size';
   }
   document.querySelectorAll('#toolbar .tool').forEach(b => b.addEventListener('click', () => {
     const t = b.dataset.tool;
@@ -306,7 +350,7 @@
   }));
   $('stylebtn').onclick = () => { const st = styleTarget(); if (!st) return; if (!$('stylepop').hidden) { closePops(); return; } openStyle(st, $('stylebtn')); };
 
-  // ---------------------------------------------------------------- colours and sizes
+  // ---------------------------------------------------------------- colors and sizes
   const same = list => (list.length && list.every(v => v === list[0]) ? list[0] : null);
   const lookSel = () => { const P = pad.pad; return P ? P.selected.map(s => ({ s, E: P.lookOf(s) || {} })) : []; };
   function openStyle(target, anchor) {
@@ -315,9 +359,9 @@
     const kinds = sel ? [...new Set(sel.map(x => x.E.tool || 'pen'))].filter(k => k !== 'image') : [target];
     const one = kinds.length === 1 ? kinds[0] : null;
     $('styletitle').textContent = sel ? (sel.length === 1 ? TNAME[(sel[0].E.tool) || 'pen'] : `${sel.length} things`) : TNAME[target];
-    const colours = target !== 'eraser' && kinds.length > 0;
-    $('swatches').parentNode.hidden = !colours;
-    if (colours) swatches(kinds.every(k => k === 'highlighter') ? HLS : COLORS, sel ? same(sel.filter(x => x.E.tool !== 'image').map(x => x.E.color || '@ink')) : S.styles[target].color);
+    const colors = target !== 'eraser' && kinds.length > 0;
+    $('swatches').parentNode.hidden = !colors;
+    if (colors) swatches(kinds.every(k => k === 'highlighter') ? HLS : COLORS, sel ? same(sel.filter(x => x.E.tool !== 'image').map(x => x.E.color || '@ink')) : S.styles[target].color);
     const sk = sel ? (one && SIZES[one] ? one : null) : (SIZES[target] ? target : null);
     $('sizerow').hidden = !sk;
     if (sk) sizes(sk, sel ? same(sel.map(x => +x.E.size || null)) : S.styles[target].size);
@@ -343,13 +387,13 @@
       b.onclick = () => pickColor(c);
       box.appendChild(b);
     }
-    // any other colour: the browser's own picker
+    // any other color: the browser's own picker
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'sw custom'; b.setAttribute('role', 'radio'); b.setAttribute('aria-label', 'Another colour'); b.title = 'Another colour';
+    b.type = 'button'; b.className = 'sw custom'; b.setAttribute('role', 'radio'); b.setAttribute('aria-label', 'Another color'); b.title = 'Another color';
     b.setAttribute('aria-checked', String(!!custom));
     if (custom) b.style.background = custom;
     const inp = document.createElement('input');
-    inp.type = 'color'; inp.value = custom || '#3a86ff'; inp.tabIndex = -1; inp.setAttribute('aria-label', 'Another colour');
+    inp.type = 'color'; inp.value = custom || '#3a86ff'; inp.tabIndex = -1; inp.setAttribute('aria-label', 'Another color');
     inp.addEventListener('change', () => pickColor(inp.value.toLowerCase()));
     b.appendChild(inp); box.appendChild(b);
   }
@@ -385,8 +429,7 @@
     const t = styleTarget();
     if (!t || t === 'sel' || !SIZES[t]) return;
     const L = SIZES[t], v = S.styles[t].size;
-    let i = L.findIndex(x => x >= v - 1e-6); if (i < 0) i = L.length - 1;
-    const n = L[clamp(L[i] > v + 1e-6 && d < 0 ? i - 1 : i + d, 0, L.length - 1)];
+    const n = d > 0 ? (L.find(x => x > v + 1e-6) || L[L.length - 1]) : (L.slice().reverse().find(x => x < v - 1e-6) || L[0]);
     if (n !== v) { S.styles[t].size = n; applyTool(); persist(); note(`${TNAME[t]}: size ${n}`, null, null, false, true); }
   }
   $('stylepop').addEventListener('click', e => {
@@ -504,7 +547,7 @@
     if (t === 'system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
     const m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--rail').trim() || '#f3eddc');
-    if (ready) marksTools();                 // the pens' colours as they draw on the paper now
+    if (ready) marksTools();                 // the pens' colors as they draw on the paper now
   }
   try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (S.theme === 'system') setTheme('system'); }); } catch (e) { /* ok */ }
   const attr = (n, v) => { if (v === null) { if (pad.hasAttribute(n)) pad.removeAttribute(n); } else if (pad.getAttribute(n) !== v) pad.setAttribute(n, v); };
@@ -641,7 +684,7 @@
     ...['7+4=', '13-6=', '2x+5x=', '\\frac{1}{2}+\\frac{1}{4}=', '3(x-2)='].map(tex => ({ tex, how: 'finger' })),
   ].map((it, i) => ({ item: i + 1, tex: it.tex, how: it.how || 'any', note: it.note || null })) };
   const NOTES = { small: 'Write it small', large: 'Write it large', fast: 'Write it fast', 'your usual 4': 'Write your usual 4', 'a closed 4': 'Write a closed 4',
-    'fraction small and a little off-centre': 'The fraction small and a little off-centre' };
+    'fraction small and a little off-centre': 'The fraction small and a little off-center' };
   // two readings are the same problem when they differ only in spacing, · for \cdot, how a fraction or power is
   // braced, \leq for \le and the like, or a final "=" (tools/training_to_jsonl.py does the same)
   function normLine(l) {
@@ -725,7 +768,7 @@
       let done = false;
       if (window.katex && typeof window.katex.render === 'function') { try { window.katex.render(l, d, { throwOnError: true, displayMode: false }); done = true; } catch (e) { done = false; } }
       if (!done) {
-        // letters in the maths italic, as typeset
+        // letters in the math italic, as typeset
         const r = texLine(l);
         for (const run of r.text.split(/([A-Za-z]+)/)) {
           if (!run) continue;
@@ -744,7 +787,7 @@
     if (d && d.drill === DRILL.id && Number.isInteger(d.pos)) D = Object.assign(fresh(), d, { pos: Math.max(0, Math.min(N, d.pos)),
       skipped: arr(d.skipped), done: arr(d.done), fixed: arr(d.fixed), active: d.active === true });
   } catch (e) { /* none, or storage blocked */ }
-  const saveDrill = () => { try { if (D) localStorage.setItem(DKEY, JSON.stringify(D)); else localStorage.removeItem(DKEY); } catch (e) { /* the drill then lasts while the page is open */ } };
+  const saveDrill = () => { if (!writer) return; try { if (D) localStorage.setItem(DKEY, JSON.stringify(D)); else localStorage.removeItem(DKEY); } catch (e) { /* the drill then lasts while the page is open */ } };
   const underway = () => !!(D && D.pos < N && (D.pos > 0 || D.done.length || D.skipped.length));
   function drillLine() {
     const go = $('drillgo'), again = $('drillagain');
@@ -755,12 +798,13 @@
     if (!D || over || D.pos >= N) D = fresh();
     D.active = true; saveDrill();
     openSettings(false);
+    commitText();
     pad.trainMeta = null;
     // a new page, unless this one is empty already (before training goes on: what was written with it off stays out)
     if (pad.pad.strokes.length) { pages[cur] = here(); snaps[cur] = pad.pad.snapshot(); pages.push(blank()); goPage(pages.length - 1); }
     if (S.tool !== 'pen' && S.tool !== 'marker') setTool('pen', true);
     if (!S.train) setTrain(true);          // with the first-time note
-    try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
+    try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's math font then */ }
     drillShow();
   }
   function stopDrill() {
@@ -917,6 +961,7 @@
   // ---------------------------------------------------------------- pages
   function goPage(i) {
     if (i < 0 || i >= pages.length || i === cur) return;
+    commitText();
     if (fixing) fixMode(false);
     pages[cur] = here(); snaps[cur] = pad.pad.snapshot();
     cur = i;
@@ -925,11 +970,13 @@
     tools(); persist(); showSel();
   }
   function newPage() {
+    commitText();
     pages[cur] = here(); snaps[cur] = pad.pad.snapshot();
     pages.push(blank()); goPage(pages.length - 1);
     note(`Page ${cur + 1}. The arrows go back to the others.`);
   }
   function deletePage() {
+    commitText();
     if (fixing) fixMode(false);
     if (pages.length === 1) { pages = [blank()]; pages[0].paper = Object.assign({}, pages[0].paper); snaps.length = 0; applyPaper(); pad.setState(pages[0]); tools(); persist(); note('The page is empty now.'); return; }
     const gone = cur + 1;
@@ -941,6 +988,7 @@
   }
   // a copy of this page, after it (its pictures are shared: they are kept by id)
   function dupPage() {
+    commitText();
     pages[cur] = here(); snaps[cur] = pad.pad.snapshot();
     const copy = JSON.parse(JSON.stringify(pages[cur]));
     pages.splice(cur + 1, 0, copy); snaps.splice(cur + 1, 0, undefined);
@@ -950,6 +998,7 @@
   function movePage(d) {
     const j = cur + d;
     if (j < 0 || j >= pages.length) return;
+    commitText();
     pages[cur] = here(); snaps[cur] = pad.pad.snapshot();
     [pages[cur], pages[j]] = [pages[j], pages[cur]]; [snaps[cur], snaps[j]] = [snaps[j], snaps[cur]];
     cur = j; tools(); persist();
@@ -984,7 +1033,7 @@
     for (let i = 0; i < cells.length; i++) {
       await frame();
       if (gen !== pagesGen || $('pagespop').hidden) return;
-      try { thumbInto(i, cells[i]); } catch (e) { /* that page stays blank */ }
+      await withR(() => { if (gen === pagesGen && !$('pagespop').hidden) { try { thumbInto(i, cells[i]); } catch (e) { /* that page stays blank */ } } });
     }
   }
   function thumbInto(i, cv) {
@@ -1013,7 +1062,7 @@
       if (S.tool !== 'pen' && S.tool !== 'marker') { S.tool = S.ink === 'marker' ? 'marker' : 'pen'; S.ink = S.tool; }
       applyTool();
       pad.mode = 'fix';
-      try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
+      try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's math font then */ }
       note('Tap a symbol to fix how it was read. Just write to carry on.');
     } else {
       if (pad.mode === 'fix') pad.mode = modeOf(S.tool);
@@ -1089,9 +1138,9 @@
   });
 
   // ---------------------------------------------------------------- undo, clear, LaTeX, handwriting
-  $('undo').onclick = () => pad.undo();
-  $('redo').onclick = () => pad.redo();
-  $('clear').onclick = () => { pad.clear(); note(pages.length > 1 ? 'Page cleared. Undo brings it back.' : 'Board cleared. Undo brings it back.'); };
+  $('undo').onclick = () => { commitText(); pad.undo(); };
+  $('redo').onclick = () => { commitText(); pad.redo(); };
+  $('clear').onclick = () => { commitText(); pad.clear(); note(pages.length > 1 ? 'Page cleared. Undo brings it back.' : 'Board cleared. Undo brings it back.'); };
   $('hand').onclick = () => { closePops(); $('file').click(); };
   $('file').onchange = () => {
     const f = $('file').files[0]; $('file').value = '';
@@ -1172,7 +1221,7 @@
     const P = pad.pad, c = P && P.copySelection();
     if (!c) return false;
     clip = c; clipMark = 'Nib Board: ' + c.items.length + ' thing' + (c.items.length === 1 ? '' : 's') + ' copied ' + Date.now().toString(36);
-    try { navigator.clipboard.writeText(clipMark).catch(() => {}); } catch (e) { /* the page's own clipboard then */ }
+    try { navigator.clipboard.writeText(clipMark).catch(() => { clipMark = null; }); } catch (e) { clipMark = null; }
     if (cut) P.deleteSelection();
     return true;
   }
@@ -1259,7 +1308,7 @@
     const files = dt ? [...dt.items].filter(i => i.kind === 'file' && /^image\//.test(i.type)).map(i => i.getAsFile()).filter(Boolean) : [];
     if (files.length) { e.preventDefault(); files.slice(0, 10).reduce((p, f) => p.then(() => addPicture(f)), Promise.resolve()); return; }
     const text = dt ? dt.getData('text/plain') : '';
-    if (clip && (!text || text === clipMark)) { e.preventDefault(); pasteClip(); return; }
+    if (clip && (!text || text === clipMark || clipMark === null)) { e.preventDefault(); pasteClip(); return; }
     if (text && text.trim()) { e.preventDefault(); pasteText(text.trim().slice(0, 2000)); }
   });
   // text from elsewhere: a text box in the middle of the view
@@ -1271,15 +1320,21 @@
     if (S.tool !== 'select') setTool('select', true);
     P.select([s]);
   }
+  window.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  window.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) e.preventDefault(); });
   let dragDepth = 0;
   surface.addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dragDepth++; $('drop').hidden = false; e.preventDefault(); } });
   surface.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
   surface.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drop').hidden = true; });
   surface.addEventListener('drop', async e => {
     dragDepth = 0; $('drop').hidden = true;
-    const fs = e.dataTransfer ? [...e.dataTransfer.files].filter(f => /^image\//.test(f.type)) : [];
-    if (!fs.length || !pad.pad) return;
-    e.preventDefault();
+    const all = e.dataTransfer ? [...e.dataTransfer.files] : [];
+    if (all.length) e.preventDefault();                    // the browser would open the file in place of the Board
+    const board = all.find(f => /\.(nibboard|json)$/i.test(f.name));
+    if (board) { openBoardFile(board); return; }
+    const fs = all.filter(f => /^image\//.test(f.type));
+    if (!fs.length) { if (all.length) note('Only pictures, and boards saved from Nib Board, can be dropped on the board.'); return; }
+    if (!pad.pad) return;
     const C = pad.pad.canvas.getBoundingClientRect(), at = pad.pad.toWorld(e.clientX - C.left, e.clientY - C.top);
     for (const f of fs.slice(0, 10)) await addPicture(f, at);
   });
@@ -1290,8 +1345,13 @@
   try { if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { saver = d; }, () => {}); } catch (e) { /* not in a viewer */ }
   async function offer(name, blob) {
     if (saver) {
-      try { await saver.save({ filename: name, data: new Uint8Array(await blob.arrayBuffer()) }); return true; }
-      catch (e) { if (e && e.code === 'declined') return false; }
+      try { await saver.save({ filename: name, data: blob }); return true; }
+      catch (e) {
+        const c = e && e.code;
+        if (c === 'declined') return false;
+        note(c === 'rate_limited' ? 'A save is already waiting for an answer: try again in a moment.' : c === 'too_large' ? 'That file is too big to save from here.' : `That file can't be saved from here${c ? ' (' + c + ')' : ''}.`);
+        return false;
+      }
     }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
@@ -1312,11 +1372,18 @@
     R.addEventListener('nib:needimage', e => fetchImage(e.detail && e.detail.id, R));
     return R;
   }
+  // one user of the out-of-sight pad at a time (an export holds it for all its pages; each thumbnail waits its turn)
+  let rTurn = Promise.resolve();
+  function withR(f) { const run = rTurn.then(f, f); rTurn = run.catch(() => {}); return run; }
   function prepR(st, o) {
     const el = renderPad(), set = (n, v) => { if (v === null) el.removeAttribute(n); else if (el.getAttribute(n) !== v) el.setAttribute(n, v); };
     set('view', o.view); set('solve', o.solve ? '' : null); set('reveal', S.reveal ? '' : null);
     set('stroke-width', String(S.styles.pen.size)); set('auto', o.auto === false ? 'false' : null);
     set('read', S.read ? null : 'false'); set('paper', o.paper ? o.paper.kind + ' ' + o.paper.tone : null);
+    set('pressure', S.pressure ? null : 'false');
+    // the board's own size, so a page's view and its answers come out as they do on the board
+    const w = Math.max(320, Math.round(pad.clientWidth || 1280)) + 'px', h = Math.max(240, Math.round(pad.clientHeight || 960)) + 'px';
+    if (el.style.width !== w || el.style.height !== h) { el.style.width = w; el.style.height = h; if (el.pad) el.pad._resize(); }
     el.setState(st);
     return el;
   }
@@ -1365,7 +1432,7 @@
       busy(jobs.length > 1 ? `Making the PDF: page ${k + 1} of ${jobs.length}…` : 'Making the PDF…');
       const j = jobs[k], el = j.only ? pad : await padFor(j.page), P = el.pad;
       if (j.only) { await readDone(P, 8000); await imagesReady(P, 4000); }
-      let r = j.rect || P.contentRect(24);
+      let r = j.rect || P.contentRect(24, { hidden: S.xp.ans === 'all' });
       if (j.only) { const b = P._selBox(j.only); r = [b[0] - 16, b[1] - 16, b[2] + 16, b[3] + 16]; }
       if (!r) r = P.viewRect;                                   // an empty page: its paper as the view shows it
       const L = sheetFor(r, S.xp.psize);
@@ -1386,20 +1453,21 @@
       return pad.exportImage({ only: P0.selected, margin: 16, scale: 2, maxPixels: 2.4e7, answers: S.xp.ans, sheet: sheet() });
     }
     const el = await padFor(cur), P = el.pad;
-    const rect = what === 'view' ? P0.viewRect : (P.contentRect(40) || P0.viewRect);
+    const rect = what === 'view' ? P0.viewRect : (P.contentRect(40, { hidden: S.xp.ans === 'all' }) || P0.viewRect);
     return el.exportImage({ rect, scale: 2, maxPixels: 2.4e7, answers: S.xp.ans, sheet: sheet() });
   }
   function copyPicture(what) {
     let p;
     try {
       if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') throw new Error('no clipboard');
-      const blob = pictureOf(what).then(c => toBlob(c, 'image/png'));
+      const blob = withR(() => pictureOf(what)).then(c => toBlob(c, 'image/png'));
       p = navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     } catch (e) { p = Promise.reject(e); }
     p.then(() => note('Picture copied: paste it into a post, a doc or a slide.'), () => note('This browser would not copy the picture. Export it as a picture instead.'));
   }
   async function doExport() {
     if (exporting) return;
+    commitText();
     const what = S.xp.what, as = S.xp.as, P = pad.pad;
     if (what === 'sel' && !(P && P.selected.length)) { note('Select something first (the arrow tool), or export the page.'); return; }
     if (as === 'clip') { closePops(); copyPicture(what === 'all' ? 'page' : what); return; }
@@ -1409,11 +1477,11 @@
       if (as === 'pdf') {
         pages[cur] = here();
         const jobs = what === 'all' ? pages.map((_, i) => ({ page: i })) : what === 'sel' ? [{ page: cur, only: P.selected }] : what === 'view' ? [{ page: cur, rect: P.viewRect }] : [{ page: cur }];
-        blob = await pdfOf(jobs);
+        blob = await withR(() => pdfOf(jobs));
         name = what === 'all' && pages.length > 1 ? `Nib-board-${today()}.pdf` : what === 'sel' ? `Nib-selection-${today()}.pdf` : `Nib-board-${cur + 1}-${today()}.pdf`;
       } else {
         busy('Making the picture…');
-        const c = await pictureOf(what === 'all' ? 'page' : what);
+        const c = await withR(() => pictureOf(what === 'all' ? 'page' : what));
         blob = await toBlob(c, 'image/png');
         name = what === 'sel' ? `Nib-selection-${today()}.png` : `Nib-board-${cur + 1}-${today()}.png`;
       }
@@ -1444,7 +1512,7 @@
   $('exportgo').onclick = () => doExport();
   // what is on screen, as a picture (the Board's "Save image" before 1.6)
   $('saveimg').onclick = async () => {
-    closePops();
+    closePops(); commitText();
     const c = pad.exportImage({ rect: pad.pad.viewRect, scale: 2, answers: 'shown' });
     const blob = c && await toBlob(c, 'image/png');
     if (!blob) { note('The picture could not be made.'); return; }
@@ -1461,43 +1529,48 @@
     const name = `Nib-selection-${today()}.png`;
     if (await offer(name, blob)) note('Saved ' + name + '.');
   }
-  // the whole board as a file (.nibboard: its pages and pictures), to open on another computer
+  // the whole board as a file (.nibboard.json: its pages and pictures), to open on another computer
   function usedImages(list) {
     const ids = new Set();
     for (const p of list) for (const m of arr(p.meta)) if (m && m.im) ids.add(String(m.im));
     return ids;
   }
   $('boardsave').onclick = async () => {
+    commitText();
     pages[cur] = here();
     const images = {};
+    let lost = 0;
     for (const id of usedImages(pages)) {
       const src = imgCache.get(id) || (K.images ? await K.images.get(id).catch(() => null) : null);
-      if (src) images[id] = src;
+      if (src) images[id] = src; else lost++;
     }
+    if (lost) note(`${lost} picture${lost === 1 ? ' is' : 's are'} no longer in this browser and can't go in the file.`);
     const file = { format: 'nib-board', version: 3, saved: new Date().toISOString(), engine: Nib.version, page: cur, pages: pages.map(packPage), images };
-    const name = `Nib-board-${today()}.nibboard`;
+    const name = `Nib-board-${today()}.nibboard.json`;
     closePops();
     if (await offer(name, new Blob([JSON.stringify(file)], { type: 'application/json' }))) note(`Saved ${name} (${pages.length} page${pages.length === 1 ? '' : 's'}). Export, Open a board opens it on any computer.`);
   };
   $('boardopen').onclick = () => $('boardfile').click();
   $('boardfile').onchange = () => {
     const f = $('boardfile').files[0]; $('boardfile').value = '';
-    if (!f) return;
+    if (f) openBoardFile(f);
+  };
+  function openBoardFile(f) {
     f.text().then(t => {
       let d = null;
       try { d = JSON.parse(t); } catch (e) { d = null; }
       if (!d || d.format !== 'nib-board' || !Array.isArray(d.pages)) { note('That file is not a board saved from Nib Board.'); return; }
       const ps = d.pages.map(p => okPage(p, d.version === 3 ? 0 : 3.5)).filter(Boolean);
       if (!ps.length) { note('That board has no pages in it.'); return; }
-      opened = { pages: ps, images: d.images && typeof d.images === 'object' ? d.images : {} };
+      opened = { pages: ps, images: d.images && typeof d.images === 'object' ? d.images : {}, page: Number.isInteger(d.page) ? d.page : 0 };
       const empty = pages.length === 1 && !(pad.pad && pad.pad.strokes.length);
       if (empty) { putBoard('replace'); return; }
       $('openq').textContent = `A board of ${ps.length} page${ps.length === 1 ? '' : 's'}. Put it…`;
       $('openask').hidden = false;
-      if ($('exportpop').hidden) openPop('exportpop');
+      if ($('exportpop').hidden) { exportMarks(); openPop('exportpop'); }
       placePop($('exportpop'), popAnchor);
     });
-  };
+  }
   $('openadd').onclick = () => putBoard('add');
   $('openreplace').onclick = () => putBoard('replace');
   $('openno').onclick = () => { opened = null; $('openask').hidden = true; };
@@ -1505,12 +1578,13 @@
     const d = opened;
     opened = null; $('openask').hidden = true;
     if (!d) return;
-    for (const [id, src] of Object.entries(d.images)) if (typeof src === 'string' && /^data:image\//.test(src)) { imgCache.set(id, src); if (K.images) K.images.put(id, src); }
+    for (const [id, src] of Object.entries(d.images)) if (typeof src === 'string' && /^data:image\//.test(src) && /^[\w-]{1,80}$/.test(id)) { imgCache.set(id, src); if (K.images) K.images.put(id, src); }
+    commitText();
     if (fixing) fixMode(false);
     closePops();
     if (how === 'replace') {
-      pages = d.pages; snaps.length = 0; cur = 0;
-      applyPaper(); pad.setState(pages[0]);
+      pages = d.pages; snaps.length = 0; cur = clamp(d.page | 0, 0, pages.length - 1);
+      applyPaper(); pad.setState(pages[cur]);
       tools(); persist();
       note(`The board is open: ${pages.length} page${pages.length === 1 ? '' : 's'}.`);
     } else {
@@ -1542,8 +1616,8 @@
     const k = e.key.toLowerCase(), t = e.target, P = pad.pad;
     if (typing(t)) return;
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-      if (k === 'z') { e.preventDefault(); e.shiftKey ? pad.redo() : pad.undo(); return; }
-      if (k === 'y') { e.preventDefault(); pad.redo(); return; }
+      if (k === 'z') { e.preventDefault(); commitText(); e.shiftKey ? pad.redo() : pad.undo(); return; }
+      if (k === 'y') { e.preventDefault(); commitText(); pad.redo(); return; }
       if (k === 'c' || k === 'x') { if (P && P.selected.length) { e.preventDefault(); copySel(k === 'x'); } return; }
       if (k === 'd') { e.preventDefault(); if (P && P.selected.length) P.duplicateSelection(); return; }
       if (k === 'a') { e.preventDefault(); selectAll(); return; }
@@ -1632,7 +1706,7 @@
   // have saved it since this one opened), or one put in less than a day ago (its id says when; another tab may not have
   // saved its page yet).
   function tidyImages() {
-    if (!K.images || !storageOk) return;
+    if (!K.images || !storageOk || !writer) return;               // a second tab of the Board leaves them to the first
     K.images.ids().then(ids => {
       const used = usedImages(pages.map((p, i) => (i === cur && pad.pad ? here() : p)));
       for (const id of imgCache.keys()) used.add(id);
@@ -1662,6 +1736,7 @@
     // a drill under way when the page was closed comes back where it was
     if (D && D.active && !S.train) { D.active = false; saveDrill(); }
     drillLine(); drillShow();
-    setTimeout(tidyImages, 4000);
+    if (newer) note('This board was saved by a newer Nib Board: it is shown as far as this one can, and nothing here is saved. Open the newer Board.', null, null, true);
+    else setTimeout(tidyImages, 4000);
   });
 })();

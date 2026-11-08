@@ -1,12 +1,12 @@
 // ================================================================== writing pad
 const PAD_DEFAULTS = {
-  ink: null,            // stroke colour; default: the element's CSS --nib-ink, else its text colour
+  ink: null,            // stroke color; default: the element's CSS --nib-ink, else its text color
   width: 3,             // stroke width in CSS px
-  auto: true,           // recognise automatically after the pen rests
-  delay: 450,           // ms of rest before recognising
+  auto: true,           // recognize automatically after the pen rests
+  delay: 450,           // ms of rest before recognizing
   settle: 0,            // ms of rest before read ink changes into its tidy / handwritten / typeset form (the answers do not wait)
   penOnly: false,       // ignore touch and mouse (stylus-only boards)
-  boxes: false,         // draw recognised symbol boxes over the ink
+  boxes: false,         // draw recognized symbol boxes over the ink
   smooth: 0,            // smooth shaky ink along its path before reading (sigma as a share of the writing size)
   view: 'ink',          // how read ink is shown: 'ink' as written, 'tidy', 'hand' (the writer's Replicator handwriting), 'typeset'
   motion: true,         // animate ink into its tidy / handwritten / typeset form (off when the reader asks for less motion)
@@ -33,7 +33,7 @@ const PAD_DEFAULTS = {
   onChange: null,       // (pad) => void, after every stroke / undo / clear
 };
 
-// Writing in different places on a board: strokes near each other belong together — neighbours on a line (within
+// Writing in different places on a board: strokes near each other belong together — neighbors on a line (within
 // 1.5 writing heights across, 0.6 up or down) or stacked (fractions, steps of working: within 1.6 heights down and
 // overlapping across). Returns groups of stroke indices in reading order.
 function clustersOf(strokes) {
@@ -137,9 +137,9 @@ function joinParts(parts) {
   };
 }
 
-// ================================================================== canvas: colours, elements
-// Colours are named so they can read on any paper: '@red' is a deep red on cream or white paper and a lighter one on a
-// chalkboard or a dark board. A plain CSS colour is used as it is. null is the paper's own ink (navy, or cream on dark).
+// ================================================================== canvas: colors, elements
+// Colors are named so they can read on any paper: '@red' is a deep red on cream or white paper and a lighter one on a
+// chalkboard or a dark board. A plain CSS color is used as it is. null is the paper's own ink (navy, or cream on dark).
 const PAD_COLORS = {
   '@ink': [null, null], '@black': ['#16181d', '#f5f3ee'], '@red': ['#d1352b', '#ff7d6e'], '@blue': ['#1f5fbf', '#7fb0ff'],
   '@green': ['#1d8a4b', '#6fd49c'], '@orange': ['#e0750f', '#ffb15c'], '@purple': ['#7a3db4', '#c79dff'],
@@ -153,8 +153,8 @@ function padColor(c, dark, ink) {
   const k = PAD_COLORS[c];
   return k ? (k[dark ? 1 : 0] || ink) : c;
 }
-// a shape's fill: 'tint' (its own colour, see-through), 'solid' (its own colour), '@red:0.25' (a named colour at that
-// opacity) or a CSS colour
+// a shape's fill: 'tint' (its own color, see-through), 'solid' (its own color), '@red:0.25' (a named color at that
+// opacity) or a CSS color
 function padFill(f, dark, col) {
   if (!f || f === 'none') return null;
   if (f === 'tint' || f === 'solid') return padAlpha(col, f === 'tint' ? (dark ? 0.28 : 0.18) : 1);
@@ -162,14 +162,14 @@ function padFill(f, dark, col) {
   if (m) return padAlpha(padColor(m[1], dark, col), +m[2]);
   return padColor(f, dark, col);
 }
-// a #rgb / #rrggbb colour at an opacity
+// a #rgb / #rrggbb color at an opacity
 function padAlpha(c, a) {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim());
   if (!m || a >= 1) return c;
   const h = m[1].length === 3 ? m[1].replace(/./g, ch => ch + ch) : m[1];
   return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`;
 }
-// how light a CSS colour is (0 black … 1 white); unknown colours count as light
+// how light a CSS color is (0 black … 1 white); unknown colors count as light
 function padLum(color) {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color || '').trim());
   let r, g, b;
@@ -289,7 +289,7 @@ class Pad {
     Object.assign(this.o, o || {});
     if (!!this.o.train !== tb) { if (this.o.train) this._trainSee(); else { clearTimeout(this._trainTimer); this._trainTimer = null; this._seen.clear(); } }
     if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
-    // only options that change the reading read the ink again; a view, colour or pen width just redraws
+    // only options that change the reading read the ink again; a view, color or pen width just redraws
     const reread = this._readKey() !== rk;
     if (reread) { this.optsVersion++; this.parts.clear(); }
     if (!this.o.infinite && (this.cam.x || this.cam.y || this.cam.z !== 1)) this.cam = { x: 0, y: 0, z: 1 };
@@ -344,7 +344,8 @@ class Pad {
       if (this.o.penOnly || this.o.fingers === 'ignore') { this.why = 'ignored: pen only'; return; }
       if (now < this.penUntil || [...this.ptrs.values()].some(P => P.type === 'pen')) { this.why = 'ignored: pen in use'; return; }
       if (this._wide(e) && this.mode !== 'erase') { this.why = 'ignored: palm'; return; }   // with Erase on, a hand rubs out
-      const sp = this._spt(e); this.touches.set(e.pointerId, { x: sp[0], y: sp[1], t: now });
+      for (const [id, T] of this.touches) if (now - (T.m || T.t) > 1500) this.touches.delete(id);   // fingers whose pointerup was lost
+      const sp = this._spt(e); this.touches.set(e.pointerId, { x: sp[0], y: sp[1], t: now, m: now });
     }
     // panning and zooming: the hand tool, space or the middle button with a mouse, fingers set to move the board, two fingers
     if (this.o.infinite && this._gestureDown(e, now)) return;
@@ -375,7 +376,7 @@ class Pad {
     const now = performance.now();
     if (e.pointerType === 'pen') { this.penUntil = now + 1000; this.penSeen = now; if (this.pending.length) this._brushed(); }
     const T = this.touches.get(e.pointerId);
-    if (T) { const sp = this._spt(e); T.x = sp[0]; T.y = sp[1]; }
+    if (T) { const sp = this._spt(e); T.x = sp[0]; T.y = sp[1]; T.m = now; }
     if (this.gesture && this._gestureMove(e)) return;
     const P = this.ptrs.get(e.pointerId);
     if (!P) return;
@@ -414,8 +415,13 @@ class Pad {
   // the board. Two fingers put down together (within 0.3 s and a hand's width of each other) pan and zoom; the first
   // finger's stroke, if it had begun, is taken back. Fingers in a gesture never write, even after one lifts.
   _gestureDown(e, now) {
-    const type = e.pointerType, touch = type === 'touch', sp = this._spt(e), G = this.gesture;
+    const type = e.pointerType, touch = type === 'touch', sp = this._spt(e);
+    // a gesture whose fingers have been quiet for 1.5 s lost a pointerup somewhere, and a pen ends a gesture of fingers:
+    // neither may keep the board from listening
+    if (this.gesture && (now - (this.gesture.last || 0) > 1500 || (type === 'pen' && this.gesture.touch))) { this.gesture = null; this._cursor(); this._camMoved(true); }
+    const G = this.gesture;
     if (G) {
+      G.last = now;
       if (touch && G.touch && G.ids.length === 1) { G.ids.push(e.pointerId); this._gestureStart(G.ids, true); }
       e.preventDefault(); this._capture(e);
       return true;
@@ -424,7 +430,7 @@ class Pad {
       || (type !== 'mouse' && this.mode === 'pan') || (touch && this.o.fingers === 'pan');
     if (pan) {
       e.preventDefault(); this._capture(e);
-      this.gesture = { ids: [e.pointerId], touch, kind: 'pan', cam0: Object.assign({}, this.cam), s0: sp, cur: sp };
+      this.gesture = { ids: [e.pointerId], touch, kind: 'pan', cam0: Object.assign({}, this.cam), s0: sp, cur: sp, last: now };
       if (touch) this._gestureStart([e.pointerId], true);
       this.why = 'pan';
       this.canvas.style.cursor = 'grabbing';
@@ -433,10 +439,10 @@ class Pad {
     if (touch && this.o.pinch && this.touches.size === 2) {
       const [oid, o] = [...this.touches.entries()].find(([id]) => id !== e.pointerId) || [];
       const other = oid !== undefined ? this.ptrs.get(oid) : null;
-      if (o && Math.hypot(o.x - sp[0], o.y - sp[1]) < 420 && now - o.t < 300 && (!other || other.mode === 'draw' || other.mode === 'erase' || other.mode === 'laser')) {
-        if (other) this._drop(other);
+      if (o && Math.hypot(o.x - sp[0], o.y - sp[1]) < 420 && now - o.t < 300) {
+        if (other) this._drop(other);                     // whatever the first finger began (a stroke, a lasso, a shape, a move) is taken back
         e.preventDefault(); this._capture(e);
-        this.gesture = { ids: [oid, e.pointerId], touch: true };
+        this.gesture = { ids: [oid, e.pointerId], touch: true, last: now };
         this._gestureStart(this.gesture.ids, true);
         this.why = 'pinch';
         return true;
@@ -458,6 +464,7 @@ class Pad {
     const G = this.gesture;
     if (!G || !G.ids.includes(e.pointerId)) return false;
     e.preventDefault();
+    G.last = performance.now();
     if (G.touch) {
       const pts = G.ids.map(id => this.touches.get(id)).filter(Boolean);
       if (!pts.length) return true;
@@ -579,9 +586,13 @@ class Pad {
     if (P.mode === 'select') { this._selectUp(P, e); return; }
     if (P.mode === 'shape') { this._shapeUp(P, e); return; }
     if (P.mode === 'laser') { if (P.cur && P.cur.length) this.lasers.push({ pts: P.cur, end: performance.now() }); this._laserLoop(); return; }
-    if (P.mode === 'text') { if (e && e.type === 'pointerup' && P.cur) this._textAt(P.cur[0]); return; }
+    if (P.mode === 'text') {
+      if (P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; return; }   // the heel of the hand
+      if (e && e.type === 'pointerup' && P.cur) this._textAt(P.cur[0]);
+      return;
+    }
     const s = P.cur;
-    if (e && e.type === 'pointercancel' && s && s.length < 3) { this.redraw(); return; }   // a cancelled tap
+    if (e && e.type === 'pointercancel' && s && s.length < 3) { this.redraw(); return; }   // a canceled tap
     // a tap on an answer's chip (up within 10 px and 400 ms of the down, inside the chip) shows that answer
     if (P.chip && e && e.type === 'pointerup' && s && s.length) {
       const q = this._pt(e);
@@ -602,9 +613,10 @@ class Pad {
     const T = P.tool || {};
     let el = s;
     if (P.snap) {
-      // drawn and held: the shape it was, in the pen's colour and width
+      // drawn and held: the shape it was, in the pen's color and width
       el = P.snap.pts.map(q => [q[0], q[1]]);
-      Object.assign(info, { tool: 'shape', shape: P.snap.shape, size: T.size || this.o.width * (T.kind === 'marker' ? 3 : 1) });
+      if (T.kind === 'highlighter') Object.assign(info, { tool: 'highlighter', size: T.size || 22 });
+      else Object.assign(info, { tool: 'shape', shape: P.snap.shape, size: T.size || this.o.width * (T.kind === 'marker' ? 3 : 1) });
       if (T.color) info.color = T.color;
     } else {
       if (T.kind && T.kind !== 'pen') info.tool = T.kind;
@@ -653,7 +665,7 @@ class Pad {
       else this.strokes.splice(Math.min(o.rm, this.strokes.length), 0, o.s);
     }
     for (const x of P.erased.slice().reverse()) this.strokes.splice(x.i, 0, x.s);
-    if (P.mode === 'select' && P.op && P.op.orig) for (const [s, was] of P.op.orig) { s.length = 0; for (const q of was) s.push(q.slice()); this._touched(s); }
+    if (P.mode === 'select' && P.op && P.op.orig) { for (const [s, was] of P.op.orig) { s.length = 0; for (const q of was) s.push(q.slice()); this._touched(s); } this._planTo(P.op.items, x => x, y => y, 1); }
     for (const k of P.hid) this.revealed.add(k);
     if (P.hid.length) this._syncHidden();
     this.redraw();
@@ -1092,11 +1104,11 @@ class Pad {
     try { this._paint(true, { paper: !(o.background || o.dots) }); } finally { this.ctx = keep.ctx; this.anim = keep.anim; }
     return c;
   }
-  // everything on the page, in world units (with m around it), or null when it is empty
-  contentRect(m) {
+  // everything on the page, in world units (with m around it; o.hidden: answers still behind their chips too), or null
+  contentRect(m, o) {
     let b = null;
     for (const s of this.strokes) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); }
-    if (this.plan) for (const it of this.plan.items) if (it.answer && !it.hidden && it.box) b = b ? ubox(b, it.box) : it.box.slice();
+    if (this.plan) for (const it of this.plan.items) if (it.answer && (!it.hidden || (o && o.hidden)) && it.box) b = b ? ubox(b, it.box) : it.box.slice();
     if (!b) return null;
     m = m || 0;
     return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
@@ -1110,7 +1122,7 @@ class Pad {
     const sel = o.only ? new Set(o.only) : null;
     let rect = o.rect;
     if (!rect && sel) { let b = null; for (const s of sel) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); } const m = o.margin === undefined ? 16 : o.margin; rect = b && [b[0] - m, b[1] - m, b[2] + m, b[3] + m]; }
-    if (!rect) rect = this.contentRect(o.margin === undefined ? 40 : o.margin) || this.viewRect;
+    if (!rect) rect = this.contentRect(o.margin === undefined ? 40 : o.margin, { hidden: o.answers === 'all' }) || this.viewRect;
     const W = Math.max(1, rect[2] - rect[0]), H = Math.max(1, rect[3] - rect[1]);
     let k = o.scale || 2;
     const most = o.maxPixels || 4e7;
@@ -1345,6 +1357,24 @@ class Pad {
     return true;
   }
   // the view moved with the ink: t = [ax, ay, bx, by, k] maps x to bx + (x - ax)·k (back: the other way)
+  // the view's items drawn from these elements (and the answers after their "="), kept as they are now, to move with them
+  _planOf(set) {
+    if (!this.plan) return [];
+    return this.plan.items.filter(it => (it.from.length && it.from.every(s => set.has(s))) || (it.answer && it.eqFrom && it.eqFrom.length && it.eqFrom.every(s => set.has(s))))
+      .map(it => ({ it, parts: it.parts, box: it.box.slice(), group: it.group ? it.group.slice() : null, em: it.em }));
+  }
+  // those items, mapped from where they were kept by x → X(x), y → Y(y) (k: how much sizes change)
+  _planTo(kept, X, Y, k) {
+    if (!kept || !kept.length || !this.plan) return;
+    for (const v of kept) {
+      const it = v.it;
+      it.parts = mapParts(v.parts, X, Y, k); it.box = [X(v.box[0]), Y(v.box[1]), X(v.box[2]), Y(v.box[3])];
+      if (v.group) it.group = [X(v.group[0]), Y(v.group[1]), X(v.group[2]), Y(v.group[3])];
+      if (v.em) it.em = v.em * k;
+    }
+    this.plan.chips = this._chips(this.plan.items);
+    this.anim = null;
+  }
   _movePlan(t, back) {
     if (!this.plan) return;
     const [ax, ay, bx, by, k0] = t, k = back ? 1 / k0 : k0;
@@ -1378,12 +1408,14 @@ class Pad {
   // ---- shapes dragged out with the shape tool (a tap makes one of a standard size)
   _shapeUp(P, e) {
     let prev = P.prev;
+    // a finger's tap within 3 s of the pen is the heel of the hand (a finger placing a shape or text later is a finger)
+    if (!prev && P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
     if (!prev && e && e.type === 'pointerup' && typeof shapeFromDrag === 'function') prev = shapeFromDrag(this.shapeTool.kind, P.a, P.a, { snap: this.o.snap, angle: true, z: this.cam.z });
     if (!prev || !prev.pts || !prev.pts.length) { this.redraw(); return; }
     const S = this.shapeTool, s = prev.pts.map(q => [q[0], q[1]]);
     const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: null, tool: 'shape', shape: prev.shape, size: +S.size > 0 ? +S.size : 3 };
     if (S.color) info.color = S.color;
-    // a number line or a plane is a placed thing to write on: it takes the colour and width, not a fill or dashes
+    // a number line or a plane is a placed thing to write on: it takes the color and width, not a fill or dashes
     const axes = prev.shape === 'numberline' || prev.shape === 'plane';
     if (S.fill && !axes) info.fill = S.fill;
     if (S.dash && !axes) info.dash = true;
@@ -1479,10 +1511,17 @@ class Pad {
     const sel = this._liveSel(), sp = this.toScreen(p);
     if (sel.length) {
       const b = this._selBox(sel), h = this._handleAt(b, sp, P.type !== 'mouse');
-      if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]) }; return; }
-      if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]) }; return; }
+      if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
+      if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
     }
-    const hit = this.elementAt(p, true);
+    let hit = this.elementAt(p, true);
+    if (hit && !this.selection.has(hit)) {
+      const t = this._tool(hit), E = this.info.get(hit) || {};
+      if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
+        const b = this._bounds(hit), m = 14 / this.cam.z;
+        if (p[0] - b[0] > m && b[2] - p[0] > m && p[1] - b[1] > m && b[3] - p[1] > m) hit = null;
+      }
+    }
     if (hit) {
       P.tapped = this.selection.size === 1 && this.selection.has(hit) ? hit : null;
       this._setSel([hit]);
@@ -1501,6 +1540,7 @@ class Pad {
       if (O.kind === 'move') {
         const dx = p[0] - P.p0[0], dy = p[1] - P.p0[1];
         for (const [s, was] of O.orig) { for (let i = 0; i < s.length; i++) { s[i][0] = was[i][0] + dx; s[i][1] = was[i][1] + dy; } this._touched(s); }
+        this._planTo(O.items, x => x + dx, y => y + dy, 1);
       } else {
         const b = O.b0, h = O.h, W = Math.max(b[2] - b[0], 1e-6), H = Math.max(b[3] - b[1], 1e-6);
         const ax = h.includes('w') ? b[2] : b[0], ay = h.includes('n') ? b[3] : b[1];
@@ -1516,6 +1556,7 @@ class Pad {
           for (let i = 0; i < s.length; i++) { s[i][0] = ax + (was[i][0] - ax) * kxx; s[i][1] = ay + (was[i][1] - ay) * kyy; }
           this._touched(s);
         }
+        this._planTo(O.items, x => ax + (x - ax) * kx, y => ay + (y - ay) * ky, Math.sqrt(kx * ky));
       }
       O.moved = true;
       this._frame();
@@ -1561,10 +1602,15 @@ class Pad {
     }
     this.redraw();
   }
-  // in the lasso: most of a stroke's points, or the middle of a shape, text or picture
+  // in the lasso: most of a stroke's points, the middle of a shape or text, or all of a picture, number line or plane
+  // (things writing goes on: a lasso round the writing on one leaves it where it is)
   _inLasso(s, poly) {
-    const t = this._tool(s);
-    if (t === 'shape' || t === 'text' || t === 'image') { const b = this._bounds(s); return padInPoly([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], poly); }
+    const t = this._tool(s), E = this.info.get(s) || {};
+    if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
+      const b = this._bounds(s);
+      return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].every(q => padInPoly(q, poly));
+    }
+    if (t === 'shape' || t === 'text') { const b = this._bounds(s); return padInPoly([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], poly); }
     let n = 0;
     for (const q of s) if (padInPoly(q, poly)) n++;
     return n >= Math.max(1, 0.6 * s.length);
@@ -1633,7 +1679,7 @@ class Pad {
     this._clip = clip;
     return clip;
   }
-  // put copied elements on the board (one undoable step), centred on world point at (default: offset from where they were
+  // put copied elements on the board (one undoable step), centered on world point at (default: offset from where they were
   // copied, or the middle of the view when that is out of sight); they come selected
   paste(clip, at) {
     clip = clip || this._clip;
@@ -1698,7 +1744,8 @@ class Pad {
   nudgeSelection(dx, dy) {
     const sel = this._liveSel();
     if (!sel.length) return;
-    const wx = dx / this.cam.z, wy = dy / this.cam.z, move = [];
+    const wx = dx / this.cam.z, wy = dy / this.cam.z, move = [], items = this._planOf(new Set(sel));
+    this._planTo(items, x => x + wx, y => y + wy, 1);
     for (const s of sel) { const was = s.map(q => q.slice()); for (const q of s) { q[0] += wx; q[1] += wy; } this._touched(s); move.push([s, was, s.map(q => q.slice())]); }
     this._inkMoved(sel, false);
     this._push({ move, t: null }); this._changed(); this._selChanged();
@@ -1878,7 +1925,7 @@ class Pad {
     this._emit(res);
     return res;
   }
-  // the recogniser's options (the pad's own)
+  // the recognizer's options (the pad's own)
   _ropts() { const o = Object.assign({}, this.o); o.smooth = +o.smooth > 0 ? +o.smooth : 0; return o; }
   // the classifier work for the next read, one stroke group per step (newest ink first)
   *_warm(ro) {
@@ -1923,7 +1970,7 @@ class Pad {
   }
   _partCached(st, ro) { return this.parts.has(this._partKey(st, ro)); }
   _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
-  // re-label one recognised symbol (from result.symbols[i].candidates) and re-run
+  // re-label one recognized symbol (from result.symbols[i].candidates) and re-run
   // the reading's LaTeX with the answers written in after their "="
   solvedLatex() {
     const res = this.result;

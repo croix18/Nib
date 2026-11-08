@@ -1,5 +1,5 @@
 // The <nib-pad> element in a real browser: two pads on one page, events, undo/redo/clear, erase mode, the strokes
-// setter, moving the element in the page and putting it back, palm rejection (pen then touch), a cancelled tap,
+// setter, moving the element in the page and putting it back, palm rejection (pen then touch), a canceled tap,
 // and reading speed with the CPU slowed 4x (a Chromebook) without long main-thread stalls; the pointer rules (a pen's
 // one-second window over touch, palms by contact size, a pen taking over from a palm, the pen's eraser end, two
 // fingers at once, the mode kept per stroke, a lost pointerup) and the eraser (ring, radius, segments).
@@ -77,7 +77,7 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   await page.evaluate(() => { document.body.insertBefore(kept, b); }); await settle(1500);
   ok(await page.evaluate(() => a.strokes.length) === before && (await latex('a')) === '\\frac{n}{2}+\\frac{5}{2}', 'removed and put back: ink restored and read');
 
-  console.log('palm rejection and a cancelled tap');
+  console.log('palm rejection and a canceled tap');
   await page.evaluate(() => b.clear());
   await write('#b', pick('UN19_1006_em_78'), 'pen');     // \frac{35}{528}, written with a pen
   const strokesB = await page.evaluate(() => b.strokes.length);
@@ -223,12 +223,12 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
       const c = a.querySelector('canvas'), d = a.pad.dpr, r = a.pad.ptrs.get(1).r, g = c.getContext('2d');
       const px = (x, y) => g.getImageData(Math.round(x * d), Math.round(y * d), 1, 1).data[3];
       let onRing = 0; for (let k = 0; k < 16; k++) { const t = k * Math.PI / 8; onRing += Math.max(px(302 + r * Math.cos(t), 130 + r * Math.sin(t)), px(302 + (r - 0.7) * Math.cos(t), 130 + (r - 0.7) * Math.sin(t)), px(302 + (r + 0.7) * Math.cos(t), 130 + (r + 0.7) * Math.sin(t))) > 0 ? 1 : 0; }
-      const centre = px(302, 130);
+      const center = px(302, 130);
       ptr(a, 'up', 'mouse', 1, 302, 130);
-      requestAnimationFrame(() => { const after = g.getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0); res({ r, onRing, centre, after }); });
+      requestAnimationFrame(() => { const after = g.getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0); res({ r, onRing, center, after }); });
     })));
   });
-  ok(ring.r === 14 && ring.onRing >= 12 && ring.centre === 0 && !ring.after, `erasing shows a faint ring of the eraser's size (r ${ring.r}, ${ring.onRing}/16 points on it), gone when the eraser lifts`);
+  ok(ring.r === 14 && ring.onRing >= 12 && ring.center === 0 && !ring.after, `erasing shows a faint ring of the eraser's size (r ${ring.r}, ${ring.onRing}/16 points on it), gone when the eraser lifts`);
   const rad = await page.evaluate(() => {
     a.mode = 'draw';
     a.strokes = [[[100, 40], [100, 140]], [[160, 40], [160, 140]], [[600, 40], [700, 40]]];

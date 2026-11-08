@@ -1,5 +1,5 @@
 // The canvas in a <nib-pad infinite>: pan and zoom (wheel, ctrl+wheel, the hand tool, space, two fingers, fingers that
-// pan), pens, markers and highlighters (colour, size, pressure), what Nib reads (pen and marker only), select (lasso,
+// pan), pens, markers and highlighters (color, size, pressure), what Nib reads (pen and marker only), select (lasso,
 // box, tap, move, resize, delete, duplicate, copy and paste, restyle, order, nudge), text, pictures, the area eraser,
 // the laser, draw-and-hold shapes, the shape tool, paper, export (PNG pictures), state (looks, pressure, camera) and a
 // crowded canvas.
@@ -197,7 +197,7 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) <= e;
   ok(sel2.big[0] > sel2.was[0] * 1.5 && Math.abs(sel2.big[0] / sel2.big[1] - sel2.was[0] / sel2.was[1]) < 0.05, `a corner handle makes it bigger, keeping its shape (${sel2.was.map(Math.round)} → ${sel2.big.map(Math.round)})`);
   ok(sel2.dup === 2 && sel2.n1 === 5, 'duplicate copies the selection');
   ok(sel2.del === 1 && sel2.n2 === 2, 'delete takes it away (undo brings it back)');
-  ok(sel2.look.color === '@green' && sel2.look.size === 7, 'a new colour and size for what is selected');
+  ok(sel2.look.color === '@green' && sel2.look.size === 7, 'a new color and size for what is selected');
   ok(sel2.last, 'bring to front');
   ok(sel2.pasted && near((sel2.at[0] + sel2.at[2]) / 2, 1000, 2) && near((sel2.at[1] + sel2.at[3]) / 2, 1000, 2), 'paste puts a copy where it is asked to');
   ok(near(sel2.nudged, 10), 'the arrow keys nudge it');
@@ -324,6 +324,68 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) <= e;
   ok(near(ex.w, ex.bw, 2) && near(ex.h, ex.bh, 2), `a picture of everything on the page at 2× (${ex.w}×${ex.h})`);
   ok(ex.one[0] === 300 && ex.one[1] === 200, 'or of a given part of it');
   ok(ex.big <= 1e6 * 1.01, 'never more pixels than asked for');
+
+  console.log('what the review of 1.6 found');
+  {
+    // a pinch whose second finger's pointerup is lost: the board listens again 1.5 s later (a pen at once)
+    await reset();
+    await page.evaluate(() => { ptr('down', 'touch', 31, 400, 300); ptr('down', 'touch', 32, 480, 300); for (let i = 1; i <= 6; i++) { ptr('move', 'touch', 31, 400 - 10 * i, 300); ptr('move', 'touch', 32, 480 + 10 * i, 300); } ptr('up', 'touch', 31, 340, 300); });
+    const stuck = await page.evaluate(() => !!c.pad.gesture);
+    await wait(1600);
+    await page.evaluate(() => line('mouse', 33, [[100, 500], [200, 520]]));
+    const n1 = await page.evaluate(() => c.pad.strokes.length);
+    await page.evaluate(() => { ptr('down', 'touch', 34, 400, 300); ptr('down', 'touch', 35, 480, 300); ptr('move', 'touch', 35, 520, 300); });
+    await page.evaluate(() => line('pen', 36, [[100, 600], [200, 620]]));
+    const n2 = await page.evaluate(() => c.pad.strokes.length);
+    await page.evaluate(() => { ptr('up', 'touch', 34, 400, 300); ptr('up', 'touch', 35, 520, 300); });
+    ok(stuck && n1 === 1 && n2 === 2, `a gesture that lost a pointerup ends: a mouse stroke 1.6 s later writes (${n1}), and a pen ends a gesture of fingers at once (${n2})`);
+    // a pinch begun with the select, shape or text tool zooms (and leaves nothing behind)
+    const pinch = await page.evaluate(() => {
+      const out = {};
+      for (const m of ['select', 'shape', 'text']) {
+        const P = c.pad; P.setCamera({ x: 0, y: 0, z: 1 }); P.setMode(m); P.penSeen = -1e9; P.penUntil = 0; P.touches.clear();
+        ptr('down', 'touch', 41, 400, 300); ptr('down', 'touch', 42, 480, 300);
+        for (let i = 1; i <= 6; i++) { ptr('move', 'touch', 41, 400 - 10 * i, 300); ptr('move', 'touch', 42, 480 + 10 * i, 300); }
+        ptr('up', 'touch', 41, 340, 300); ptr('up', 'touch', 42, 540, 300);
+        out[m] = Math.round(P.cam.z * 100) / 100 + ':' + P.strokes.length + (P.editing ? ':editing' : '');
+      }
+      c.pad.setMode('draw');
+      return out;
+    });
+    ok(Object.values(pinch).every(v => +v.split(':')[0] > 1.5 && v.split(':')[1] === '2' && !v.includes('editing')), 'two fingers zoom with the select, shape and text tools too, and make nothing: ' + JSON.stringify(pinch));
+    // writing on a picture: a lasso drag that starts on the picture takes the writing, not the picture
+    await reset();
+    const lasso = await page.evaluate(async () => {
+      const P = c.pad;
+      const img = await c.addImage(picture(400, 300), { at: [400, 350] });
+      P.clearSelection();
+      line('mouse', 51, [[330, 330], [420, 360]]);
+      P.setMode('select');
+      line('mouse', 52, [[300, 300], [460, 300], [460, 400], [300, 400]]);
+      const sel = P.selected.map(s => P.lookOf(s).tool || 'pen');
+      const at = img.map(q => q.slice());
+      P.clearSelection();
+      // the picture is still moved from its edge, or once it is selected
+      line('mouse', 53, [[202, 350], [252, 350]]);
+      const moved = img[0][0] - at[0][0];
+      P.setMode('draw');
+      return { sel, moved };
+    });
+    ok(JSON.stringify(lasso.sel) === '["pen"]' && near(lasso.moved, 50), `a box dragged across a picture selects the writing on it (${lasso.sel}); dragged from its edge, the picture moves (${lasso.moved})`);
+    // a highlighter drawn and held becomes a straight highlighter, still see-through and under the writing
+    await reset();
+    const hl = await page.evaluate(() => new Promise(res => {
+      const P = c.pad; P.tool = { kind: 'highlighter', color: '@hl-yellow', size: 24 };
+      ptr('down', 'pen', 61, 100, 200);
+      for (let i = 1; i <= 20; i++) ptr('move', 'pen', 61, 100 + 15 * i, 200 + (i % 2));
+      setTimeout(() => { ptr('up', 'pen', 61, 400, 200); const E = P.lookOf(P.strokes[0]); res({ tool: E.tool, n: P.strokes[0].length }); P.tool = { kind: 'pen', color: null, size: null }; }, 800);
+    }));
+    ok(hl.tool === 'highlighter' && hl.n === 2, `a highlighter held still becomes a straight one, still a highlighter (${JSON.stringify(hl)})`);
+    // an answer key takes in the answers still behind their chips
+    await reset();
+    const key = await page.evaluate(() => { const P = c.pad; return { a: P.contentRect(0), b: P.contentRect(0, { hidden: true }) }; });
+    ok(key.a === null && key.b === null, 'an empty page has no content either way');
+  }
 
   console.log('a crowded canvas');
   await reset();

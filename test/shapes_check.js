@@ -93,7 +93,7 @@ for (const [kind] of KINDS) {
     const r = S.shapeFromDrag(kind, [500, 400], [501.5, 401], {}), b = S.sbox(r.pts), w = b[2] - b[0], h = b[3] - b[1];
     const flat = ['line', 'arrow', 'arrow2', 'numberline'].includes(kind);
     ok(w >= 100 && (flat ? h === 0 : h >= 100), kind + ' tap: a sensible default size ' + w + 'x' + h);
-    ok(near((b[0] + b[2]) / 2, 500, 1e-9) && near((b[1] + b[3]) / 2, 400, 1e-9), kind + ' tap: centred on it');
+    ok(near((b[0] + b[2]) / 2, 500, 1e-9) && near((b[1] + b[3]) / 2, 400, 1e-9), kind + ' tap: centered on it');
     if (kind === 'square' || kind === 'circle' || kind === 'plane') ok(w === h, kind + ' tap: equal sides');
     const z2 = S.shapeFromDrag(kind, [500, 400], [500.5, 400], { z: 2 }), b2 = S.sbox(z2.pts);
     ok(near(b2[2] - b2[0], w / 2, 1e-9), kind + ' tap at zoom 2: half the world size');
@@ -125,7 +125,7 @@ const optOf = { numberline: Object.assign({}, NLDEF), plane: Object.assign({}, P
 const elOf = (shape, extra) => Object.assign({ tool: 'shape', shape, size: 4, color: null, fill: null, dash: false, opt: optOf[shape] }, extra);
 const inBox = (p, b, e) => p[0] >= b[0] - (e || 1e-9) && p[0] <= b[2] + (e || 1e-9) && p[1] >= b[1] - (e || 1e-9) && p[1] <= b[3] + (e || 1e-9);
 const closedKinds = ['rect', 'ellipse', 'triangle', 'rtriangle', 'poly'];
-// the point a distance d out from the middle of an outline segment (outward from the shape's centre)
+// the point a distance d out from the middle of an outline segment (outward from the shape's center)
 function outFrom(P, i, d, c) {
   const a = P[i], b = P[i + 1], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
   let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
@@ -203,9 +203,9 @@ const rectsOverlap = (a, b, m) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 + (m || 
 const textOf = L => L.s != null ? L.s : (L.neg ? '−' : '') + (L.whole ? L.whole + ' ' : '') + L.num + '/' + L.den;
 {
   const Ly = S.shapeNlLayout(elOf('numberline', { size: 3 }), [[100, 300], [900, 300]], 1);
-  ok(Ly.ticks.length === 21 && Ly.labels.length === 21, 'default number line, 800 long: 21 ticks, every one labelled');
+  ok(Ly.ticks.length === 21 && Ly.labels.length === 21, 'default number line, 800 long: 21 ticks, every one labeled');
   ok(Ly.labels[0].L.s === '−10' && Ly.labels[10].L.s === '0' && Ly.labels[20].L.s === '10', 'labels -10 .. 10 with a real minus sign');
-  ok(Ly.labels.every((l, i) => near(l.x, 100 + Ly.ticks[i].t, 1e-9)), 'labels centred under their ticks');
+  ok(Ly.labels.every((l, i) => near(l.x, 100 + Ly.ticks[i].t, 1e-9)), 'labels centered under their ticks');
   ok(Ly.ticks[0].t > Ly.heads[0].L && Ly.ticks[20].t < 800 - Ly.heads[1].L, 'ticks clear of the arrowheads');
   const sp = Ly.ticks.map((t, i) => i ? t.t - Ly.ticks[i - 1].t : 0).slice(1);
   ok(sp.every(d => near(d, sp[0], 1e-6)), 'ticks evenly spread');
@@ -456,9 +456,9 @@ for (let i = 0; i < 30; i++) synth.push(['arrow', synthArrow()]);
     if (v === 'ok') by[cls][0]++; else { wrong[cls + ' -> ' + v] = (wrong[cls + ' -> ' + v] || 0) + 1; }
   }
   let a = 0, n = 0;
-  for (const [cls, [g, t]] of Object.entries(by)) { console.log('   ', cls.padEnd(14), g + '/' + t, (100 * g / t).toFixed(0) + '%'); a += g; n += t; if (cls !== 'arrow') ok(g / t >= 0.9, cls + ' recognised (90 % or better): ' + g + '/' + t); }
+  for (const [cls, [g, t]] of Object.entries(by)) { console.log('   ', cls.padEnd(14), g + '/' + t, (100 * g / t).toFixed(0) + '%'); a += g; n += t; if (cls !== 'arrow') ok(g / t >= 0.9, cls + ' recognized (90 % or better): ' + g + '/' + t); }
   console.log('    overall', a + '/' + n, (100 * a / n).toFixed(1) + '%', Object.keys(wrong).length ? 'misses: ' + JSON.stringify(wrong) : '');
-  ok(a / n >= 0.93, 'synthetic shapes recognised overall: ' + (100 * a / n).toFixed(1) + '%');
+  ok(a / n >= 0.93, 'synthetic shapes recognized overall: ' + (100 * a / n).toFixed(1) + '%');
   // scale and resampling do not change the answer
   let same = 0, tot = 0;
   for (const [, s] of synth.slice(0, 120)) {
@@ -524,7 +524,7 @@ for (const [name, file] of sources) {
   ok(letters <= 2, 'letters (besides l, I, o, O) essentially never become shapes: ' + letters);
 }
 
-// ------------------------------------------------------------------ 8. odd input to the recogniser
+// ------------------------------------------------------------------ 8. odd input to the recognizer
 section('8. odd input');
 {
   let threw = 0;

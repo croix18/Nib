@@ -15,7 +15,7 @@ const SHAPE_KINDS = [
   { kind: 'numberline', label: 'Number line' }, { kind: 'plane', label: 'Coordinate plane' }];
 const SHAPE_NL = { min: -10, max: 10, step: 1, labels: true, frac: false };
 const SHAPE_PLANE = { xmin: -10, xmax: 10, ymin: -10, ymax: 10, step: 1, labels: true, grid: true };
-// a drag shorter than SHAPE_TAP (world units at zoom 1) is a tap: it makes the kind's default size, centred on it
+// a drag shorter than SHAPE_TAP (world units at zoom 1) is a tap: it makes the kind's default size, centered on it
 const SHAPE_TAP = 4;
 const SHAPE_DEFAULT = { line: [200, 0], arrow: [200, 0], arrow2: [200, 0], rect: [200, 140], square: [160, 160],
   ellipse: [200, 140], circle: [160, 160], triangle: [180, 156], rtriangle: [180, 150], numberline: [480, 0], plane: [320, 320] };
@@ -33,7 +33,7 @@ function shapeLen(a, b) { return Math.hypot(b[0] - a[0], b[1] - a[1]); }
 function shapeNum(x) { return (Math.round(x * 1e9) / 1e9) || 0; }   // tick values and snapped points without float noise
 function shapeFilled(E) { return !!(E && E.fill && E.fill !== 'none' && E.fill !== 'transparent'); }
 function shapeClamp(x, a, b) { return x < a ? a : x > b ? b : x; }
-// a CSS colour as [r, g, b, a] when it is #rgb, #rrggbb, rgb() or rgba(), else null
+// a CSS color as [r, g, b, a] when it is #rgb, #rrggbb, rgb() or rgba(), else null
 function shapeRGB(c) {
   if (typeof c !== 'string') return null;
   let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim());
@@ -43,7 +43,7 @@ function shapeRGB(c) {
   const a = m[4] == null ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : +m[4];
   return [+m[1], +m[2], +m[3], shapeClamp(a, 0, 1)];
 }
-// colour b laid over colour a at opacity t (b's own alpha included), as an opaque rgb()
+// color b laid over color a at opacity t (b's own alpha included), as an opaque rgb()
 function shapeOver(a, b, t) {
   const k = t * b[3];
   return [0, 1, 2].map(i => a[i] + (b[i] - a[i]) * k).concat([1]);
@@ -71,7 +71,7 @@ function shapeFromDrag(kind, a, b, o) {
   let A = [+a[0] || 0, +a[1] || 0], B = [+b[0] || 0, +b[1] || 0];
   const dx = B[0] - A[0], dy = B[1] - A[1], tap = SHAPE_TAP / z;
   if (shape === 'numberline' ? Math.abs(dx) < tap && Math.abs(dy) < tap : Math.hypot(dx, dy) < tap) {
-    // a tap: the default size, centred under it (on the grid when snapping)
+    // a tap: the default size, centered under it (on the grid when snapping)
     const d = SHAPE_DEFAULT[kind] || SHAPE_DEFAULT.rect;
     let w = d[0] / z, h = flat ? 0 : d[1] / z;
     if (shape === 'plane') w = h * asp;
@@ -225,7 +225,7 @@ function shapeThinSteps(step, count) {
   if (ks.length < 4) for (const k of [2, 3, 4, 5, 10, 20, 50, 100, 200, 500, 1000]) if (k <= 2 * count + 2) ks.push(k);
   return [...new Set(ks)].sort((x, y) => x - y);
 }
-// the ticks labelled when labelling every k steps: those on multiples of k steps (so 0 stays labelled), or every kth
+// the ticks labeled when labeling every k steps: those on multiples of k steps (so 0 stays labeled), or every kth
 function shapeEvery(items, k, step) {
   if (k === 1) return items;
   const q = k * step, on = items.filter(it => Math.abs(it.v / q - Math.round(it.v / q)) < 1e-6);
@@ -267,10 +267,10 @@ function shapeNlLayout(E, pts, z) {
   const th = Math.max(1.6 * size + 3, 0.36 * fs), thM = majors ? 1.4 * th : th;
   const out = { A, B, len, ux, uy, nx, ny, heads: [hA, hB], ticks, th, thM, tw: Math.max(0.8 * size, 1), fs, ff, fmt, labels: [] };
   if (!opt.labels || len < 1e-6) return out;
-  const hh = fmt.den ? 0.92 * ff : 0.35 * fs;                      // labels' half height about their centre line
-  const off = thM + 0.38 * fs + size / 2 + hh;                    // the centre line, below the line
+  const hh = fmt.den ? 0.92 * ff : 0.35 * fs;                      // labels' half height about their center line
+  const off = thM + 0.38 * fs + size / 2 + hh;                    // the center line, below the line
   const items = ticks.map(tk => { const L = shapeLabelOf(tk.v, fmt); return { v: tk.v, t: tk.t, L, w: shapeLabelW(L, fs, ff) }; });
-  const room = 0.4 * fs;                                          // clear space between neighbouring labels
+  const room = 0.4 * fs;                                          // clear space between neighboring labels
   for (const k of shapeThinSteps(opt.step, items.length)) {
     const sel = shapeEvery(items, k, opt.step);
     let fits = true;
@@ -331,7 +331,7 @@ function shapePlaneLayout(E, pts, z) {
   const xi = xs.filter(v => !(origin && v === 0)).map(v => Object.assign(lab(v, X(v), AY + gap + hh), { v }));
   const yi = ys.filter(v => v !== ay).map(v => Object.assign(lab(v, AX - gap, Y(v), true), { v }));
   const o0 = origin ? [lab(0, AX - 0.75 * gap, AY + 0.75 * gap + hh, true)] : [];
-  // clear space between neighbouring labels, and more round the origin's 0 (so "-1 0" never reads as -10)
+  // clear space between neighboring labels, and more round the origin's 0 (so "-1 0" never reads as -10)
   const m = 0.4 * fs, m0 = 0.6 * fs;
   for (const k of shapeThinSteps(opt.step, Math.max(xs.length, ys.length))) {
     const sx_ = shapeEvery(xi, k, opt.step), sy_ = shapeEvery(yi, k, opt.step);
@@ -527,7 +527,7 @@ function shapeDrawPoly(ctx, E, pts, w) {
 
 // Labels as the pieces they draw: text runs { s, x, y (baseline), size, align }, largest first so the font changes
 // least, and fraction bars [x, y, w, h]. Whole numbers at fs; a fraction's digits at ff, stacked over a bar on the
-// labels' centre line, with a mixed number's whole part and a minus sign beside it at fs.
+// labels' center line, with a mixed number's whole part and a minus sign beside it at fs.
 function shapeLabelParts(items, fs, ff, z) {
   const bar = Math.max(0.075 * ff, 0.6 / z), text = [], bars = [];
   for (const it of items) {
@@ -595,7 +595,7 @@ function shapeDrawPlane(ctx, E, pts, o, z, col) {
     const t = sn.y(y0, gw), b = sn.y(y1, gw), l = sn.x(x0, gw), r = sn.x(x1, gw), w = sn.w(gw);
     const pc = shapeRGB(o.paper), ic = shapeRGB(col), fc = fill ? shapeRGB(fill) : null;
     if (pc && ic && ic[3] === 1 && (!fill || fc) && ga === 1) {
-      // known colours: opaque rectangles in the mixed colour (crossings stay one colour; far cheaper to draw than
+      // known colors: opaque rectangles in the mixed color (crossings stay one color; far cheaper to draw than
       // wide strokes, which matters for big planes on a 4K panel)
       const g = shapeOver(fc ? shapeOver(pc, fc, 1) : pc, ic, 0.3);
       ctx.fillStyle = 'rgb(' + g.slice(0, 3).map(Math.round).join(',') + ')';
@@ -613,7 +613,7 @@ function shapeDrawPlane(ctx, E, pts, o, z, col) {
   }
   const parts = Ly.labels.length ? shapeLabelParts(Ly.labels, Ly.fs, Ly.ff, z) : null;
   if (parts && opt.grid && o.paper) {
-    // halos round the labels in the paper's colour (and the plane's fill over it), so grid lines stop short of
+    // halos round the labels in the paper's color (and the plane's fill over it), so grid lines stop short of
     // the digits; kept to the grid, and drawn before the axes so they never bite an axis or an arrowhead
     ctx.save();
     ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
@@ -644,7 +644,7 @@ function shapeDrawPlane(ctx, E, pts, o, z, col) {
   }
 }
 
-// draw it; ctx has the world transform; o = { ink: colour when E.color is null, paper: the paper colour, z: zoom,
+// draw it; ctx has the world transform; o = { ink: color when E.color is null, paper: the paper color, z: zoom,
 // font: the labels' font family list }
 function shapeDraw(ctx, E, pts, o) {
   if (!ctx || !E || !pts || !pts.length) return;
@@ -680,7 +680,7 @@ const SHAPE_REC = {
   past: 0.12,       // ... beyond the first bit past the closing point
   turnNet: 0.15,    // one turn: net turning within this of 360° (as a fraction of a turn) ...
   turnAbs: 1.6,     // ... no more than this many turns' worth of turning in all ...
-  sharp: 168,       // ... and no switchback (degrees over two neighbouring points of 32)
+  sharp: 168,       // ... and no switchback (degrees over two neighboring points of 32)
   dp: 0.035,        // polygon corners: Douglas-Peucker tolerance (of the size) ...
   merge: 20,        // ... corners turning less than this (degrees) dropped ...
   chamfer: 0.08,    // ... and two corners closer than this (of the size) that turn as one corner (at most
@@ -695,7 +695,7 @@ const SHAPE_REC = {
   square: 0.08,     // sides within this of each other make it a square
   ellRms: 0.04,     // an ellipse: radial error (of the radius) ...
   ellMax: 0.11,
-  ellOpen: 45,      // ... and no opening wider than this (degrees about its centre)
+  ellOpen: 45,      // ... and no opening wider than this (degrees about its center)
   round: 1.12,      // axes within this ratio make it a circle
   ellTilt: 12,      // a longer ellipse must be upright within this (the Board's ellipses are axis-aligned)
   snap: 4,          // lines within this many degrees of a 15° step are put on it
@@ -842,7 +842,7 @@ function shapeLoop(R, S) {
   for (let j = 0; j < i0; j++) if (strays(j)) return null;
   return loop;
 }
-// net turning (in turns) round a closed loop, its total, and the sharpest turn over two neighbouring points (degrees)
+// net turning (in turns) round a closed loop, its total, and the sharpest turn over two neighboring points (degrees)
 function shapeTurning(R) {
   const n = R.length, ts = [];
   let net = 0, abs = 0, sharp = 0;
@@ -867,7 +867,7 @@ function shapeSolve(M, v) { // Gaussian elimination with partial pivoting; null 
   for (let r = n - 1; r >= 0; r--) { let s = A[r][n]; for (let k = r + 1; k < n; k++) s -= A[r][k] * x[k]; x[r] = s / A[r][r]; }
   return x;
 }
-// an ellipse through a closed loop's points: centre, semi-axes along its principal axes, tilt, radial errors
+// an ellipse through a closed loop's points: center, semi-axes along its principal axes, tilt, radial errors
 function shapeFitEllipse(Q, S) {
   const n = Q.length;
   let cx = 0, cy = 0;
@@ -975,7 +975,7 @@ function shapeRecPoly(loop, S) {
     if (dmid > C.sideDev * chord + 0.012 * S || dall > C.sideEnd * chord + 0.03 * S || Math.sqrt(ss / n) > C.sideRms * chord + 0.004 * S) return null;
     lines.push(f);
   }
-  // vertices where neighbouring sides' lines meet
+  // vertices where neighboring sides' lines meet
   const V = [];
   for (let s = 0; s < K; s++) {
     const f = lines[(s + K - 1) % K], g = lines[s], den = f.ux * g.uy - f.uy * g.ux, P = R[cs[s]];

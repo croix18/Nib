@@ -24,8 +24,8 @@ function pdfBytes(x) {
   return null;
 }
 
-// A JPEG's pixel size and colour components, read from its frame header (SOF):
-// {w, h, comps (1 grey, 3 colour, 4 CMYK), bits (8 for every JPEG a PDF can hold), adobe (an Adobe APP14 segment came
+// A JPEG's pixel size and color components, read from its frame header (SOF):
+// {w, h, comps (1 gray, 3 color, 4 CMYK), bits (8 for every JPEG a PDF can hold), adobe (an Adobe APP14 segment came
 // first)}, or null when the bytes are not a JPEG (no SOI, a damaged marker, no frame header before the scan).
 function pdfJpegSize(bytes) {
   const b = pdfBytes(bytes);
@@ -51,7 +51,7 @@ function pdfJpegSize(bytes) {
   return null;
 }
 
-// where a picture of iw × ih px goes to fill a pw × ph pt page without distortion, centred inside a margin (pt):
+// where a picture of iw × ih px goes to fill a pw × ph pt page without distortion, centered inside a margin (pt):
 // [x, y, w, h] in pt from the page's top-left
 function pdfFit(iw, ih, pw, ph, margin) {
   const mg = Math.max(0, +margin || 0), aw = Math.max(1e-3, pw - 2 * mg), ah = Math.max(1e-3, ph - 2 * mg);
@@ -104,10 +104,10 @@ function pdfIdOf(parts) {
 //   pages: [{ jpeg: the bytes of a baseline (or progressive) JPEG, as canvas.toBlob gives (a Uint8Array, an
 //             ArrayBuffer or a data URL); iw, ih: its pixel size (read from the JPEG itself, which wins when they
 //             differ: it is what a reader decodes); pw, ph: the page size in pt (default Letter); place: [x, y, w, h]
-//             where the picture goes, in pt from the page's TOP-left (default: fitted to the page, centred) }]
+//             where the picture goes, in pt from the page's TOP-left (default: fitted to the page, centered) }]
 //   meta:  { title, author?, subject?, date? (a Date; default now) }
 // Returns a Uint8Array holding a PDF 1.4 file. Pages may differ in size; a page side above 200 in is scaled down to it
-// (picture and all). A grey JPEG goes in as /DeviceGray, a colour one as /DeviceRGB, a CMYK one as /DeviceCMYK.
+// (picture and all). A gray JPEG goes in as /DeviceGray, a color one as /DeviceRGB, a CMYK one as /DeviceCMYK.
 // Throws an Error naming the page when there are no pages or a page has no usable JPEG.
 function pdfMake(pages, meta) {
   if (!Array.isArray(pages) || !pages.length) throw new Error('pdfMake: no pages');
