@@ -10,7 +10,8 @@
   const KEY = 'nib-board-v3', OLDKEY = 'nib-board-v1', TKEY = 'nib-train-v1', DKEY = 'nib-drill-v1';
   const K = (window.Nib && window.Nib.canvas) || {};
   const VIEWS = ['ink', 'tidy', 'hand', 'typeset'], RAILS = ['top', 'bottom', 'left', 'right'], THEMES = ['light', 'dark', 'system'];
-  const TOOLS = ['select', 'hand', 'pen', 'marker', 'highlighter', 'eraser', 'shape', 'text', 'laser'];
+  const TOOLS = ['select', 'lasso', 'hand', 'pen', 'marker', 'highlighter', 'eraser', 'shape', 'text', 'laser'];
+  const SELECTS = ['select', 'lasso'];                      // the tools that select (the pad's select mode)
   const INKS = ['pen', 'marker', 'highlighter'];
   const TNAME = { pen: 'Pen', marker: 'Marker', highlighter: 'Highlighter', shape: 'Shape', text: 'Text', eraser: 'Eraser', image: 'Picture' };
   const COLORS = ['@ink', '@red', '@blue', '@green', '@orange', '@purple', '@gold', '@pink', '@brown', '@gray', '@black'];
@@ -283,7 +284,7 @@
   window.addEventListener('nib:hand', () => { if (Nib.hand.size && !$('note').hidden && !$('noteact').hidden && noteAction && /Replicator/.test($('notetext').textContent)) $('note').hidden = true; });
 
   // ---------------------------------------------------------------- the tools
-  const modeOf = t => ({ select: 'select', hand: 'pan', eraser: 'erase', shape: 'shape', text: 'text', laser: 'laser' })[t] || 'draw';
+  const modeOf = t => ({ select: 'select', lasso: 'lasso', hand: 'pan', eraser: 'erase', shape: 'shape', text: 'text', laser: 'laser' })[t] || 'draw';
   const colorOut = c => (c && c !== '@ink' ? c : null);
   function themeDark() { if (S.theme !== 'system') return S.theme === 'dark'; try { return matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) { return false; } }
   // the page's paper colors: {paper, ink, dark}
@@ -321,7 +322,7 @@
   }
   // what the color button changes now: the tool's look, or what is selected
   function styleTarget() {
-    if (S.tool === 'select') return pad.pad && pad.pad.selected.length ? 'sel' : null;
+    if (SELECTS.includes(S.tool)) return pad.pad && pad.pad.selected.length ? 'sel' : null;
     return ['pen', 'marker', 'highlighter', 'shape', 'text', 'eraser'].includes(S.tool) ? S.tool : null;
   }
   function marksTools() {
@@ -1175,7 +1176,7 @@
   $('moredfit').onclick = () => { closePops(); fitAll(); };
 
   // ---------------------------------------------------------------- what is selected: a bar of what can be done with it
-  function selectAll() { const P = pad.pad; if (!P || !P.strokes.length) return; if (S.tool !== 'select') setTool('select', true); P.selectAll(); }
+  function selectAll() { const P = pad.pad; if (!P || !P.strokes.length) return; if (!SELECTS.includes(S.tool)) setTool('select', true); P.selectAll(); }
   function showSel() {
     const P = pad.pad, bar = $('selbar');
     const sel = P && P.mode === 'select' && !P.editing ? P.selected : [];
@@ -1228,7 +1229,7 @@
   function pasteClip() {
     const P = pad.pad;
     if (!P || !clip) return false;
-    if (S.tool !== 'select') setTool('select', true);
+    if (!SELECTS.includes(S.tool)) setTool('select', true);
     for (const it of clip.items) if (it.info && it.info.img) fetchImage(it.info.img, pad);
     P.paste(clip);
     return true;
@@ -1289,7 +1290,7 @@
     if (!file || !/^image\//.test(file.type || '')) return false;
     try {
       const src = await readImage(file);
-      if (S.tool !== 'select') setTool('select', true);
+      if (!SELECTS.includes(S.tool)) setTool('select', true);
       const el = await pad.addImage(src, at ? { at } : {});
       if (!el) { note('That picture could not be opened.'); return false; }
       return true;
@@ -1317,7 +1318,7 @@
     const s = P.addElement([[x, y], [x + 300 / P.cam.z, y + st.size * 1.3]], Object.assign({ tool: 'text', text: t, size: st.size }, colorOut(st.color) ? { color: st.color } : {}));
     if (!s) return;
     if (P._fitText) { P._fitText(s); P._touched(s); }
-    if (S.tool !== 'select') setTool('select', true);
+    if (!SELECTS.includes(S.tool)) setTool('select', true);
     P.select([s]);
   }
   window.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
@@ -1611,7 +1612,7 @@
     if (pad.pad && pad.pad.selected.length) { pad.pad.clearSelection(); return; }
     if (!$('note').hidden) $('note').hidden = true;
   }
-  const KEYTOOLS = { v: 'select', h: 'hand', p: 'pen', m: 'marker', i: 'highlighter', r: 'shape', t: 'text', l: 'laser' };
+  const KEYTOOLS = { v: 'select', o: 'lasso', h: 'hand', p: 'pen', m: 'marker', i: 'highlighter', r: 'shape', t: 'text', l: 'laser' };
   document.addEventListener('keydown', e => {
     const k = e.key.toLowerCase(), t = e.target, P = pad.pad;
     if (typing(t)) return;
@@ -1653,13 +1654,15 @@
   // a long press is for writing, not for the browser's menu (the LaTeX box keeps its own, to copy from)
   document.addEventListener('contextmenu', e => { if (!typing(e.target)) e.preventDefault(); });
 
-  // ---------------------------------------------------------------- what the panel sends (hold the "Nib." mark)
+  // ---------------------------------------------------------------- what the panel sends (More, Pointer events; or hold the "Nib." mark)
   const log = [];
   let diagOn = false, diagRaf = 0, pressTimer = null;
   const showDiag = () => {
     diagRaf = 0; if (!diagOn) return;
-    $('diag').textContent = 'Pointer events (hold Nib. to close)\n' + (log.length ? log.map(r => r.join('  ')).join('\n') : 'Touch or write on the board.');
+    $('diag').textContent = 'Pointer events (More, Pointer events closes this)\n' + (log.length ? log.map(r => r.join('  ')).join('\n') : 'Touch or write on the board.');
   };
+  const setDiag = on => { diagOn = on; $('diag').hidden = !on; $('morediag').setAttribute('aria-pressed', String(on)); showDiag(); };
+  $('morediag').onclick = () => { closePops(); setDiag(!diagOn); };
   const rec = e => {
     const P = pad.pad, onPad = P && e.target === P.canvas;
     log.unshift([e.type.replace('pointer', '').padEnd(6), (e.pointerType || '?').padEnd(5), 'w ' + (+e.width || 0).toFixed(1), 'h ' + (+e.height || 0).toFixed(1),
@@ -1672,7 +1675,7 @@
   $('mark').addEventListener('pointerdown', e => {
     unpress();
     const x = e.clientX, y = e.clientY;
-    pressTimer = setTimeout(() => { pressTimer = null; diagOn = !diagOn; $('diag').hidden = !diagOn; showDiag(); }, 600);
+    pressTimer = setTimeout(() => { pressTimer = null; setDiag(!diagOn); }, 600);
     const mv = ev => { if (Math.hypot(ev.clientX - x, ev.clientY - y) > 10) unpress(); };
     $('mark').addEventListener('pointermove', mv);
     const end = () => { unpress(); $('mark').removeEventListener('pointermove', mv); };

@@ -209,7 +209,7 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   </main>
 </div>
 
-<script>/*! Nib 1.6.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+<script>/*! Nib 1.6.1 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -3704,25 +3704,85 @@ for (const ch of Object.keys(DEFAULT_HAND)) {
     return out;
   });
 }
-// label -> strokes (y down, any units) to draw an answer's symbol with
+// label -> strokes (y down, any units) to draw an answer's symbol with: the writer's own symbol of that label where the
+// board has one read surely (p >= 0.6) — from the problem itself first (book.near(k): the k-th of res.parts), then from
+// the board's equations (parts with =, <, >, ≤, ≥ or ≠) — then the Replicator hand, then (a letter) any of the board's,
+// then the built-in hand. Of several, the most typical (nearest all the others in shape, and the reference glyph), not
+// the one read most surely: a lone straight stroke is read as a 1 with great certainty — a stroke of an X, a letter of
+// a word written on the board — and as "the clearest 1" it once drew an answer's 15 as "\5". Words on the board (no
+// relation sign) never lend an answer their letters-read-as-digits.
+const SAMPLE_REL = new Set(['=', '<', '>', '\\le', '\\ge', '\\ne']);
+function sampleShape(pts) {
+  const all = []; for (const s of pts || []) for (const q of s) all.push(q);
+  if (!all.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const q of all) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; }
+  const k = Math.max(x1 - x0, y1 - y0) || 1, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const P = all.map(q => [(q[0] - cx) / k, (q[1] - cy) / k]), N = 24;
+  const d = [0]; for (let i = 1; i < P.length; i++) d.push(d[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+  const L = d[d.length - 1], out = [];
+  for (let n = 0, i = 0; n < N; n++) {
+    const t = L * n / (N - 1);
+    while (i < P.length - 2 && d[i + 1] < t) i++;
+    const f = P.length < 2 || d[i + 1] === d[i] ? 0 : Math.min(1, Math.max(0, (t - d[i]) / (d[i + 1] - d[i])));
+    const a = P[i], b = P[Math.min(i + 1, P.length - 1)];
+    out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+  }
+  return out;
+}
+function sampleDist(A, B) {
+  let f = 0, r = 0; const n = A.length;
+  for (let i = 0; i < n; i++) { f += Math.hypot(A[i][0] - B[i][0], A[i][1] - B[i][1]); r += Math.hypot(A[i][0] - B[n - 1 - i][0], A[i][1] - B[n - 1 - i][1]); }
+  return Math.min(f, r) / n;                                 // written either way round
+}
 function sampleBook(res, input, hand) {
-  const ink = inkOf(input), best = new Map();
+  const ink = inkOf(input), by = new Map(), eqPart = new Set();
+  ((res && res.parts) || []).forEach((pt, k) => { if (((pt.result && pt.result.symbols) || []).some(sy => SAMPLE_REL.has(sy.label))) eqPart.add(k); });
+  const whole = !(res && res.parts);                       // one expression: all of it is the problem's own
   for (const sy of (res && res.symbols) || []) {
     const c = sy.candidates && sy.candidates[0], p = sy.fixed ? 1 : c && c[0] === sy.label ? c[1] : 0;
     const pts = sy.strokes.map(i => ink[i] || []).filter(q => q.length);
     if (!pts.length) continue;
-    const b = best.get(sy.label);
-    if (!b || p > b.p) best.set(sy.label, { p, pts });
+    const part = typeof sy.part === 'number' ? sy.part : -1;
+    if (!by.has(sy.label)) by.set(sy.label, []);
+    by.get(sy.label).push({ p, pts, part, eq: whole || eqPart.has(part), shape: null });
   }
-  return label => {
-    const b = best.get(label);
-    if (b && b.p >= 0.6) return b.pts;
-    const ch = HAND_CHAR[label] || label;
-    if (hand && hand[ch] && hand[ch].length) return hand[ch];
-    if (b && /^[A-Za-z]$/.test(label)) return b.pts;   // a letter of the question, however it was written, before the built-in one
-    if (DEFAULT_GLYPHS[label]) return DEFAULT_GLYPHS[label];
-    return b ? b.pts : null;                      // a letter of the question, however it was written
+  const refOf = label => { const ch = HAND_CHAR[label] || label; return (hand && hand[ch] && hand[ch].length && hand[ch]) || DEFAULT_GLYPHS[label] || null; };
+  // the most typical of a list: the least summed distance in shape to the others and to the reference glyph
+  const typical = (list, label) => {
+    if (list.length < 2) return list[0] || null;
+    for (const c of list) if (!c.shape) c.shape = sampleShape(c.pts);
+    const ref = refOf(label), R = ref ? sampleShape(ref) : null;
+    let best = null, bs = Infinity;
+    for (const c of list) {
+      if (!c.shape) continue;
+      let d = R ? sampleDist(c.shape, R) : 0;
+      for (const o of list) if (o !== c && o.shape) d += sampleDist(c.shape, o.shape);
+      d -= 1e-3 * c.p;                                       // a tie: the surer reading
+      if (d < bs) { bs = d; best = c; }
+    }
+    return best;
   };
+  const memo = new Map();
+  const make = near => label => {
+    const key = near + '|' + label;
+    if (memo.has(key)) return memo.get(key);
+    const all = by.get(label) || [], sure = all.filter(c => c.p >= 0.6);
+    let c = (near >= 0 || whole ? typical(sure.filter(o => whole || o.part === near), label) : null) || typical(sure.filter(o => o.eq), label);
+    let out = c ? c.pts : null;
+    if (!out) {
+      const ch = HAND_CHAR[label] || label;
+      if (hand && hand[ch] && hand[ch].length) out = hand[ch];
+      else if (/^[A-Za-z]$/.test(label) && all.length) out = (typical(sure, label) || typical(all, label)).pts;   // a letter of the question, however it was written
+      else if (DEFAULT_GLYPHS[label]) out = DEFAULT_GLYPHS[label];
+      else { c = typical(sure, label) || typical(all, label); out = c ? c.pts : null; }
+    }
+    memo.set(key, out);
+    return out;
+  };
+  const book = make(-1);
+  book.near = k => (typeof k === 'number' && k >= 0 ? make(k) : book);
+  return book;
 }
 
 // ------------------------------------------------------------------ glyphs: the writer's Replicator handwriting
@@ -5570,7 +5630,7 @@ function pdfMake(pages, meta) {
   if (title) info += ' /Title ' + pdfText(title);
   if (M.author) info += ' /Author ' + pdfText(M.author);
   if (M.subject) info += ' /Subject ' + pdfText(M.subject);
-  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.0) /CreationDate (' + pdfDate(date) + ') >>');
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.1) /CreationDate (' + pdfDate(date) + ') >>');
 
   for (let i = 0; i < pages.length; i++) {
     const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
@@ -5927,13 +5987,13 @@ function joinParts(parts) {
   });
   const lines = [], symbols = [], tree = [];
   let conf = 1, ms = 0;
-  for (const p of parts) {
+  parts.forEach((p, k) => {
     const r = p.result, m = i => p.idx[i];
-    if (!r || !r.lines.length) continue;
+    if (!r || !r.lines.length) return;
     lines.push(...r.lines); tree.push(...r.tree.map(row => remap(row, m)));
-    symbols.push(...r.symbols.map(sy => Object.assign({}, sy, { strokes: sy.strokes.map(m) })));
+    symbols.push(...r.symbols.map(sy => Object.assign({}, sy, { strokes: sy.strokes.map(m), part: k })));   // part: its index in parts
     conf = Math.min(conf, r.confidence); ms += r.ms || 0;
-  }
+  });
   return {
     latex: lines.length > 1 ? '\\begin{gathered}' + lines.map(l => l.latex).join(' \\\\ ') + '\\end{gathered}' : lines.length ? lines[0].latex : '',
     text: lines.map(l => l.text).join('\n'), lines, symbols, tree, confidence: lines.length ? conf : 0, skew: 0, ms, parts,
@@ -6065,6 +6125,7 @@ class Pad {
     this.touches = new Map();       // touch pointerId -> {x, y, t} on screen: for two-finger gestures
     this.gesture = null;            // a pan or pinch under way
     this.spacePan = false;          // the space bar is down: a drag pans
+    this.lassoOnly = false;         // select mode from the lasso tool: a drag always draws a lasso, wherever it starts
     this.editing = null;            // the text box being written in
     if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
@@ -6198,7 +6259,12 @@ class Pad {
       if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) < 0.75 / this.cam.z) continue;
       P.cur.push(p);
       if (P.mode === 'laser') continue;
-      if (P.snap) continue;                                // a shape already: the hand moving on changes nothing
+      if (P.snap) {
+        // held still, it turned into a shape; the hand moving on means it was writing after all (a pause mid-stroke):
+        // it goes on as ink, all of it, as if the hold had never happened
+        if (Math.hypot(p[0] - P.snapAt[0], p[1] - P.snapAt[1]) * this.cam.z <= 6) continue;
+        P.snap = null; P.snapAt = null; this.why = 'draw (moved on after a hold)'; this.redraw();
+      }
       // still for a moment at the end of a line, circle or box: it may become that shape
       if (Math.hypot(p[0] - P.stillAt[0], p[1] - P.stillAt[1]) * this.cam.z > 3) { P.stillAt = p; this._holdTimer(P); }
       if (this._live(P)) this._seg(P);
@@ -6371,7 +6437,7 @@ class Pad {
   }
   _cursor() {
     const m = this.mode;
-    this.canvas.style.cursor = this.spacePan || m === 'pan' ? 'grab' : m === 'select' ? 'default' : m === 'text' ? 'text' : m === 'laser' ? 'none' : 'crosshair';
+    this.canvas.style.cursor = this.spacePan || m === 'pan' ? 'grab' : m === 'select' ? (this.lassoOnly ? 'crosshair' : 'default') : m === 'text' ? 'text' : m === 'laser' ? 'none' : 'crosshair';
   }
   // ---------------------------------------------------------------- a pointer is lifted
   // a pointer's stroke is done (e: its pointerup / pointercancel, or null when its up was lost)
@@ -6955,7 +7021,8 @@ class Pad {
       const items = [];
       let li = 0, sample = null;
       if (this.o.solve) {
-        // an answer is written with the clearest of each symbol anywhere on the board, then the Replicator hand
+        // an answer is written with the writer's own symbols: the problem's own first, then the board's equations (the
+        // most typical of each, see sampleBook), then the Replicator hand, then the built-in one
         let hand = null;
         try { hand = this.o.hand ? handClean(handOf(this.o.hand)) : handLoad(); } catch (err) { hand = null; }
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
@@ -6965,6 +7032,7 @@ class Pad {
       const settle = style !== 'ink' ? Math.max(0, +this.o.settle || 0) : 0, now = performance.now();
       let holdUntil = 0;
       for (const part of res.parts || [{ strokes: at, result: res }]) {
+        const near = sample && res.parts ? sample.near(res.parts.indexOf(part)) : sample;
         let fresh = false;
         if (settle) {
           let end = 0;
@@ -7011,7 +7079,7 @@ class Pad {
         li += pr.tree.length;
         if (style === 'ink' && !(answers && answers.some(Boolean))) continue;
         let out = null;
-        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample }); } catch (err) { out = null; }
+        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample: near }); } catch (err) { out = null; }
         if (!out) continue;
         const groups = new Map();
         // an answer shown by a tap stays shown while its line (its strokes) and the answer itself are the same
@@ -7199,12 +7267,17 @@ class Pad {
     if (!this.o.hold || P.mode !== 'draw' || P.fix || P.snap || P.chip || typeof shapeRecognize !== 'function') return;
     P.hold = setTimeout(() => {
       if (this.ptrs.get(P.id) !== P || P.snap || !P.cur || P.cur.length < 6) return;
-      const b = sbox(P.cur);
-      if (Math.max(b[2] - b[0], b[3] - b[1]) * this.cam.z < 24) return;     // too small to be meant as a shape
+      const b = sbox(P.cur), big = Math.max(b[2] - b[0], b[3] - b[1]);
       let r = null;
       try { r = shapeRecognize(P.cur, { z: this.cam.z }); } catch (e) { r = null; }
       if (!r || !r.pts || (P.tool.kind === 'highlighter' && r.shape !== 'line')) return;
-      P.snap = r; this.why = 'shape: ' + r.shape;
+      // Only something bigger than the writing is meant as a shape: a 1, a 0 or a fraction bar held still a moment
+      // stays writing (and is read). A line at least 80 px on screen and 4 times the board's typical stroke, anything
+      // else 48 px and 2.5 times (with fewer than three strokes of writing on the board, the pixel sizes alone).
+      const ink = this.ink, line = r.shape === 'line' || r.shape === 'arrow';
+      const ref = ink.length >= 3 ? refSize(ink) : 0;
+      if (big * this.cam.z < (line ? 80 : 48) || big < (line ? 4 : 2.5) * ref) return;
+      P.snap = r; P.snapAt = P.cur[P.cur.length - 1]; this.why = 'shape: ' + r.shape;
       this.redraw();
     }, 600);
   }
@@ -7317,7 +7390,8 @@ class Pad {
       if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
       if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
     }
-    let hit = this.elementAt(p, true);
+    // the lasso tool: a loop drawn round what to select, starting anywhere (on writing too); a tap still picks one thing
+    let hit = this.lassoOnly ? null : this.elementAt(p, true);
     if (hit && !this.selection.has(hit)) {
       const t = this._tool(hit), E = this.info.get(hit) || {};
       if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
@@ -7332,7 +7406,7 @@ class Pad {
       this.redraw();
       return;
     }
-    P.lasso = [p]; P.box = P.type === 'mouse';
+    P.lasso = [p]; P.box = P.type === 'mouse' && !this.lassoOnly;
     if (this.selection.size) { this._setSel([]); this.redraw(); }
   }
   _selectMove(P, p) {
@@ -7453,10 +7527,12 @@ class Pad {
   }
   // what pointers do: 'draw' (this.tool), 'erase', 'fix', 'select', 'pan', 'shape' (this.shapeTool), 'text' (this.textTool), 'laser'
   setMode(m) {
+    const lasso = m === 'lasso';                          // select mode in which a drag always draws a lasso
+    if (lasso) m = 'select';
     m = ['draw', 'erase', 'fix', 'select', 'pan', 'shape', 'text', 'laser'].includes(m) ? m : 'draw';
     if (this.editing && m !== 'text' && m !== 'select') this._commitText();
     if (m !== 'select' && this.selection.size) this._setSel([]);
-    this.mode = m;
+    this.mode = m; this.lassoOnly = lasso;
     this._cursor();
     this.redraw();
   }
@@ -8253,7 +8329,8 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     strokeInfo(s) { return this.pad ? this.pad.strokeInfo(s) : { type: null, width: null }; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
     // 'draw' | 'erase' | 'fix' (a tap is sent on as nib:tap {x, y, pointerType} instead of writing a dot; writing still
-    // writes) | 'select' | 'pan' | 'shape' | 'text' | 'laser' (see Pad.setMode)
+    // writes) | 'select' | 'lasso' (select, a drag always a lasso; mode then reads 'select') | 'pan' | 'shape' | 'text' |
+    // 'laser' (see Pad.setMode)
     set mode(v) { if (this.pad) this.pad.setMode(v); }
     // the canvas: what draw mode writes with ({kind: 'pen' | 'marker' | 'highlighter', color, size}), the shape and text tools
     get tool() { return this.pad ? Object.assign({}, this.pad.tool) : null; }
@@ -8308,7 +8385,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.6.0',
+  version: '1.6.1',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
