@@ -218,10 +218,24 @@ function makeHandFile() {
   await page.mouse.click(cbF.x + 3, cbF.y + 3); await wait(150);
   ok(await page.$eval('#fixpop', e => e.hidden) && /Tap a symbol/.test(await page.$eval('#notetext', e => e.textContent)) && await page.$eval('#fix', e => e.getAttribute('aria-pressed')) === 'true', 'tapping empty board while fixing asks for a symbol');
   await page.mouse.click(cbF.x + 3, cbF.y + 3); await wait(150);
-  ok(await page.$eval('#fix', e => e.getAttribute('aria-pressed')) === 'false' && await page.$eval('#fixlayer', e => e.hidden), 'a second tap on empty board leaves Fix');
+  ok(await page.$eval('#fix', e => e.getAttribute('aria-pressed')) === 'false' && await page.evaluate(() => document.getElementById('pad').mode) === 'draw', 'a second tap on empty board leaves Fix');
   await page.keyboard.press('x'); await wait(100);
   await page.keyboard.press('Escape');
-  ok(await page.$eval('#fix', e => e.getAttribute('aria-pressed')) === 'false' && await page.$eval('#fixlayer', e => e.hidden), 'Escape leaves Fix');
+  ok(await page.$eval('#fix', e => e.getAttribute('aria-pressed')) === 'false' && await page.evaluate(() => document.getElementById('pad').mode) === 'draw', 'Escape leaves Fix');
+  // writing with Fix on writes (the pen never stops working), and Fix goes off by itself
+  await page.keyboard.press('x'); await wait(100);
+  ok(await page.evaluate(() => document.getElementById('pad').mode) === 'fix' && /Just write to carry on/.test(await page.$eval('#notetext', e => e.textContent)), 'Fix on again: the board says writing carries on');
+  {
+    const nW = await page.evaluate(() => document.getElementById('pad').strokes.length), x = cbF.x + cbF.width * 0.8, y = cbF.y + cbF.height * 0.8;
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    for (let i = 1; i <= 12; i++) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + 4 * i, y: y - 5 * i, button: 'left' });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 48, y: y - 60, button: 'left', clickCount: 1 });
+    await wait(300);
+    ok(await page.evaluate(n => document.getElementById('pad').strokes.length === n + 1, nW), 'a stroke written with Fix on is on the board');
+    ok(await page.$eval('#fix', e => e.getAttribute('aria-pressed')) === 'false' && await page.evaluate(() => document.getElementById('pad').mode) === 'draw' && await page.$eval('#note', e => e.hidden), 'and writing leaves Fix');
+    await page.click('#undo'); await wait(600); await settled();
+    ok(await page.evaluate(n => document.getElementById('pad').strokes.length === n, nW) && await latex() === before, 'Undo takes that stroke away again');
+  }
   await page.evaluate(() => Nib.memory.clear());
 
   console.log('answers after "="');
@@ -870,7 +884,7 @@ function makeHandFile() {
       await write(e1, [0.2, 0.45, 0.3, 0.12]);
       await until('match');
       await page.click('#dfix'); await wait(200);
-      const fx = await page.evaluate(() => ({ on: document.getElementById('dfix').getAttribute('aria-pressed') === 'true' && !document.getElementById('fixlayer').hidden }));
+      const fx = await page.evaluate(() => ({ on: document.getElementById('dfix').getAttribute('aria-pressed') === 'true' && document.getElementById('pad').mode === 'fix' }));
       const sym = await page.evaluate(() => { const P = document.getElementById('pad').pad, s = P.result.symbols.find(q => q.label === '1'); return s ? { x: s.box.x + s.box.w / 2, y: s.box.y + s.box.h / 2 } : null; });
       if (fx.on && sym) {
         const cbF = await (await page.$('#pad canvas')).boundingBox();
@@ -883,10 +897,38 @@ function makeHandFile() {
         await page.click('#dright'); await wait(400);
         R = await T(); ds = await DS();
         const rx = R.find(r => r.item === 1 && r.verified === true);
-        ok(rx && rx.fixed.length === 1 && rx.fixed[0].label === alt && JSON.stringify(ds.fixed) === '[1]' && ds.pos === 1 && !(await page.evaluate(() => !document.getElementById('fixlayer').hidden)),
+        ok(rx && rx.fixed.length === 1 && rx.fixed[0].label === alt && JSON.stringify(ds.fixed) === '[1]' && ds.pos === 1 && (await page.evaluate(() => document.getElementById('pad').mode)) === 'draw',
           'Right then keeps it fixed and verified, counts it as fixed, and Fix mode ends');
         await page.evaluate(() => Nib.memory.clear());
       } else ok(false, 'Fix from the drill bar (' + JSON.stringify(fx) + ', a 1 to fix: ' + !!sym + ')');
+      // Erase left on: the bar says so (the pen would rub out, not write)
+      await page.click('#erase'); await wait(200);
+      B = await bar();
+      ok(/Erase is on/.test(B.read) && !B.right, `with Erase on the bar says so: "${B.read}"`);
+      await page.click('#erase'); await wait(200);
+      ok(!/Erase is on/.test((await bar()).read), 'and stops saying so when Erase goes off');
+      // prompt 7 as he wrote it on the tablet (2 · 22 + 2 = with spaces between the pieces, with the pen): one piece, matched
+      for (let i = 0; i < 5; i++) { await page.click('#dskip'); await wait(150); }
+      B = await bar();
+      ok(B.n === `7 / ${N}`, 'skipped on to prompt 7');
+      {
+        const T2 = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'training_2026-11-07b.json'), 'utf8'));
+        const main = T2.records[68].strokes, eq = T2.records[67].strokes.slice(1).map(s => s.map(p => [p[0] + 299, p[1] + 18]));
+        const cb7 = await (await page.$('#pad canvas')).boundingBox(), ox = cb7.x + 60, oy = cb7.y + cb7.height * 0.45;
+        for (const s of main.concat(eq)) {
+          const P = s.map(p => [ox + p[0], oy + p[1]]);
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: P[0][0], y: P[0][1], button: 'left', clickCount: 1, pointerType: 'pen' });
+          for (let i = 1; i < P.length; i++) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: P[i][0], y: P[i][1], button: 'left', pointerType: 'pen' });
+          await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: P[P.length - 1][0], y: P[P.length - 1][1], button: 'left', clickCount: 1, pointerType: 'pen' });
+        }
+        await until('match');
+        B = await bar();
+        const parts7 = await page.evaluate(() => (document.getElementById('pad').pad.result.parts || []).length);
+        ok(B.state === 'match' && parts7 === 1 && /Read: 2 · 22 \+ 2 = → 46/.test(B.read), `his 2 · 22 + 2 = is read as one piece and matches: "${B.read}" (${parts7} piece)`);
+        await page.click('#dright'); await wait(400);
+        R = await T();
+        ok(R.some(r => r.item === 7 && r.verified === true && r.expect === '2\\cdot 22+2=' && r.types.every(t => t === 'pen')), 'Right keeps it, verified, written with the pen');
+      }
       await page.click('#dstop'); await wait(200);
       // tidy up: forget the log, training off
       await page.click('#gear'); await wait(150);

@@ -107,7 +107,6 @@ nib-pad {
 .note p { margin: 0; flex: 1; min-width: min(200px, 100%); }
 .notebtn { font: 500 13px/1 var(--f-body); color: var(--board); background: var(--ink); border: 0; border-radius: 8px; padding: 0 14px; min-height: 40px; cursor: pointer; }
 .notebtn.quiet { color: var(--ink); background: transparent; border: 1px solid var(--rule); }
-.fixlayer { position: absolute; inset: 0; cursor: pointer; touch-action: none; }
 .fixpop {
   position: absolute; display: flex; gap: 6px; padding: 6px; background: var(--rail); border: 1px solid var(--rule); border-radius: 14px;
   box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .55); z-index: 2;
@@ -231,7 +230,6 @@ nib-pad {
   </header>
   <div class="surface" id="surface">
     <nib-pad id="pad" view="ink" stroke-width="3.5" settle="2500" separate times="false" reveal fit aria-label="Board"></nib-pad>
-    <div class="fixlayer" id="fixlayer" hidden></div>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
     <div class="drill" id="drill" role="region" aria-label="Drill" hidden>
       <div class="dq" id="dq"><p class="dprompt" id="dprompt"></p><p class="dhow" id="dhow"></p><p class="dread" id="dread" aria-live="polite"></p></div>
@@ -374,7 +372,7 @@ nib-pad {
   }
   function setReveal(on) { S.reveal = on; pad.reveal = on; persist(); marks(); }
   $('solve').onclick = () => setSolve(!S.solve);
-  const erase = on => { pad.mode = on ? 'erase' : 'draw'; $('erase').setAttribute('aria-pressed', String(on)); if (on && fixing) fixMode(false); };
+  const erase = on => { pad.mode = on ? 'erase' : 'draw'; $('erase').setAttribute('aria-pressed', String(on)); if (on && fixing) fixMode(false); if (typeof drillRead === 'function') drillRead(); };
 
   // ---------------------------------------------------------------- settings
   function setRail(r) {
@@ -650,6 +648,7 @@ nib-pad {
     const say = (txt, state) => { el.textContent = txt; el.dataset.state = state; };
     dCur = null; bar.classList.remove('warn'); $('dhow').textContent = dHow;
     $('dright').disabled = true;
+    if (P && P.mode === 'erase') { say('Erase is on: the pen rubs out. Tap Erase again to write.', 'wait'); return; }
     if (!P || !P.strokes.length) { say('Write it on the board.', 'wait'); return; }
     if (!P.result || P.ptrs.size || P.resultStrokes.length !== P.strokes.length || P.resultStrokes.some((s, i) => s !== P.strokes[i])) { say('Reading…', 'wait'); return; }
     let last = 0;
@@ -774,13 +773,19 @@ nib-pad {
   const shownAs = l => SHOW[l] || l;
   let fixing = false, popFor = null, emptyTaps = 0;
   function fixMode(on) {
-    fixing = on; emptyTaps = 0; $('fix').setAttribute('aria-pressed', String(on)); $('dfix').setAttribute('aria-pressed', String(on)); $('fixlayer').hidden = !on; closePop();
+    fixing = on; emptyTaps = 0; $('fix').setAttribute('aria-pressed', String(on)); $('dfix').setAttribute('aria-pressed', String(on)); closePop();
     if (on) {
       if (pad.mode === 'erase') erase(false);
+      pad.mode = 'fix';                       // a tap picks a symbol; writing still writes (and leaves Fix)
       try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
-      note('Tap a symbol to fix how it was read.');
-    } else if (/^Tap a symbol/.test($('notetext').textContent)) $('note').hidden = true;
+      note('Tap a symbol to fix how it was read. Just write to carry on.');
+    } else {
+      if (pad.mode === 'fix') pad.mode = 'draw';
+      if (/^Tap a symbol/.test($('notetext').textContent)) $('note').hidden = true;
+    }
   }
+  // written while Fix was on: the writer is writing again
+  pad.addEventListener('nib:change', () => { if (fixing && pad.mode !== 'fix') fixMode(false); });
   function closePop() { if (!$('fixpop').hidden) { $('fixpop').hidden = true; $('fixpop').textContent = ''; } popFor = null; }
   // the symbol drawn under a point (as the view shows it: tidied, in your hand, typeset or as written): the smallest
   // one the point is inside, else the closest one within a finger's width
@@ -830,9 +835,9 @@ nib-pad {
     const alt = pop.querySelector('.cand[aria-pressed="false"]'); (alt || pop.firstChild).focus();
   }
   $('fix').onclick = () => fixMode(!fixing);
-  $('fixlayer').addEventListener('click', e => {
-    const C = pad.querySelector('canvas').getBoundingClientRect();
-    const hit = symbolAt(e.clientX - C.left, e.clientY - C.top);
+  pad.addEventListener('nib:tap', e => {
+    if (!fixing) return;
+    const hit = symbolAt(e.detail.x, e.detail.y);
     if (!hit) {
       closePop();
       // empty space twice in a row: done fixing

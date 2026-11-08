@@ -237,6 +237,33 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   ok(rad.r1 === 30, `with Erase on, the side of a hand (60 px contact) rubs out with half its width (${rad.r1})`);
   const seg = await page.evaluate(() => { a.mode = 'draw'; a.strokes = [[[100, 60], [500, 60]]]; a.mode = 'erase'; line(a, 'mouse', 1, 300, 50, 300, 52, {}, 2); const n = a.strokes.length; a.mode = 'draw'; return n; });
   ok(seg === 0, 'a long straight stroke (two points, 400 px apart) is erased by touching its middle');
+  // Fix mode: a tap is sent on as nib:tap and writes nothing; writing writes, and the mode goes back to draw by itself
+  const fixm = await page.evaluate(() => {
+    a.clear(); a.pad.penUntil = 0; a.mode = 'fix';
+    const taps = []; const h = e => taps.push([Math.round(e.detail.x), Math.round(e.detail.y), e.detail.pointerType]); a.addEventListener('nib:tap', h);
+    ptr(a, 'down', 'pen', 61, 200, 100); ptr(a, 'move', 'pen', 61, 202, 101); ptr(a, 'up', 'pen', 61, 202, 101);
+    const afterTap = { n: a.strokes.length, mode: a.mode, why: a.pad.why };
+    line(a, 'pen', 62, 220, 100, 320, 110);
+    const afterLine = { n: a.strokes.length, mode: a.mode };
+    a.mode = 'fix'; a.pad.penUntil = 0; ptr(a, 'down', 'touch', 63, 40, 40); ptr(a, 'up', 'touch', 63, 40, 40);
+    a.removeEventListener('nib:tap', h); const m = a.mode; a.mode = 'draw';
+    return { taps, afterTap, afterLine, m };
+  });
+  ok(fixm.afterTap.n === 0 && fixm.afterTap.mode === 'fix' && fixm.taps.length >= 1 && fixm.taps[0][0] === 200 && fixm.taps[0][1] === 100 && fixm.taps[0][2] === 'pen', `Fix on: a pen tap is sent on as nib:tap (${JSON.stringify(fixm.taps[0])}) and writes nothing`);
+  ok(fixm.afterLine.n === 1 && fixm.afterLine.mode === 'draw', 'a stroke written with Fix on is on the pad, and the mode is draw again');
+  ok(fixm.taps.length === 2 && fixm.taps[1][2] === 'touch' && fixm.m === 'fix', 'a finger tap with Fix on is sent on too, and a tap leaves Fix on');
+  // a finger resting on the panel when the pen lands (down a while, hardly moving) is a palm: dropped, whatever its age
+  const rest = await page.evaluate(async () => {
+    a.clear(); a.pad.penUntil = 0;
+    ptr(a, 'down', 'touch', 71, 500, 300); for (let i = 1; i <= 8; i++) ptr(a, 'move', 'touch', 71, 500 + i * 0.6, 300 + i * 0.5);
+    await new Promise(r => setTimeout(r, 450));
+    const live = a.pad.ptrs.has(71);
+    line(a, 'pen', 72, 100, 100, 200, 110);
+    const gone = !a.pad.ptrs.has(71), n1 = a.strokes.length;
+    ptr(a, 'up', 'touch', 71, 505, 304);
+    return { live, gone, n1, n2: a.strokes.length };
+  });
+  ok(rest.live && rest.gone && rest.n1 === 1 && rest.n2 === 1, `a finger down 450 ms that has hardly moved is dropped when the pen lands, and leaves no mark when it lifts (${JSON.stringify(rest)})`);
   await page.evaluate(() => { a.removeAttribute('auto'); a.clear(); a.mode = 'draw'; });
 
   console.log('what wrote each stroke (strokeInfo)');

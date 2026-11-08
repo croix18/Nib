@@ -610,5 +610,46 @@ section('21. the first training file (Croix, tablet, 7 Nov): his open 4s, dots w
   ok(c1 >= 30 && c2 >= 34, `|1| reads for ${c1} of 40 and 111 for ${c2} of 40`);
 }
 
+section('22. the second training file (the drill, 7 Nov): verified prompts read right; 2·22+2= is one piece of writing, not three');
+{
+  const T = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'training_2026-11-07b.json'), 'utf8'));
+  const pts = r => r.strokes.map(s => s.map(p => [p[0], p[1]]));
+  const rd = i => new Nib.Recognizer().recognize(pts(T.records[i]), X).latex;
+  // a prompt he had to Fix on the tablet (items 2 and 4: a 1 read as a bracket, his 6 — a long slanted stem with a
+  // small loop — read as a 4) was right there only with the browser's memory of the fix: those read raw here for the record
+  const fixedItems = new Set(T.records.filter(r => r.fixed.length).map(r => r.item));
+  for (const [i, r] of T.records.entries()) if (r.verified && !fixedItems.has(r.item)) ok(rd(i) === r.expect, `#${i} (prompt ${r.item}): ${r.expect}  (read ${rd(i)})`);
+  for (const [i, r] of T.records.entries()) if (r.verified && fixedItems.has(r.item)) console.log(`    (#${i}, prompt ${r.item}, right after a Fix on the tablet: ${r.expect}, reads raw as ${rd(i)})`);
+  // item 7 as he wrote it: the final record (2·22+2, the = undone) with the = put back where it was (from the "2=" piece)
+  const main = pts(T.records[68]), eq = pts(T.records[67]).slice(1).map(s => s.map(p => [p[0] + 299, p[1] + 18]));
+  const all = main.concat(eq);
+  // the Board's way: pieces by nearness, each read, then pieces ending or beginning in an operator joined and read again
+  const pieces = strokes => {
+    let groups = I.clustersOf(strokes);
+    const read = gs => gs.map(g => { const st = g.map(i => strokes[i]); return { idx: g, strokes: st, result: new Nib.Recognizer().recognize(st, X) }; });
+    let parts = read(groups);
+    for (let k = 0; k < 8; k++) { const j = I.joinOperands(parts); if (!j) break; parts = read(j); }
+    return parts;
+  };
+  const g0 = I.clustersOf(all), p1 = pieces(all);
+  ok(g0.length === 3, `by nearness alone his 2 · 22 + 2 = falls into ${g0.length} pieces (${g0.map(g => g.length).join('+')})`);
+  ok(p1.length === 1 && p1[0].result.latex === '2\\cdot 22+2=' && Nib.solve(p1[0].result, X)[0].latex === '46', `joined on its operators it is one: ${p1.map(p => p.result.latex).join(' | ')} → ${p1.length === 1 ? Nib.solve(p1[0].result, X)[0].latex : ''}`);
+  // what must still come apart: whole problems side by side (a trailing = does not join), and a problem under another
+  const h = 68, twice = all.concat(all.map(s => s.map(p => [p[0] + 403 + 1.2 * h, p[1]])));
+  const p2 = pieces(twice);
+  ok(p2.length === 2 && p2.every(p => p.result.latex === '2\\cdot 22+2='), `two copies side by side stay two problems (${p2.map(p => p.result.latex).join(' | ')})`);
+  const r1 = pts(T.records[57]), r1w = Math.max(...r1.flat().map(p => p[0]));         // 7 − 1 = beside it
+  const beside = all.concat(r1.map(s => s.map(p => [p[0] + 403 + 1.2 * h, p[1] + 10])));
+  ok(pieces(beside).length === 2, `7 − 1 = beside it stays a problem of its own (${pieces(beside).map(p => p.result.latex).join(' | ')})`);
+  const under = all.concat(all.map(s => s.map(p => [p[0], p[1] + 2.2 * h])));
+  ok(pieces(under).length === 2, `a copy 2.2 heights under it is another piece (${pieces(under).length})`);
+  // the first training file's spaced writing: 3√121  +  4  = in four pieces joins into one line
+  const T1 = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'training_2026-11-07.json'), 'utf8'));
+  const spaced = [];
+  { let x = 0; for (const i of [5, 6, 7, 8]) { const st = pts(T1.records[i]); if (!st) continue; const w = Math.max(...st.flat().map(p => p[0])); spaced.push(...st.map(s => s.map(p => [p[0] + x, p[1] + (i === 5 ? 0 : 20)]))); x += w + 45; } }
+  const p3 = pieces(spaced);
+  ok(p3.length === 1 && /\+4=$/.test(p3[0].result.latex), `3√121 + 4 = written in four spaced pieces is one line: ${p3.map(p => p.result.latex).join(' | ')}`);
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

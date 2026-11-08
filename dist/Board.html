@@ -115,7 +115,6 @@ nib-pad {
 .note p { margin: 0; flex: 1; min-width: min(200px, 100%); }
 .notebtn { font: 500 13px/1 var(--f-body); color: var(--board); background: var(--ink); border: 0; border-radius: 8px; padding: 0 14px; min-height: 40px; cursor: pointer; }
 .notebtn.quiet { color: var(--ink); background: transparent; border: 1px solid var(--rule); }
-.fixlayer { position: absolute; inset: 0; cursor: pointer; touch-action: none; }
 .fixpop {
   position: absolute; display: flex; gap: 6px; padding: 6px; background: var(--rail); border: 1px solid var(--rule); border-radius: 14px;
   box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .55); z-index: 2;
@@ -241,7 +240,6 @@ nib-pad {
   </header>
   <div class="surface" id="surface">
     <nib-pad id="pad" view="ink" stroke-width="3.5" settle="2500" separate times="false" reveal fit aria-label="Board"></nib-pad>
-    <div class="fixlayer" id="fixlayer" hidden></div>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
     <div class="drill" id="drill" role="region" aria-label="Drill" hidden>
       <div class="dq" id="dq"><p class="dprompt" id="dprompt"></p><p class="dhow" id="dhow"></p><p class="dread" id="dread" aria-live="polite"></p></div>
@@ -281,7 +279,7 @@ nib-pad {
   </div>
 </div>
 
-<script>/*! Nib 1.5.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+<script>/*! Nib 1.5.1 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -4187,6 +4185,39 @@ function clustersOf(strokes) {
   }
   return [].concat(...rows.map(r => r.items.sort((p, q) => p.b[0] - q.b[0]).map(it => it.g)));
 }
+// Pieces of one line of writing left apart by the spaces in it: a piece whose reading ends in + − · × ÷ < > ≤ ≥ ≠ ±
+// (not =: "7 − 1 =" is whole, and the problem beside it is another) is joined to the piece to its right on the same
+// row; a piece whose reading begins with an operator (= included) is joined to the piece to its left. Within 2.5
+// writing heights across, sharing half the smaller height. Returns the new groups (in the order of the pieces) or
+// null when there is nothing to join.
+const OP_END = /(?:\\(?:cdot|times|div|le|ge|ne|pm|leq|geq|neq)|[+\-<>·×÷])\s*$/, OP_START = /^\s*(?:\\(?:cdot|times|div|le|ge|ne|pm|leq|geq|neq)(?![a-zA-Z])|[+<>=·×÷])/;
+function joinOperands(parts) {
+  if (parts.length < 2) return null;
+  const P = parts.map(p => {
+    const r = p.result, lines = r && r.lines ? r.lines : [];
+    const last = lines.length ? lines[lines.length - 1].latex : '', first = lines.length ? lines[0].latex : '';
+    return { box: p.strokes.map(sbox).reduce(ubox), ends: lines.length === 1 && OP_END.test(last), begins: lines.length === 1 && OP_START.test(first) && !/^\s*-/.test(first) };
+  });
+  const h = b => Math.max(b[3] - b[1], 1), order = P.map((_, i) => i).sort((a, b) => P[a].box[0] - P[b].box[0]);
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k], A = P[i];
+    // the nearest piece to the right on A's row
+    let best = -1, gap = Infinity;
+    for (let m = 0; m < order.length; m++) {
+      const j = order[m]; if (j === i) continue;
+      const B = P[j];
+      const gx = B.box[0] - A.box[2], ov = Math.min(A.box[3], B.box[3]) - Math.max(A.box[1], B.box[1]);
+      if (gx < -0.2 * h(A.box) || ov < 0.5 * Math.min(h(A.box), h(B.box))) continue;
+      if (gx < gap) { gap = gx; best = j; }
+    }
+    if (best < 0) continue;
+    const B = P[best], H = Math.max(h(A.box), h(B.box));
+    if (gap > 2.5 * H || !(A.ends || B.begins)) continue;
+    const merged = parts[i].idx.concat(parts[best].idx).sort((a, b) => a - b);
+    return parts.map((p, q) => (q === i ? merged : q === best ? null : p.idx)).filter(Boolean);
+  }
+  return null;
+}
 // one reading made of several (each part's stroke indices mapped back to the whole board's)
 function joinParts(parts) {
   const remap = (row, m) => row.map(u => {
@@ -4287,13 +4318,15 @@ class Pad {
   }
   _wide(e) { return (+e.width || 0) >= 28 || (+e.height || 0) >= 28; }   // 0 or 1: the browser does not say
   _young(P, now) { return now - P.t0 < 350 || (P.cur ? P.cur.length : 0) < 6; }
+  _still(P) { if (!P.cur || P.mode !== 'draw') return false; const b = sbox(P.cur); return Math.max(b[2] - b[0], b[3] - b[1]) < 12; }
   _down(e) {
     const now = performance.now(), type = e.pointerType, touch = type === 'touch';
     // a pointer that has gone quiet for 1.5 s lost its pointerup somewhere: finish it and take the new one
     for (const P of [...this.ptrs.values()]) if (now - P.last > 1500 || P.id === e.pointerId) this._finish(P, null);
     if (type === 'pen') {
       this.penUntil = now + 1000;
-      for (const P of [...this.ptrs.values()]) if (P.type === 'touch' && this._young(P, now)) this._drop(P);  // the palm landed first
+      // the palm landed first: a touch only just begun, or one resting (hardly moved however long it has been down)
+      for (const P of [...this.ptrs.values()]) if (P.type === 'touch' && (this._young(P, now) || this._still(P))) this._drop(P);
     }
     if (touch) {
       if (this.o.penOnly) { this.why = 'ignored: pen only'; return; }
@@ -4303,7 +4336,8 @@ class Pad {
     if (type === 'mouse' && e.button !== 0) { this.why = 'ignored: button'; return; }
     e.preventDefault();
     const eraser = type === 'pen' && ((e.buttons & 32) !== 0 || e.button === 5);    // the pen turned round
-    const P = { id: e.pointerId, type, mode: eraser || this.mode === 'erase' ? 'erase' : 'draw', eraser, t0: now, last: now, cur: null, erased: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e) };
+    // mode 'fix': a tap is sent on as nib:tap (the Board's Fix picks the symbol under it); writing still writes
+    const P = { id: e.pointerId, type, mode: eraser || this.mode === 'erase' ? 'erase' : 'draw', eraser, fix: this.mode === 'fix' && !eraser, t0: now, last: now, cur: null, erased: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e) };
     this.ptrs.set(e.pointerId, P);
     this.why = P.mode + (eraser ? ' (eraser end)' : '');
     try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* ok */ }
@@ -4358,12 +4392,17 @@ class Pad {
       if (Math.hypot(q[0] - s[0][0], q[1] - s[0][1]) <= 10 && performance.now() - P.t0 <= 400 && this._inChip(P.chip, q)) { this._reveal(P.chip.key); return; }
     }
     if (!s || !s.length) return;
-    // a finger's tap while a pen is in use (within the last 30 s) is the heel of the hand, not a decimal point
-    if (P.type === 'touch' && this.penUntil && performance.now() - (this.penUntil - 1000) < 30000) {
-      const b = sbox(s.map(q => [q[0], q[1]]));
-      if (Math.max(b[2] - b[0], b[3] - b[1]) < 6) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
+    const b = sbox(s.map(q => [q[0], q[1]])), span = Math.max(b[2] - b[0], b[3] - b[1]);
+    // Fix on: a tap (within 10 px, 400 ms) points at a symbol and writes nothing; anything longer is writing
+    if (P.fix && span < 10 && performance.now() - P.t0 <= 400) {
+      this.why = 'tap (fix)'; this.redraw();
+      this.el.dispatchEvent(new CustomEvent('nib:tap', { detail: { x: s[0][0], y: s[0][1], pointerType: P.type }, bubbles: true }));
+      return;
     }
+    // a finger's tap while a pen is in use (within the last 30 s) is the heel of the hand, not a decimal point
+    if (P.type === 'touch' && this.penUntil && performance.now() - (this.penUntil - 1000) < 30000 && span < 6) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
     this.info.set(s, { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null });
+    if (P.fix && this.mode === 'fix') this.mode = 'draw';   // written with Fix on: the writer is writing again
     this.strokes.push(s);
     this._push({ add: s });
     this._changed();
@@ -4803,6 +4842,7 @@ class Pad {
     if (!(k > 0)) return false;
     const x0 = Math.max(m, Math.min(b[0], W - m - bw * k)), y0 = Math.max(m, Math.min(b[1], H - m - bh * k));
     const t = [b[0], b[1], x0, y0, k];
+    for (const s of this.strokes) this._sidHash(s);     // the training log knows this writing by where it was written: keep that name through the move
     const move = this.strokes.map(s => [s, s.map(p => p.slice()), s.map(p => { const q = p.slice(); q[0] = x0 + (p[0] - b[0]) * k; q[1] = y0 + (p[1] - b[1]) * k; return q; })]);
     const h = { move, t };
     this._apply(h, false);
@@ -4884,8 +4924,7 @@ class Pad {
   }
   // A board: each group of writing is read on its own (and kept while it does not change), then put together.
   _readParts(ro) {
-    const parts = [];
-    for (const g of clustersOf(this.strokes)) {
+    const read = groups => groups.map(g => {
       const st = g.map(i => this.strokes[i]);
       const key = this._partKey(st, ro);
       let res = this.parts.get(key);
@@ -4894,7 +4933,15 @@ class Pad {
         if (this.parts.size > 300) this.parts.clear();
         this.parts.set(key, res);
       }
-      parts.push({ idx: g, strokes: st, result: res });
+      return { idx: g, strokes: st, result: res };
+    });
+    let parts = read(clustersOf(this.strokes));
+    // a piece that ends in an operator, or begins with one, continues the writing beside it: "2 ·  22 +  2 =" written
+    // with spaces (as a prompt shows it) is one expression, not three; read again as one (at most a few rounds)
+    for (let round = 0; round < 8; round++) {
+      const joined = joinOperands(parts);
+      if (!joined) break;
+      parts = read(joined);
     }
     return joinParts(parts);
   }
@@ -4954,7 +5001,7 @@ class Pad {
     if (h.reveal) for (const k of h.reveal) { if (back) this.revealed.delete(k); else this.revealed.add(k); }
     if (h.move) {
       for (const [s, was, now] of h.move) { const src = back ? was : now; s.length = 0; for (const p of src) s.push(p.slice()); }
-      this.parts.clear(); this._hashes = new WeakMap();
+      this.parts.clear();                                 // the strokes keep their training-log names (this._hashes): moved writing is the same writing
       this._movePlan(h.t, back);
     }
     if (h.hide || h.reveal || h.clear) this._syncHidden();
@@ -5043,6 +5090,7 @@ class Pad {
   // that is on a page being left, is kept once in this.training as a record (see docs/HANDOFF.md, "Training log").
   // Its key is its strokes' ids: a hash of each stroke's points at 0.1 px, so the same writing has the same key
   // after a reload or on a page taken out again; keeping the same key again replaces the record (a later Fix).
+  // Writing moved in by fit keeps the ids it had (see _fit), so it is not kept twice at two sizes.
   _sidHash(s) {
     let h = this._hashes.get(s);
     if (h) return h;
@@ -5290,7 +5338,8 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     trainDrop(keys) { return this.pad ? this.pad.trainDrop(keys) : 0; }
     strokeInfo(s) { return this.pad ? this.pad.strokeInfo(s) : { type: null, width: null }; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
-    set mode(v) { if (this.pad) this.pad.mode = v === 'erase' ? 'erase' : 'draw'; }
+    // 'draw' | 'erase' | 'fix' (a tap is sent on as nib:tap {x, y, pointerType} instead of writing a dot; writing still writes)
+    set mode(v) { if (this.pad) this.pad.mode = v === 'erase' || v === 'fix' ? v : 'draw'; }
     recognize() { return this.pad && this.pad.recognize(); }
     relabel(sym, label) { return this.pad && this.pad.relabel(sym, label); }
     undo() { if (this.pad) this.pad.undo(); }
@@ -5330,7 +5379,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.5.0',
+  version: '1.5.1',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -5365,7 +5414,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;
@@ -5475,7 +5524,7 @@ global.Nib = Nib;
   }
   function setReveal(on) { S.reveal = on; pad.reveal = on; persist(); marks(); }
   $('solve').onclick = () => setSolve(!S.solve);
-  const erase = on => { pad.mode = on ? 'erase' : 'draw'; $('erase').setAttribute('aria-pressed', String(on)); if (on && fixing) fixMode(false); };
+  const erase = on => { pad.mode = on ? 'erase' : 'draw'; $('erase').setAttribute('aria-pressed', String(on)); if (on && fixing) fixMode(false); if (typeof drillRead === 'function') drillRead(); };
 
   // ---------------------------------------------------------------- settings
   function setRail(r) {
@@ -5751,6 +5800,7 @@ global.Nib = Nib;
     const say = (txt, state) => { el.textContent = txt; el.dataset.state = state; };
     dCur = null; bar.classList.remove('warn'); $('dhow').textContent = dHow;
     $('dright').disabled = true;
+    if (P && P.mode === 'erase') { say('Erase is on: the pen rubs out. Tap Erase again to write.', 'wait'); return; }
     if (!P || !P.strokes.length) { say('Write it on the board.', 'wait'); return; }
     if (!P.result || P.ptrs.size || P.resultStrokes.length !== P.strokes.length || P.resultStrokes.some((s, i) => s !== P.strokes[i])) { say('Reading…', 'wait'); return; }
     let last = 0;
@@ -5875,13 +5925,19 @@ global.Nib = Nib;
   const shownAs = l => SHOW[l] || l;
   let fixing = false, popFor = null, emptyTaps = 0;
   function fixMode(on) {
-    fixing = on; emptyTaps = 0; $('fix').setAttribute('aria-pressed', String(on)); $('dfix').setAttribute('aria-pressed', String(on)); $('fixlayer').hidden = !on; closePop();
+    fixing = on; emptyTaps = 0; $('fix').setAttribute('aria-pressed', String(on)); $('dfix').setAttribute('aria-pressed', String(on)); closePop();
     if (on) {
       if (pad.mode === 'erase') erase(false);
+      pad.mode = 'fix';                       // a tap picks a symbol; writing still writes (and leaves Fix)
       try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
-      note('Tap a symbol to fix how it was read.');
-    } else if (/^Tap a symbol/.test($('notetext').textContent)) $('note').hidden = true;
+      note('Tap a symbol to fix how it was read. Just write to carry on.');
+    } else {
+      if (pad.mode === 'fix') pad.mode = 'draw';
+      if (/^Tap a symbol/.test($('notetext').textContent)) $('note').hidden = true;
+    }
   }
+  // written while Fix was on: the writer is writing again
+  pad.addEventListener('nib:change', () => { if (fixing && pad.mode !== 'fix') fixMode(false); });
   function closePop() { if (!$('fixpop').hidden) { $('fixpop').hidden = true; $('fixpop').textContent = ''; } popFor = null; }
   // the symbol drawn under a point (as the view shows it: tidied, in your hand, typeset or as written): the smallest
   // one the point is inside, else the closest one within a finger's width
@@ -5931,9 +5987,9 @@ global.Nib = Nib;
     const alt = pop.querySelector('.cand[aria-pressed="false"]'); (alt || pop.firstChild).focus();
   }
   $('fix').onclick = () => fixMode(!fixing);
-  $('fixlayer').addEventListener('click', e => {
-    const C = pad.querySelector('canvas').getBoundingClientRect();
-    const hit = symbolAt(e.clientX - C.left, e.clientY - C.top);
+  pad.addEventListener('nib:tap', e => {
+    if (!fixing) return;
+    const hit = symbolAt(e.detail.x, e.detail.y);
     if (!hit) {
       closePop();
       // empty space twice in a row: done fixing
