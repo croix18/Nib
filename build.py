@@ -5,6 +5,9 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.environ.get('NIB_WORK', os.path.join(HERE, 'training', 'scratch', 'work'))
 MODEL = sys.argv[1] if len(sys.argv) > 1 else os.path.join(WORK, 'model_v3.npz')
+if len(sys.argv) > 1 and not os.path.exists(MODEL):
+    # a model asked for by name must exist: never build an engine with zero weights by a mistyped path
+    sys.exit(f'build.py: no model at {MODEL} (paths are relative to {os.getcwd()})')
 VERSION = '1.5.2'
 
 classes = open(os.path.join(WORK, 'ep', 'classes.txt')).read().split('\n')
