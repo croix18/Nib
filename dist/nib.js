@@ -1,4 +1,4 @@
-/*! Nib 1.5.3 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+/*! Nib 1.6.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -1733,7 +1733,7 @@ const cneg = c => (isFl(c) ? { f: -c.f } : { n: -c.n, d: c.d });
 function cadd(a, b) {
   if (!isFl(a) && !isFl(b)) return Q(a.n * b.d + b.n * a.d, a.d * b.d);
   const x = cval(a), y = cval(b), s = x + y;
-  // two nearly equal numbers cancelling leave only rounding error: zero or not cannot be told (π − 3.14159265358979,
+  // two nearly equal numbers canceling leave only rounding error: zero or not cannot be told (π − 3.14159265358979,
   // and π − 3.141592653589793, which comes out as exactly 0); two approximations that cancel exactly (π − π) are 0
   if (Math.abs(s) <= 1e-10 * Math.max(Math.abs(x), Math.abs(y)) && (s !== 0 || isFl(a) !== isFl(b))) sfail('lost to rounding');
   return Fl(s);
@@ -2866,8 +2866,8 @@ function latexRow(s) {
 
 // ================================================================== in place: tidy, my handwriting, typeset
 // Lays a reading out again where it was written. Every symbol becomes a glyph — the writer's own strokes cleaned
-// up ('tidy'), the writer's Replicator handwriting ('hand'), or typeset maths ('typeset') — placed by TeX-like rules
-// (spacing by kind, raised exponents, centred fractions, roots that cover their body, brackets as tall as what
+// up ('tidy'), the writer's Replicator handwriting ('hand'), or typeset math ('typeset') — placed by TeX-like rules
+// (spacing by kind, raised exponents, centered fractions, roots that cover their body, brackets as tall as what
 // they hold) at the writer's size, on a level line through the writer's own baseline, starting where they began.
 //
 // Units: layout happens in em of the writer's size (em = the height of a digit / 0.7), y up from the baseline;
@@ -2952,7 +2952,7 @@ function emOf(lines) {
   const m = median2(top.length ? top : all);
   return m > 0 ? m : 0;
 }
-// how far apart the writer puts the digits of a number, and other neighbouring symbols (em)
+// how far apart the writer puts the digits of a number, and other neighboring symbols (em)
 function gapsOf(lines, em) {
   const dd = [], oo = [];
   const visit = row => {
@@ -3041,7 +3041,7 @@ function rowBox(units, s, P, ctx) {
 }
 
 // The writer's line keeps its length: the gaps between top-level symbols stretch or shrink together (from half to
-// two and a half times their typeset size) so the tidied line spans about what was written; typeset maths, whose
+// two and a half times their typeset size) so the tidied line spans about what was written; typeset math, whose
 // glyphs are wider than handwriting, may also come down in size by up to a fifth. Returns the factor for the size.
 function fitRow(box, rawW, P) {
   const G = box.gaps || [];
@@ -3123,7 +3123,7 @@ function planOf(res, input, P, opts) {
   const ink = inkOf(input);
   const out = { em: 0, skew: res ? res.skew || 0 : 0, lines: [], items: [] };
   if (!res || !res.tree || !res.tree.length) return out;
-  // level coordinates: the slope the recogniser removed, removed again here the same way
+  // level coordinates: the slope the recognizer removed, removed again here the same way
   let sx = 0, n = 0;
   for (const s of ink) for (const p of s) { sx += p[0]; n++; }
   const c0 = n ? sx / n : 0, t = Math.tan((out.skew || 0) * Math.PI / 180);
@@ -3336,7 +3336,7 @@ function radicalParts(paths) {
 // a radical's strokes (ink, y down): the tick fitted into [0, cw] x [low, top], then a straight overline to `total`
 function tidyRadical(paths, cw, top, low, total, s) {
   if (!paths.length) return synthRadical(cw, top, low, total);
-  const fitted = fitInk(paths, { by: 'h', size: 1, bottom: 0 }, 1).paths;      // y up, normalised
+  const fitted = fitInk(paths, { by: 'h', size: 1, bottom: 0 }, 1).paths;      // y up, normalized
   const { tick, corner } = radicalParts(fitted);
   const tb = bboxOf(tick.length ? tick : fitted);
   const kx = cw / Math.max(tb[2] - tb[0], 1e-9), ky = (top - low) / Math.max(tb[3] - tb[1], 1e-9);
@@ -3660,7 +3660,7 @@ function typeProvider() {
     fence(u, h, d, s) {
       const text = TYPE_CHAR[u.label] || u.label, m = typeMetrics(text, 'm');
       const nat = (m.h + m.d) * s, k = Math.max(1, (h + d) / Math.max(nat, 1e-9));
-      // a taller bracket is the same glyph drawn taller; its middle stays on the line of maths
+      // a taller bracket is the same glyph drawn taller; its middle stays on the line of math
       const mid = (h - d) / 2, nmid = (m.h - m.d) * s / 2;
       return { w: m.w * s * Math.min(k, 1.4) ** 0.35, h: Math.max(h, m.h * s), d: Math.max(d, m.d * s),
         draw: [{ t: 'text', text, font: 'm', size: s, x: 0, y: mid - nmid * k, sx: Math.min(k, 1.4) ** 0.35, sy: k }] };
@@ -3700,7 +3700,7 @@ function pathsOf(items) {
   return out;
 }
 
-// Nib.neaten / Nib.typeset: recognise (or take options.result), then lay out in place
+// Nib.neaten / Nib.typeset: recognize (or take options.result), then lay out in place
 function inPlace(strokes, style, options) {
   const o = Object.assign({}, options || {});
   const res = o.result || defaultRecognizer().recognize(strokes, o);
@@ -3747,7 +3747,7 @@ function typeFontsReady() {
   })).then(() => true, () => false);
   return TYPE_FONTS;
 }
-// Draws drawable items on a 2D context (ink coordinates). o: {ink: colour, width: pen width, alpha}
+// Draws drawable items on a 2D context (ink coordinates). o: {ink: color, width: pen width, alpha}
 function drawItems(ctx, items, o) {
   ctx.save();
   ctx.strokeStyle = ctx.fillStyle = o.ink; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -3853,15 +3853,1752 @@ function mapParts(parts, X, Y, k) {
   });
 }
 
+// ================================================================== paper: the Board's backgrounds
+// A page's paper is {kind, tone}: the kind is the pattern, the tone its colors. drawPaper fills the visible world
+// rectangle with the paper and tiles the pattern over it from the world origin, so the pattern moves exactly with the
+// ink when the board pans. Everything is placed in device pixels: widths are whole pixels and positions snap to the
+// pixel grid, so a 1 px line stays crisp at any zoom and devicePixelRatio. Marks are opaque colors (a faded family is
+// its color mixed toward the paper), so where lines cross they stay one color.
+
+const PAPER_KINDS = [{ kind: 'blank', label: 'Blank' }, { kind: 'dots', label: 'Dots' }, { kind: 'grid', label: 'Grid' },
+  { kind: 'graph', label: 'Graph paper' }, { kind: 'lined', label: 'Lined' }, { kind: 'iso', label: 'Isometric' },
+  { kind: 'plane', label: 'Coordinate plane' }, { kind: 'numberlines', label: 'Number lines' }];
+const PAPER_TONES = [{ tone: 'theme', label: 'Board' }, { tone: 'white', label: 'White' }, { tone: 'cream', label: 'Cream' },
+  { tone: 'green', label: 'Chalkboard' }, { tone: 'black', label: 'Black' }];
+
+// [paper, ink]: the Board's own (light, dark), then the tones that are the same in either theme
+const PAPER_THEME = [['#fbf8ef', '#1b2a4a'], ['#101a2e', '#f1eadb']];
+const PAPER_BASE = { white: ['#ffffff', '#1b2a4a'], cream: ['#fbf8ef', '#1b2a4a'], green: ['#1f3d2f', '#f1eadb'], black: ['#121418', '#f1eadb'] };
+// How much of the ink each mark mixes into the paper [on light paper, on dark paper]. Grid lines stay quiet so any pen
+// reads clearly above them, yet not so faint that they vanish on the classroom panel; a lined page's rules and the
+// dots, sparser, are a little stronger. Tuned by eye on the contact sheet test/paper_browser.js draws.
+const PAPER_MIX = { line: [0.12, 0.12], rule: [0.16, 0.15], dot: [0.3, 0.3], major: [0.25, 0.24], axis: [0.6, 0.58], label: [0.65, 0.65] };
+const PAPER_CORAL = ['#d9654f', '#ef8a73'];   // the lined paper's margin: the Board's coral, faded into the paper
+const PAPER_FONT = '"DM Sans", system-ui, sans-serif';
+const PAPER_LABEL = 12;                       // label size, screen px, at 100% and below (see drawPaper)
+const PAPER_ISO = 20 * Math.sqrt(3);          // between the columns of an isometric lattice of side 40
+const PAPER_TONE_MEMO = {};
+const PAPER_SCRATCH = [];                     // the strips, kept from frame to frame
+
+function paperOwn(o, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k); }
+function paperRGB(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+function paperMix(a, b, t) {
+  const p = paperRGB(a), q = paperRGB(b);
+  return '#' + p.map((v, i) => Math.round(v + (q[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+
+// Colors for a tone (dark: the Board's theme is dark; only 'theme' follows it), a frozen object shared by all callers:
+// { paper, ink, line, major, axis, label, margin, dark } and, for the dot lattices and lined paper, dot and rule.
+function paperTone(tone, dark) {
+  const fixed = paperOwn(PAPER_BASE, tone), key = fixed ? tone : dark ? 'theme dark' : 'theme';
+  if (PAPER_TONE_MEMO[key]) return PAPER_TONE_MEMO[key];
+  const [paper, ink] = fixed ? PAPER_BASE[tone] : PAPER_THEME[dark ? 1 : 0];
+  const c = paperRGB(paper), d = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 < 0.5 ? 1 : 0;
+  const mix = k => paperMix(paper, ink, PAPER_MIX[k][d]);
+  return (PAPER_TONE_MEMO[key] = Object.freeze({ paper, ink, line: mix('line'), major: mix('major'), axis: mix('axis'),
+    label: mix('label'), margin: paperMix(paper, PAPER_CORAL[d], 0.5), dark: !!d, dot: mix('dot'), rule: mix('rule') }));
+}
+
+// Draw the paper into a context that already has the world transform (a scale and a translation, as the pad sets it).
+//   spec {kind, tone}; rect [x0, y0, x1, y1] the visible world rectangle; z the zoom; dark the Board's theme.
+// Labels are PAPER_LABEL screen px at 100% and below; zoomed in they grow with the square root of the zoom (to 1.75
+// times), so a plane zoomed in on to plot points for a class keeps numbers that read from the back of the room.
+function drawPaper(ctx, spec, rect, z, dark) { paperDraw(ctx, spec, rect, z, dark, PAPER_LABEL * Math.min(1.75, Math.max(1, Math.sqrt(z > 0 ? z : 1)))); }
+
+function paperDraw(ctx, spec, rect, z, dark, lab) {
+  const T = paperTone(spec && spec.tone, dark), kind = spec && spec.kind;
+  const x0 = Math.min(rect[0], rect[2]), x1 = Math.max(rect[0], rect[2]), y0 = Math.min(rect[1], rect[3]), y1 = Math.max(rect[1], rect[3]);
+  if (!(x1 > x0 && y1 > y0) || !isFinite(x1 - x0 + y1 - y0)) return;
+  ctx.save();
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = T.paper; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+  const draw = paperOwn(PAPER_DRAW, kind) ? PAPER_DRAW[kind] : null, m = draw && ctx.getTransform ? ctx.getTransform() : null;
+  // the pattern is placed in device pixels; a rotated or skewed context (the pad never makes one) gets plain paper
+  if (m && !m.b && !m.c && m.a > 0 && m.d > 0) {
+    if (!(z > 0)) z = m.a / ((typeof devicePixelRatio === 'number' && devicePixelRatio) || 1);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // world (x, y) is device (x·sx + ox, y·sy + oy); P device px make one screen px
+    draw({ ctx, T, z, lab, P: m.a / z, sx: m.a, sy: m.d, ox: m.e, oy: m.f, x0, y0, x1, y1,
+      X0: x0 * m.a + m.e, X1: x1 * m.a + m.e, Y0: y0 * m.d + m.f, Y1: y1 * m.d + m.f });
+  }
+  ctx.restore();
+}
+
+// ------------------------------------------------------------------ marks
+// a mark px screen px wide, in whole device pixels (1.5 px: 1 on a plain screen, 3 on a retina one)
+function paperWidth(V, px) { return Math.max(1, Math.round(px * V.P - 0.01)); }
+// How strongly a family of marks shows when they are px screen px apart: gone below lo, full from hi. Zooming out
+// fades a fine pattern away instead of letting it turn into gray mush (and keeps the cost down): lines from 12 px apart
+// down to 6, dots from 12 down to 8.
+function paperFade(px, lo, hi) { return px <= lo ? 0 : px >= hi ? 1 : (px - lo) / (hi - lo); }
+// a tone's color faded toward the paper by a (0 … 1), as an opaque color
+function paperShade(T, key, a) { return a >= 1 ? T[key] : paperMix(T.paper, T[key], a); }
+
+// The lines x = k·step (paperCols) or y = k·step (paperRows) across the view, w device px wide, in the fill color;
+// every skip-th one is left to a coarser family drawn over them. One fillRect a line: a pixel-aligned rect is the
+// cheapest mark a canvas draws, where one path of hundreds of rects (or a stroke over 1 px wide) rasterizes 3–5× slower.
+function paperCols(V, step, skip, w) {
+  const ctx = V.ctx, m = w / 2 / V.sx, h = V.Y1 - V.Y0, k1 = Math.floor((V.x1 + m) / step);
+  for (let k = Math.ceil((V.x0 - m) / step); k <= k1; k++) if (!skip || k % skip) ctx.fillRect(Math.round(k * step * V.sx + V.ox - w / 2), V.Y0, w, h);
+}
+function paperRows(V, step, skip, w) {
+  const ctx = V.ctx, m = w / 2 / V.sy, l = V.X1 - V.X0, k1 = Math.floor((V.y1 + m) / step);
+  for (let k = Math.ceil((V.y0 - m) / step); k <= k1; k++) if (!skip || k % skip) ctx.fillRect(V.X0, Math.round(k * step * V.sy + V.oy - w / 2), l, w);
+}
+
+function paperCanvas(w, h) {
+  if (typeof document !== 'undefined') { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  return new OffscreenCanvas(w, h);
+}
+// Scratch strip i: exactly w × h device px (the view's width), cleared. It is stamped whole, because drawing part of a
+// canvas takes Chrome twice as long; the strip's own edges crop whatever reaches past the view's sides.
+function paperStrip(i, w, h) {
+  const c = PAPER_SCRATCH[i] || (PAPER_SCRATCH[i] = paperCanvas(w, h).getContext('2d'));
+  if (c.canvas.width !== w || c.canvas.height !== h) { c.canvas.width = w; c.canvas.height = h; }
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.clearRect(0, 0, w, h);
+  return c;
+}
+// One dot of radius R device px on the center pixel of a (2·pad + 1)² sprite, kept while R and the color stay. Every
+// dot is a copy of it, so every dot is the same pixels: one path of many dots is shaded a level or two differently
+// depending on where the path is clipped, which would make dots flicker by a shade as the board pans.
+function paperSprite(R, pad, color) {
+  const n = 2 * pad + 1, c = PAPER_SCRATCH[3] || (PAPER_SCRATCH[3] = paperCanvas(n, n).getContext('2d'));
+  if (c.key === R + ' ' + color && c.canvas.width === n) return c.canvas;
+  c.canvas.width = c.canvas.height = n;
+  c.beginPath(); c.arc(pad + 0.5, pad + 0.5, R, 0, 2 * Math.PI); c.fillStyle = color; c.fill();
+  c.key = R + ' ' + color;
+  return c.canvas;
+}
+// stamp a strip with its left at device x xa and its top at row y; one crossing the top or bottom of the view is cropped
+function paperStamp(V, c, xa, y) {
+  const s = c.canvas, h = s.height, t = Math.floor(V.Y0), b = Math.ceil(V.Y1);
+  if (y >= t && y + h <= b) V.ctx.drawImage(s, xa, y);
+  else if (y < b && y + h > t) { const u = Math.max(y, t), v = Math.min(y + h, b); V.ctx.drawImage(s, 0, u - y, s.width, v - u, xa, u, s.width, v - u); }
+}
+
+// A lattice of dots of radius r screen px, in rows rowStep apart; in a row the dots are colStep apart, odd rows shifted
+// by colOff. All rows are the same row of dots, so one row is stamped from the dot sprite into a strip (two strips for
+// a shifted lattice) and the strip is stamped row by row: a screen of dense dots costs a few hundred blits, where one
+// path of 30 000 arcs costs 20–50 ms. A dot's center is the center of the pixel its world point falls in.
+function paperDots(V, rowStep, colStep, colOff, r, color) {
+  const R = r * V.P, pad = Math.ceil(R) + 1, h = 2 * pad + 1, xa = Math.floor(V.X0), w = Math.ceil(V.X1) - xa;
+  const dot = paperSprite(R, pad, color), mx = R / V.sx, my = pad / V.sy, strips = [];   // a dot just outside still shows a sliver
+  for (const off of colOff ? [0, colOff] : [0]) {
+    const c = paperStrip(strips.length, w, h), i1 = Math.floor((V.x1 + mx - off) / colStep);
+    for (let i = Math.ceil((V.x0 - mx - off) / colStep); i <= i1; i++) c.drawImage(dot, Math.floor((off + i * colStep) * V.sx + V.ox) - xa - pad, 0);
+    strips.push(c);
+  }
+  const k1 = Math.floor((V.y1 + my) / rowStep);
+  for (let k = Math.ceil((V.y0 - my) / rowStep); k <= k1; k++) paperStamp(V, strips[colOff && k % 2 ? 1 : 0], xa, Math.floor(k * rowStep * V.sy + V.oy) - pad);
+}
+
+// ------------------------------------------------------------------ labels
+// label widths without measuring every label: the digits and the minus sign, measured once per draw
+function paperGlyphs(ctx) {
+  const w = {};
+  for (const ch of '0123456789−') w[ch] = ctx.measureText(ch).width;
+  return s => { let t = 0; for (let i = 0; i < s.length; i++) t += w[s[i]] || 0; return t; };
+}
+function paperNum(n) { return n < 0 ? '−' + -n : String(n); }
+// label every 1, 2, 5, 10, 20, 50 … units: the first step that leaves need device px between label centers
+function paperStep(unit, need) {
+  for (let s = 1; s < 1e12; s *= 10) for (const m of [1, 2, 5]) if (s * m * unit >= need) return s * m;
+  return 1e12;
+}
+
+// ------------------------------------------------------------------ the kinds
+function paperDrawDots(V) {
+  const a = paperFade(28 * V.z, 8, 12);
+  if (a > 0) paperDots(V, 28, 28, 0, 1.3, paperShade(V.T, 'dot', a));
+}
+
+// Equilateral triangles of side 40 with a vertical side: columns of dots 40 apart, every other column half a step down,
+// so a cube drawn on it has vertical edges and 30° ones. Its dots are a little bigger: they are what the pen joins.
+function paperDrawIso(V) {
+  const a = paperFade(40 * V.z, 8, 12);
+  if (a > 0) paperDots(V, 20, 2 * PAPER_ISO, PAPER_ISO, 1.6, paperShade(V.T, 'dot', a));
+}
+
+function paperDrawGrid(V) {
+  const a = paperFade(40 * V.z, 6, 12), w = paperWidth(V, 1);
+  if (a > 0) { V.ctx.fillStyle = paperShade(V.T, 'line', a); paperCols(V, 40, 0, w); paperRows(V, 40, 0, w); }
+}
+
+function paperDrawGraph(V) {
+  const ctx = V.ctx, a = paperFade(20 * V.z, 6, 12), b = paperFade(100 * V.z, 6, 12), w = paperWidth(V, 1), wm = paperWidth(V, 1.5);
+  if (a > 0) { ctx.fillStyle = paperShade(V.T, 'line', a); paperCols(V, 20, 5, w); paperRows(V, 20, 5, w); }
+  if (b > 0) { ctx.fillStyle = paperShade(V.T, 'major', b); paperCols(V, 100, 0, wm); paperRows(V, 100, 0, wm); }
+}
+
+function paperDrawLined(V) {
+  const ctx = V.ctx, a = paperFade(40 * V.z, 6, 12);
+  if (a > 0) { ctx.fillStyle = paperShade(V.T, 'rule', a); paperRows(V, 40, 0, paperWidth(V, 1)); }
+  if (V.x0 <= 0 && V.x1 >= 0) {   // the margin, at x = 0
+    const w = paperWidth(V, 1.5);
+    ctx.fillStyle = V.T.margin; ctx.fillRect(Math.round(V.ox - w / 2), V.Y0, w, V.Y1 - V.Y0);
+  }
+}
+
+// One unit = 40. The grid every unit, the axes through the world origin heavier and darker, labels along both axes.
+function paperDrawPlane(V) {
+  const ctx = V.ctx, a = paperFade(40 * V.z, 6, 12), w = paperWidth(V, 1), wa = paperWidth(V, 2);
+  if (a > 0) { ctx.fillStyle = paperShade(V.T, 'line', a); paperCols(V, 40, 0, w); paperRows(V, 40, 0, w); }
+  const inX = V.y0 <= 0 && V.y1 >= 0, inY = V.x0 <= 0 && V.x1 >= 0;   // the x axis (y = 0) and the y axis are in view
+  ctx.fillStyle = V.T.axis;
+  if (inY) ctx.fillRect(Math.round(V.ox - wa / 2), V.Y0, wa, V.Y1 - V.Y0);
+  if (inX) ctx.fillRect(V.X0, Math.round(V.oy - wa / 2), V.X1 - V.X0, wa);
+  paperPlaneLabels(V, wa, inX && inY);
+}
+
+// The labels are the same size at every zoom and step 1, 2, 5, 10 … units so they never collide. An axis that is off
+// screen keeps its labels, pinned to the nearest edge of the view the way a map keeps its grid labels; the one "0"
+// sits below-left of the origin. Where a pinned row meets a pinned column (a corner) the x label gives way.
+function paperPlaneLabels(V, wa, origin) {
+  const { ctx, T, P } = V, U = 40, fs = V.lab * P, cap = 0.7 * fs, g = 5 * P + wa / 2, e = 4 * P, pl = Math.round(2 * P);
+  ctx.font = '500 ' + fs + 'px ' + PAPER_FONT;
+  const tw = paperGlyphs(ctx);
+  // the units in view (math y points up: world y = −40 is y = 1)
+  const i0 = Math.ceil(V.x0 / U), i1 = Math.floor(V.x1 / U), j0 = Math.ceil(-V.y1 / U), j1 = Math.floor(-V.y0 / U);
+  const step = paperStep(U * V.sx, Math.max(tw(paperNum(i0)), tw(paperNum(i1))) + 0.9 * fs);
+  // the x axis's labels: under it, over it when there is no room under it, or pinned to the top or bottom edge
+  let ty = V.oy + g;
+  if (ty + cap > V.Y1 - e) ty = Math.min(V.oy - g - cap, V.Y1 - e - cap);
+  ty = Math.round(Math.max(ty, V.Y0 + e));
+  // the y axis's labels: left of it (right-aligned), right of it when there is no room, or pinned to an edge
+  const jl = Math.ceil(j0 / step) * step, jh = Math.floor(j1 / step) * step, wy = Math.max(tw(paperNum(jl)), tw(paperNum(jh)));
+  let right = true, ax = V.ox - g;
+  if (ax - wy < V.X0 + e) { right = false; ax = Math.max(V.ox + g, V.X0 + e); } else ax = Math.min(ax, V.X1 - e);
+  ax = Math.round(ax);
+  // a label is its text, anchor and the box of its digits; two collide when their digits come within 2 px
+  const item = (s, x, top, w, align) => { const l = x - (align === 'right' ? w : align === 'center' ? w / 2 : 0); return { s, x, y: Math.round(top + cap), align, l, t: top, r: l + w, b: top + cap }; };
+  const near = 2 * P, hit = (a, c) => a.l < c.r + near && c.l < a.r + near && a.t < c.b + near && c.t < a.b + near;
+  const items = [], inRow = [], zero = origin ? item('0', ax, ty, tw('0'), right ? 'right' : 'left') : null;
+  if (zero) items.push(zero);
+  for (let j = jl; j <= j1; j += step) {
+    const top = Math.round(-j * U * V.sy + V.oy - cap / 2);
+    if (!j || top < V.Y0 + e || top + cap > V.Y1 - e) continue;   // whole labels only
+    const s = paperNum(j), it = item(s, ax, top, tw(s), right ? 'right' : 'left');
+    if (zero && hit(it, zero)) continue;
+    items.push(it);
+    if (it.t < ty + cap + near && it.b > ty - near) inRow.push(it);   // it shares the x labels' row
+  }
+  for (let i = Math.ceil(i0 / step) * step; i <= i1; i += step) {
+    const s = paperNum(i), w = tw(s), x = Math.round(i * U * V.sx + V.ox);
+    if (!i || x - w / 2 < V.X0 + e || x + w / 2 > V.X1 - e) continue;
+    const it = item(s, x, ty, w, 'center');
+    if ((zero && hit(it, zero)) || inRow.some(o => hit(it, o))) continue;
+    items.push(it);
+  }
+  // a plate of paper under each label keeps the grid lines out of its digits
+  ctx.fillStyle = T.paper;
+  for (const it of items) ctx.fillRect(it.l - pl, it.t - pl, it.r - it.l + 2 * pl, cap + 2 * pl);
+  ctx.fillStyle = T.label; ctx.textBaseline = 'alphabetic';
+  for (const it of items) { ctx.textAlign = it.align; ctx.fillText(it.s, it.x, it.y); }
+}
+
+// Number lines at y = 100 + 200k with a tick every 40 and integer labels under the ticks (0 at x = 0). They are all
+// alike, so one is drawn into a strip with its ticks and labels and stamped at each line in view. When the labels
+// thin out, the labeled ticks stay long and the others are short; the labels fade as the lines crowd together.
+function paperDrawNumberLines(V) {
+  const { T, P } = V, U = 40, G = 200, Y = 100;
+  const wl = paperWidth(V, 2), wt = paperWidth(V, 1.5), tl = Math.round(7 * P), ts = Math.round(4 * P);
+  const fs = V.lab * P, cap = 0.7 * fs, la = paperFade(G * V.z, 34, 44), ta = paperFade(U * V.z, 6, 12);
+  const xa = Math.floor(V.X0), w = Math.ceil(V.X1) - xa, top = tl + 1;   // the line's top row in the strip
+  const base = top + wl + tl + Math.round(4 * P) + Math.round(cap), h = la > 0 ? base + Math.round(3 * P) + 1 : top + wl + tl + 1;
+  const c = paperStrip(2, w, h);
+  c.font = '500 ' + fs + 'px ' + PAPER_FONT;
+  const tw = paperGlyphs(c), i0 = Math.ceil(V.x0 / U), i1 = Math.floor(V.x1 / U);
+  const step = paperStep(U * V.sx, Math.max(tw(paperNum(i0)), tw(paperNum(i1))) + 0.9 * fs), il = Math.ceil(i0 / step) * step;
+  const X = i => Math.round(i * U * V.sx + V.ox - xa - wt / 2);   // a tick's left edge in the strip
+  if (ta > 0 && step > 1) {   // the unlabeled ticks, under the rest
+    c.fillStyle = paperShade(T, 'axis', ta);
+    for (let i = i0; i <= i1; i++) if (i % step) c.fillRect(X(i), top - ts, wt, wl + 2 * ts);
+  }
+  c.fillStyle = T.axis; c.fillRect(V.X0 - xa, top, V.X1 - V.X0, wl);
+  for (let i = il; i <= i1; i += step) c.fillRect(X(i), top - tl, wt, wl + 2 * tl);
+  if (la > 0) {
+    c.fillStyle = paperShade(T, 'label', la); c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+    for (let i = il; i <= i1; i += step) c.fillText(paperNum(i), Math.round(i * U * V.sx + V.ox - xa), base);
+  }
+  const k0 = Math.floor(((V.Y0 - h - V.oy) / V.sy - Y) / G), k1 = Math.ceil(((V.Y1 + h - V.oy) / V.sy - Y) / G);
+  for (let k = k0; k <= k1; k++) paperStamp(V, c, xa, Math.round((Y + G * k) * V.sy + V.oy - wl / 2) - top);
+}
+
+const PAPER_DRAW = { dots: paperDrawDots, grid: paperDrawGrid, graph: paperDrawGraph, lined: paperDrawLined, iso: paperDrawIso,
+  plane: paperDrawPlane, numberlines: paperDrawNumberLines };
+
+// ------------------------------------------------------------------ thumbnails
+// A small picture of a paper for the Board's picker: a canvas of w × h CSS px at devicePixelRatio. It is zoomed out
+// so a few cells show, with what tells the kinds apart in view: the origin, the margin, a number line.
+function paperThumb(spec, dark, w, h) {
+  const dpr = typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  const cv = paperCanvas(Math.max(1, Math.round(w * dpr)), Math.max(1, Math.round(h * dpr)));
+  if (cv.style) { cv.style.width = w + 'px'; cv.style.height = h + 'px'; }
+  const kind = spec && spec.kind;
+  let z = 0.4, cx = 20, cy = 20;   // the zoom, and the world point at the middle of the picture
+  if (kind === 'dots') { z = 0.5; cx = cy = 14; }
+  else if (kind === 'graph') { z = 0.5; cx = 50; cy = 25; }
+  else if (kind === 'lined') cx = 0.3 * w / z;
+  else if (kind === 'iso') cx = cy = 0;
+  else if (kind === 'plane') { z = 0.3; cx = cy = 0; }
+  else if (kind === 'numberlines') { z = 0.35; cx = 0; cy = 100 + 0.12 * h / z; }
+  const x0 = cx - w / 2 / z, y0 = cy - h / 2 / z, ctx = cv.getContext('2d');
+  ctx.setTransform(dpr * z, 0, 0, dpr * z, -x0 * dpr * z, -y0 * dpr * z);
+  paperDraw(ctx, spec, [x0, y0, x0 + w / z, y0 + h / z], z, dark, 8);
+  return cv;
+}
+
+// ================================================================== shapes on the Board
+// Lines, arrows, rectangles, ellipses, triangles, polygons, number lines and coordinate planes: what a drag with the
+// shape tool makes, their outlines, bounds and hit tests, how they are drawn, and draw-and-hold recognition (a
+// freehand stroke held still at its end that is clearly a shape becomes one). World units (CSS px at zoom 1), y down.
+// Points per kind (docs: DESIGN.md "Elements"): line / arrow / arrow2 / numberline: start and end; rect / ellipse /
+// plane: opposite corners, any order; triangle: drag start and end (apex at (mid x, start y), base along end y);
+// rtriangle: the right angle at (start x, end y); poly: the vertices of a closed polygon. Arrowheads, dashes, ticks
+// and labels are worked out at draw time from the points and E.size, so a moved or scaled shape draws right.
+
+const SHAPE_KINDS = [
+  { kind: 'line', label: 'Line' }, { kind: 'arrow', label: 'Arrow' }, { kind: 'arrow2', label: 'Double arrow' },
+  { kind: 'rect', label: 'Rectangle' }, { kind: 'square', label: 'Square' }, { kind: 'ellipse', label: 'Ellipse' },
+  { kind: 'circle', label: 'Circle' }, { kind: 'triangle', label: 'Triangle' }, { kind: 'rtriangle', label: 'Right triangle' },
+  { kind: 'numberline', label: 'Number line' }, { kind: 'plane', label: 'Coordinate plane' }];
+const SHAPE_NL = { min: -10, max: 10, step: 1, labels: true, frac: false };
+const SHAPE_PLANE = { xmin: -10, xmax: 10, ymin: -10, ymax: 10, step: 1, labels: true, grid: true };
+// a drag shorter than SHAPE_TAP (world units at zoom 1) is a tap: it makes the kind's default size, centered on it
+const SHAPE_TAP = 4;
+const SHAPE_DEFAULT = { line: [200, 0], arrow: [200, 0], arrow2: [200, 0], rect: [200, 140], square: [160, 160],
+  ellipse: [200, 140], circle: [160, 160], triangle: [180, 156], rtriangle: [180, 150], numberline: [480, 0], plane: [320, 320] };
+const SHAPE_MINUS = '−';
+const SHAPE_FONT = '"DM Sans", system-ui, sans-serif';
+// arrowhead: wing half-width, and the notch in its back, as fractions of its length
+const SHAPE_HEAD_W = 0.4, SHAPE_HEAD_NOTCH = 0.14;
+// DM Sans 500 advances (em). Labels are measured without a canvas so layout, bounds and hits agree everywhere.
+const SHAPE_ADV = { 0: 0.69, 1: 0.328, 2: 0.577, 3: 0.594, 4: 0.621, 5: 0.614, 6: 0.63, 7: 0.535, 8: 0.616, 9: 0.63,
+  '−': 0.559, '.': 0.215, '/': 0.403, ' ': 0.256, x: 0.52, y: 0.571 };
+
+// ------------------------------------------------------------------ small helpers
+function shapeSize(E) { const s = E ? +E.size : 0; return s > 0 ? s : 3; }
+function shapeLen(a, b) { return Math.hypot(b[0] - a[0], b[1] - a[1]); }
+function shapeNum(x) { return (Math.round(x * 1e9) / 1e9) || 0; }   // tick values and snapped points without float noise
+function shapeFilled(E) { return !!(E && E.fill && E.fill !== 'none' && E.fill !== 'transparent'); }
+function shapeClamp(x, a, b) { return x < a ? a : x > b ? b : x; }
+// a CSS color as [r, g, b, a] when it is #rgb, #rrggbb, rgb() or rgba(), else null
+function shapeRGB(c) {
+  if (typeof c !== 'string') return null;
+  let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim());
+  if (m) { const h = m[1].length === 3 ? m[1].replace(/./g, d => d + d) : m[1], n = parseInt(h, 16); return [n >> 16, (n >> 8) & 255, n & 255, 1]; }
+  m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+%?)\s*)?\)$/i.exec(c.trim());
+  if (!m) return null;
+  const a = m[4] == null ? 1 : m[4].endsWith('%') ? parseFloat(m[4]) / 100 : +m[4];
+  return [+m[1], +m[2], +m[3], shapeClamp(a, 0, 1)];
+}
+// color b laid over color a at opacity t (b's own alpha included), as an opaque rgb()
+function shapeOver(a, b, t) {
+  const k = t * b[3];
+  return [0, 1, 2].map(i => a[i] + (b[i] - a[i]) * k).concat([1]);
+}
+
+// a point snapped to the grid of a spacing (0 = unchanged); extra fields (time, pressure) are kept
+function shapeSnap(p, spacing) {
+  const q = p.slice();
+  if (spacing > 0) { q[0] = shapeNum(Math.round(p[0] / spacing) * spacing); q[1] = shapeNum(Math.round(p[1] / spacing) * spacing); }
+  return q;
+}
+
+// ------------------------------------------------------------------ a drag with the shape tool
+// A shape dragged out from a to b; o = { snap: grid spacing or 0, angle: snap a line's angle to 15° steps when within
+// 4°, z: zoom (optional: scales the tap threshold and default sizes to the screen), opt: numberline / plane options
+// over the defaults }. Returns { shape, pts, opt } (opt only for numberline and plane).
+function shapeFromDrag(kind, a, b, o) {
+  o = o || {};
+  const g = o.snap > 0 ? +o.snap : 0, z = o.z > 0 ? +o.z : 1;
+  const shape = kind === 'square' ? 'rect' : kind === 'circle' ? 'ellipse' : kind;
+  const opt = shape === 'numberline' ? Object.assign({}, SHAPE_NL, o.opt) : shape === 'plane' ? Object.assign({}, SHAPE_PLANE, o.opt) : undefined;
+  const flat = shape === 'line' || shape === 'arrow' || shape === 'arrow2' || shape === 'numberline';
+  const equal = kind === 'square' || kind === 'circle' || shape === 'plane';
+  const asp = shape === 'plane' ? shapeClamp(((+opt.xmax - +opt.xmin) / (+opt.ymax - +opt.ymin)) || 1, 0.1, 10) : 1;
+  let A = [+a[0] || 0, +a[1] || 0], B = [+b[0] || 0, +b[1] || 0];
+  const dx = B[0] - A[0], dy = B[1] - A[1], tap = SHAPE_TAP / z;
+  if (shape === 'numberline' ? Math.abs(dx) < tap && Math.abs(dy) < tap : Math.hypot(dx, dy) < tap) {
+    // a tap: the default size, centered under it (on the grid when snapping)
+    const d = SHAPE_DEFAULT[kind] || SHAPE_DEFAULT.rect;
+    let w = d[0] / z, h = flat ? 0 : d[1] / z;
+    if (shape === 'plane') w = h * asp;
+    if (g) { w = Math.max(g, Math.round(w / g) * g); if (!flat) h = Math.max(g, Math.round(h / g) * g); }
+    const c = g ? shapeSnap(A, g) : A;
+    A = [c[0] - w / 2, c[1] - h / 2];
+    if (g) A = shapeSnap(A, g);
+    if (flat) A[1] = c[1];
+    return { shape, pts: [A, [shapeNum(A[0] + w), shapeNum(A[1] + h)]], opt };
+  }
+  if (g) A = shapeSnap(A, g);
+  if (flat) {
+    if (shape === 'numberline') {
+      // always level, its end under the finger; a straight-down drag still gives one as long as the drag
+      const ex = Math.abs(dx) >= tap ? B[0] : A[0] + (dx < 0 ? -1 : 1) * Math.hypot(dx, dy);
+      B = [g ? shapeNum(Math.round(ex / g) * g) : ex, A[1]];
+      if (B[0] === A[0]) B[0] = A[0] + (dx < 0 ? -1 : 1) * (g || tap);
+      return { shape, pts: [A, B], opt };
+    }
+    const ex = B[0] - A[0], ey = B[1] - A[1], L = Math.hypot(ex, ey);
+    let done = false;
+    if (o.angle && L > 0) {
+      const th = Math.atan2(ey, ex), q = Math.PI / 12, ts = Math.round(th / q) * q;
+      if (Math.abs(th - ts) <= 4 * Math.PI / 180) {
+        let ux = Math.cos(ts), uy = Math.sin(ts);
+        if (Math.abs(ux) < 1e-12) ux = 0; if (Math.abs(uy) < 1e-12) uy = 0;
+        let len = L;
+        // on a grid, the end's main coordinate lands on a grid line (exactly on a grid point at 0°, 45°, 90°)
+        if (g) { const m = Math.max(Math.abs(ux), Math.abs(uy)); len = Math.max(1, Math.round(L * m / g)) * g / m; }
+        B = [shapeNum(A[0] + ux * len), shapeNum(A[1] + uy * len)];
+        done = true;
+      }
+    }
+    if (!done && g) {
+      B = shapeSnap(B, g);
+      if (B[0] === A[0] && B[1] === A[1]) { if (Math.abs(dx) >= Math.abs(dy)) B[0] += dx < 0 ? -g : g; else B[1] += dy < 0 ? -g : g; }
+    }
+    return { shape, pts: [A, B], opt };
+  }
+  if (equal) {
+    // equal sides (or the ranges' aspect for a plane): the far corner goes the way of the drag, out to the finger
+    let h = Math.max(Math.abs(dx) / asp, Math.abs(dy));
+    if (g) h = Math.max(g, Math.round(h / g) * g);
+    const w = h * asp;
+    return { shape, pts: [A, [shapeNum(A[0] + (dx < 0 ? -w : w)), shapeNum(A[1] + (dy < 0 ? -h : h))]], opt };
+  }
+  if (g) {
+    B = shapeSnap(B, g);
+    if (B[0] === A[0]) B[0] += dx < 0 ? -g : g;
+    if (B[1] === A[1]) B[1] += dy < 0 ? -g : g;
+  }
+  return { shape, pts: [A, B], opt };
+}
+
+// ------------------------------------------------------------------ geometry
+// the corners of a closed polygonal shape in drawing order (null for the others)
+function shapeVerts(E, pts) {
+  const a = pts[0], b = pts[1] || pts[0];
+  switch (E.shape) {
+    case 'rect': case 'plane': {
+      const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+      return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    }
+    case 'triangle': return [[(a[0] + b[0]) / 2, a[1]], [b[0], b[1]], [a[0], b[1]]];
+    case 'rtriangle': return [[a[0], a[1]], [a[0], b[1]], [b[0], b[1]]];
+    case 'poly': return pts.map(p => [p[0], p[1]]);
+  }
+  return null;
+}
+function shapeEllipseOf(pts) {
+  const a = pts[0], b = pts[1] || pts[0];
+  return { cx: (a[0] + b[0]) / 2, cy: (a[1] + b[1]) / 2, rx: Math.abs(b[0] - a[0]) / 2, ry: Math.abs(b[1] - a[1]) / 2 };
+}
+function shapeEllipsePts(el, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) { const t = i / n * 2 * Math.PI; out.push([el.cx + el.rx * Math.cos(t), el.cy + el.ry * Math.sin(t)]); }
+  out.push(out[0].slice());
+  return out;
+}
+function shapePerimeter(rx, ry) { // Ramanujan
+  return Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry)));
+}
+// the filled head of an arrow with its tip at T, coming from F: [tip, wing, notch, wing], L its length
+function shapeHead(T, F, size, len) {
+  const d = shapeLen(F, T) || 1, ux = (T[0] - F[0]) / d, uy = (T[1] - F[1]) / d;
+  // never longer than a third of the line, and never so short that it is no wider than the line
+  const L = Math.min(Math.max(10, 4 * size), len / 3), W = Math.max(L * SHAPE_HEAD_W, 0.9 * size), bx = T[0] - ux * L, by = T[1] - uy * L;
+  const nb = 1 - SHAPE_HEAD_NOTCH;
+  return { L, ux, uy, poly: [[T[0], T[1]], [bx - uy * W, by + ux * W], [T[0] - ux * L * nb, T[1] - uy * L * nb], [bx + uy * W, by - ux * W]] };
+}
+function shapeInPoly(p, V) {
+  let inside = false;
+  for (let i = 0, j = V.length - 1; i < V.length; j = i++) {
+    const a = V[i], b = V[j];
+    if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+function shapeNearPath(p, P, r, closed) {
+  if (P.length === 1) return shapeLen(P[0], p) <= r;
+  for (let i = 0; i + 1 < P.length; i++) if (segDist(p, P[i], P[i + 1]) <= r) return true;
+  return !!closed && P.length > 2 && segDist(p, P[P.length - 1], P[0]) <= r;
+}
+function shapeBoxPoly(b) { return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [b[0], b[1]]]; }
+
+// ------------------------------------------------------------------ number labels
+// the format of a set of tick values: fractions (denominator den) for steps under 1 when asked, else decimals (dp)
+function shapeFmt(min, step, frac) {
+  if (frac && step < 1) {
+    for (let d = 2; d <= 64; d++) {
+      if (Math.abs(step * d - Math.round(step * d)) < 1e-6 * d && Math.abs(min * d - Math.round(min * d)) < 1e-6 * d) return { den: d, dp: 0 };
+    }
+  }
+  let dp = 0;
+  for (const x of [step, min]) { let k = 0; while (k < 4 && Math.abs(x * 10 ** k - Math.round(x * 10 ** k)) > 1e-7 * 10 ** k) k++; dp = Math.max(dp, k); }
+  return { den: 0, dp };
+}
+// a value's label: { s } (text, with a real minus sign) or a stacked fraction { neg, whole, num, den }
+function shapeLabelOf(v, fmt) {
+  if (Math.abs(v) < 1e-9) return { s: '0' };
+  const neg = v < 0;
+  if (fmt.den) {
+    const N = Math.round(Math.abs(v) * fmt.den);
+    if (!N) return { s: '0' };
+    let g = N, h = fmt.den; while (h) { const t = g % h; g = h; h = t; }
+    const num = N / g, den = fmt.den / g;
+    if (den === 1) return { s: (neg ? SHAPE_MINUS : '') + num };
+    const whole = Math.floor(num / den);
+    return { neg, whole, num: num - whole * den, den };
+  }
+  let s = Math.abs(v).toFixed(fmt.dp);
+  if (fmt.dp) s = s.replace(/\.?0+$/, '');
+  return { s: (neg && +s !== 0 ? SHAPE_MINUS : '') + s };
+}
+function shapeTextW(s, fs) { let w = 0; for (const c of String(s)) w += SHAPE_ADV[c] || 0.62; return w * fs; }
+// width of a label; fs the size of whole numbers, ff of a fraction's digits
+function shapeLabelW(L, fs, ff) {
+  if (L.s != null) return shapeTextW(L.s, fs);
+  let w = Math.max(shapeTextW(L.num, ff), shapeTextW(L.den, ff)) + 0.3 * ff;
+  if (L.whole) w += shapeTextW(L.whole, fs) + 0.08 * fs;
+  if (L.neg) w += shapeTextW(SHAPE_MINUS, fs) + 0.06 * fs;
+  return w;
+}
+// the number of steps between labels to try, smallest first: 1, then those that land on round values (1, 2, 5 x 10^n)
+function shapeThinSteps(step, count) {
+  const ks = [1];
+  for (let e = -4; e <= 7; e++) for (const m of [1, 2, 5]) {
+    const k = m * 10 ** e / step;
+    if (k > 1.5 && Math.abs(k - Math.round(k)) < 1e-6 * k && k <= 2 * count + 2) ks.push(Math.round(k));
+  }
+  if (ks.length < 4) for (const k of [2, 3, 4, 5, 10, 20, 50, 100, 200, 500, 1000]) if (k <= 2 * count + 2) ks.push(k);
+  return [...new Set(ks)].sort((x, y) => x - y);
+}
+// the ticks labeled when labeling every k steps: those on multiples of k steps (so 0 stays labeled), or every kth
+function shapeEvery(items, k, step) {
+  if (k === 1) return items;
+  const q = k * step, on = items.filter(it => Math.abs(it.v / q - Math.round(it.v / q)) < 1e-6);
+  return on.length ? on : items.filter((it, i) => i % k === 0);
+}
+function shapeFont(fs, o, italic) { return (italic ? 'italic ' : '') + '500 ' + fs.toFixed(2) + 'px ' + ((o && o.font) || SHAPE_FONT); }
+
+// ------------------------------------------------------------------ number line layout
+function shapeNlOpt(opt) {
+  const o = Object.assign({}, SHAPE_NL, opt);
+  let min = +o.min, max = +o.max, step = +o.step;
+  if (!isFinite(min)) min = SHAPE_NL.min;
+  if (!isFinite(max)) max = SHAPE_NL.max;
+  if (max < min) { const t = min; min = max; max = t; }
+  if (max === min) max = min + 1;
+  if (!(step > 0) || !isFinite(step)) step = 1;
+  while ((max - min) / step > 400) step *= 2;
+  return { min, max, step, labels: o.labels !== false, frac: !!o.frac };
+}
+// everything a number line draws, in world units: shared by drawing, bounds and hit tests
+function shapeNlLayout(E, pts, z) {
+  const opt = shapeNlOpt(E.opt), size = shapeSize(E);
+  let A = pts[0], B = pts[1] || pts[0];
+  if (B[0] < A[0] || (B[0] === A[0] && B[1] < A[1])) { const t = A; A = B; B = t; }
+  const len = shapeLen(A, B), ux = len > 1e-9 ? (B[0] - A[0]) / len : 1, uy = len > 1e-9 ? (B[1] - A[1]) / len : 0;
+  const nx = -uy, ny = ux;                                        // the side the labels go: below a left-to-right line
+  const hA = shapeHead(A, B, size, len), hB = shapeHead(B, A, size, len), head = hA.L;
+  const inset = Math.min(1.6 * head + size, 0.45 * len), span = opt.max - opt.min;
+  const per = Math.max(len - 2 * inset, 0) / span, gap = opt.step * per;
+  const cnt = Math.floor(span / opt.step + 1e-6), majors = opt.step < 1 - 1e-9;
+  const ticks = [];
+  for (let i = 0; i <= cnt; i++) {
+    const v = shapeNum(opt.min + i * opt.step);
+    ticks.push({ v, t: inset + (v - opt.min) * per, major: majors && Math.abs(v - Math.round(v)) < 1e-9 });
+  }
+  // labels sized from the tick spacing: never under 12 screen px, never oversized on a sparse line
+  const lo = Math.max(12 / z, 8 + size), fs = shapeClamp(0.44 * gap, lo, Math.max(lo, 16 + 1.4 * size));
+  const fmt = shapeFmt(opt.min, opt.step, opt.frac), ff = fmt.den ? Math.max(0.78 * fs, 12 / z) : fs;
+  const th = Math.max(1.6 * size + 3, 0.36 * fs), thM = majors ? 1.4 * th : th;
+  const out = { A, B, len, ux, uy, nx, ny, heads: [hA, hB], ticks, th, thM, tw: Math.max(0.8 * size, 1), fs, ff, fmt, labels: [] };
+  if (!opt.labels || len < 1e-6) return out;
+  const hh = fmt.den ? 0.92 * ff : 0.35 * fs;                      // labels' half height about their center line
+  const off = thM + 0.38 * fs + size / 2 + hh;                    // the center line, below the line
+  const items = ticks.map(tk => { const L = shapeLabelOf(tk.v, fmt); return { v: tk.v, t: tk.t, L, w: shapeLabelW(L, fs, ff) }; });
+  const room = 0.4 * fs;                                          // clear space between neighboring labels
+  for (const k of shapeThinSteps(opt.step, items.length)) {
+    const sel = shapeEvery(items, k, opt.step);
+    let fits = true;
+    for (let i = 0; i + 1 < sel.length && fits; i++) if (sel[i + 1].t - sel[i].t < (sel[i].w + sel[i + 1].w) / 2 + room) fits = false;
+    if (fits) {
+      out.labels = sel.map(it => ({ L: it.L, w: it.w, hh, x: A[0] + ux * it.t + nx * off, y: A[1] + uy * it.t + ny * off }));
+      break;
+    }
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------ coordinate plane layout
+function shapePlaneOpt(opt) {
+  const o = Object.assign({}, SHAPE_PLANE, opt), r = {};
+  for (const k of ['xmin', 'xmax', 'ymin', 'ymax']) r[k] = isFinite(+o[k]) ? +o[k] : SHAPE_PLANE[k];
+  for (const [a, b] of [['xmin', 'xmax'], ['ymin', 'ymax']]) {
+    if (r[b] < r[a]) { const t = r[a]; r[a] = r[b]; r[b] = t; }
+    if (r[b] === r[a]) r[b] = r[a] + 1;
+  }
+  let step = +o.step;
+  if (!(step > 0) || !isFinite(step)) step = 1;
+  while (Math.max(r.xmax - r.xmin, r.ymax - r.ymin) / step > 200) step *= 2;
+  return Object.assign(r, { step, labels: o.labels !== false, grid: o.grid !== false, frac: !!o.frac, names: o.names !== false });
+}
+function shapeRectsMeet(a, b, m) {
+  return Math.abs(a.x - b.x) < (a.w + b.w) / 2 + m && Math.abs(a.y - b.y) < a.hh + b.hh + m;
+}
+function shapePlaneLayout(E, pts, z) {
+  const opt = shapePlaneOpt(E.opt), size = shapeSize(E);
+  const a = pts[0], b = pts[1] || pts[0];
+  const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+  const W = x1 - x0, H = y1 - y0, sx = W / (opt.xmax - opt.xmin), sy = H / (opt.ymax - opt.ymin);
+  const X = v => x0 + (v - opt.xmin) * sx, Y = v => y1 - (v - opt.ymin) * sy;
+  const vals = (lo, hi) => {
+    const r = [], j0 = Math.ceil(lo / opt.step - 1e-7), j1 = Math.floor(hi / opt.step + 1e-7);
+    for (let j = j0; j <= j1; j++) r.push(shapeNum(j * opt.step));
+    return r;
+  };
+  const xs = vals(opt.xmin, opt.xmax), ys = vals(opt.ymin, opt.ymax);
+  const ax = shapeClamp(0, opt.xmin, opt.xmax), ay = shapeClamp(0, opt.ymin, opt.ymax), AX = X(ax), AY = Y(ay);
+  const gw = Math.max(Math.min(0.42 * size, 1.6), 0.5 / z), cell = Math.min(opt.step * sx, opt.step * sy);
+  // the axes run on past the grid at their arrow ends (both ends when the range is on both sides of 0)
+  const L = Math.min(Math.max(10, 4 * size), Math.max(W, H) / 3), oh = 1.15 * L + gw;
+  const xa = [[opt.xmin < 0 ? x0 - oh : x0, AY], [x1 + oh, AY]], ya = [[AX, opt.ymin < 0 ? y1 + oh : y1], [AX, y0 - oh]];
+  const head = (T, F, axis) => Object.assign(shapeHead(T, F, size, 3 * L), { axis });
+  const heads = [head(xa[1], xa[0], 'x'), head(ya[1], ya[0], 'y')];
+  if (opt.xmin < 0) heads.push(head(xa[0], xa[1], 'x'));
+  if (opt.ymin < 0) heads.push(head(ya[0], ya[1], 'y'));
+  const tick = opt.grid ? 0 : Math.max(3, 1.6 * size);
+  const out = { x0, y0, x1, y1, X, Y, xs, ys, ax, ay, AX, AY, xa, ya, heads, gw, aw: size, tick, opt, labels: [], names: [], fs: 0 };
+  if (!opt.labels || W < 1 || H < 1) return out;
+  const lo = Math.max(12 / z, 8 + size), fs = shapeClamp(0.42 * cell, lo, Math.max(lo, 14 + 1.4 * size));
+  const fmt = shapeFmt(Math.min(opt.xmin, opt.ymin), opt.step, opt.frac), ff = fmt.den ? Math.max(0.78 * fs, 12 / z) : fs;
+  const hh = fmt.den ? 0.92 * ff : 0.35 * fs, gap = 0.32 * fs + size / 2 + tick;
+  const origin = ax === 0 && ay === 0;
+  const lab = (v, x, y, right) => { const Lb = shapeLabelOf(v, fmt), w = shapeLabelW(Lb, fs, ff); return { L: Lb, w, hh, x: right ? x - w / 2 : x, y }; };
+  const xi = xs.filter(v => !(origin && v === 0)).map(v => Object.assign(lab(v, X(v), AY + gap + hh), { v }));
+  const yi = ys.filter(v => v !== ay).map(v => Object.assign(lab(v, AX - gap, Y(v), true), { v }));
+  const o0 = origin ? [lab(0, AX - 0.75 * gap, AY + 0.75 * gap + hh, true)] : [];
+  // clear space between neighboring labels, and more round the origin's 0 (so "-1 0" never reads as -10)
+  const m = 0.4 * fs, m0 = 0.6 * fs;
+  for (const k of shapeThinSteps(opt.step, Math.max(xs.length, ys.length))) {
+    const sx_ = shapeEvery(xi, k, opt.step), sy_ = shapeEvery(yi, k, opt.step);
+    let ok = true;
+    for (let i = 0; i + 1 < sx_.length && ok; i++) if (shapeRectsMeet(sx_[i], sx_[i + 1], m)) ok = false;
+    for (let i = 0; i + 1 < sy_.length && ok; i++) if (shapeRectsMeet(sy_[i], sy_[i + 1], m)) ok = false;
+    for (const p of sx_) { if (!ok) break; for (const q of sy_) if (shapeRectsMeet(p, q, m)) { ok = false; break; } }
+    for (const p of o0) for (const q of sx_.concat(sy_)) if (ok && shapeRectsMeet(p, q, m0)) ok = false;
+    if (ok) { out.labels = sx_.concat(sy_, o0); break; }
+  }
+  if (opt.names) {
+    const fn = Math.max(1.05 * fs, 12 / z);
+    // italic (slanted by the browser when the font has no italic): a little wider than upright
+    const wx = shapeTextW('x', fn) + 0.25 * fn, wy = shapeTextW('y', fn) + 0.25 * fn;
+    out.names = [{ s: 'x', fs: fn, w: wx, hh: 0.26 * fn, x: xa[1][0] + 0.3 * fn + wx / 2, y: AY },
+      { s: 'y', fs: fn, w: wy, hh: 0.37 * fn, x: AX, y: ya[1][1] - 0.58 * fn }];
+  }
+  out.fs = fs; out.ff = ff; out.fmt = fmt;
+  return out;
+}
+
+// ------------------------------------------------------------------ outline, bounds, hit
+// polylines that make up the shape's outline, for hit tests and the selection's lasso (closed ones end where they start)
+function shapeOutline(E, pts) {
+  if (!E || !pts || !pts.length) return [];
+  const k = E.shape;
+  if (k === 'line' || k === 'arrow' || k === 'arrow2') {
+    const A = pts[0], B = pts[1] || pts[0], len = shapeLen(A, B), out = [[[A[0], A[1]], [B[0], B[1]]]];
+    if (len > 1e-6 && k !== 'line') out.push(shapeHead(B, A, shapeSize(E), len).poly.concat([[B[0], B[1]]]));
+    if (len > 1e-6 && k === 'arrow2') out.push(shapeHead(A, B, shapeSize(E), len).poly.concat([[A[0], A[1]]]));
+    return out;
+  }
+  if (k === 'ellipse') return [shapeEllipsePts(shapeEllipseOf(pts), 48)];
+  // a number line: its line, and the box of everything it draws (ticks, labels); a plane: its grid, and that box
+  if (k === 'numberline') {
+    const Ly = shapeNlLayout(E, pts, 1);
+    return [[[Ly.A[0], Ly.A[1]], [Ly.B[0], Ly.B[1]]], shapeBoxPoly(shapeBounds(E, pts))];
+  }
+  if (k === 'plane') return [shapeBoxPoly(sbox([pts[0], pts[1] || pts[0]])), shapeBoxPoly(shapeBounds(E, pts))];
+  const V = shapeVerts(E, pts);
+  if (!V) return [];
+  return [V.length > 2 ? V.concat([V[0].slice()]) : V];
+}
+
+// [x0, y0, x1, y1] of everything drawn: stroke width, arrowheads, ticks and labels (labels at zoom o.z, default 1)
+function shapeBounds(E, pts, o) {
+  if (!E || !pts || !pts.length) return [0, 0, 0, 0];
+  const z = o && o.z > 0 ? o.z : 1, size = shapeSize(E), hw = Math.max(size, 0.6 / z) / 2, k = E.shape;
+  const grow = (b, m) => [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+  if (k === 'line' || k === 'arrow' || k === 'arrow2') {
+    const A = pts[0], B = pts[1] || pts[0], len = shapeLen(A, B);
+    let bx = grow(sbox([A, B]), hw);
+    if (len > 1e-6 && k !== 'line') bx = ubox(bx, sbox(shapeHead(B, A, size, len).poly));
+    if (len > 1e-6 && k === 'arrow2') bx = ubox(bx, sbox(shapeHead(A, B, size, len).poly));
+    return bx;
+  }
+  if (k === 'numberline') {
+    const Ly = shapeNlLayout(E, pts, z);
+    let bx = grow(sbox([Ly.A, Ly.B]), hw);
+    for (const h of Ly.heads) bx = ubox(bx, sbox(h.poly));
+    const tx = Ly.nx * Ly.thM, ty = Ly.ny * Ly.thM, hw2 = Ly.tw / 2;
+    for (const tk of [Ly.ticks[0], Ly.ticks[Ly.ticks.length - 1]]) {
+      if (!tk) continue;
+      const px = Ly.A[0] + Ly.ux * tk.t, py = Ly.A[1] + Ly.uy * tk.t;
+      bx = ubox(bx, grow(sbox([[px - tx, py - ty], [px + tx, py + ty]]), hw2));
+    }
+    for (const it of Ly.labels) bx = ubox(bx, [it.x - it.w / 2, it.y - it.hh, it.x + it.w / 2, it.y + it.hh]);
+    return bx;
+  }
+  if (k === 'plane') {
+    const Ly = shapePlaneLayout(E, pts, z);
+    let bx = grow([Ly.x0, Ly.y0, Ly.x1, Ly.y1], Ly.gw);
+    bx = ubox(bx, grow(sbox(Ly.xa.concat(Ly.ya)), Ly.aw / 2));
+    for (const h of Ly.heads) bx = ubox(bx, sbox(h.poly));
+    for (const it of Ly.labels.concat(Ly.names)) bx = ubox(bx, [it.x - it.w / 2, it.y - it.hh, it.x + it.w / 2, it.y + it.hh]);
+    return bx;
+  }
+  if (k === 'ellipse') return grow(sbox([pts[0], pts[1] || pts[0]]), hw);
+  const V = shapeVerts(E, pts);
+  return V && V.length ? grow(sbox(V), hw) : [0, 0, 0, 0];
+}
+
+// is world point p within r of the shape? (its outline widened by half its width; anywhere inside when it is filled;
+// a number line or plane anywhere in its box). o.z as for shapeBounds.
+function shapeHit(E, pts, p, r, o) {
+  if (!E || !pts || !pts.length || !p) return false;
+  r = r > 0 ? r : 0;
+  const k = E.shape, size = shapeSize(E), rr = r + size / 2;
+  if (k === 'numberline' || k === 'plane') {
+    const b = shapeBounds(E, pts, o);
+    return p[0] >= b[0] - r && p[0] <= b[2] + r && p[1] >= b[1] - r && p[1] <= b[3] + r;
+  }
+  if (k === 'line' || k === 'arrow' || k === 'arrow2') {
+    const A = pts[0], B = pts[1] || pts[0], len = shapeLen(A, B);
+    if (segDist(p, A, B) <= rr) return true;
+    if (len < 1e-6 || k === 'line') return false;
+    const heads = k === 'arrow2' ? [shapeHead(B, A, size, len), shapeHead(A, B, size, len)] : [shapeHead(B, A, size, len)];
+    return heads.some(h => shapeInPoly(p, h.poly) || shapeNearPath(p, h.poly, r, true));
+  }
+  if (k === 'ellipse') {
+    const el = shapeEllipseOf(pts);
+    if (shapeFilled(E) && el.rx > 0 && el.ry > 0 && ((p[0] - el.cx) / el.rx) ** 2 + ((p[1] - el.cy) / el.ry) ** 2 <= 1) return true;
+    const n = Math.round(shapeClamp(shapePerimeter(el.rx, el.ry) / 6, 48, 480));
+    return shapeNearPath(p, shapeEllipsePts(el, n), rr, false);
+  }
+  const V = shapeVerts(E, pts);
+  if (!V || !V.length) return false;
+  if (V.length > 2 && shapeFilled(E) && shapeInPoly(p, V)) return true;
+  return shapeNearPath(p, V, rr, V.length > 2);
+}
+
+// ------------------------------------------------------------------ drawing
+// visible dash and gap lengths for a line of width w: 3 and 2.5 widths, a little longer for thin lines
+function shapeDashLen(w) { const u = Math.max(w, 2.6); return [3 * u, 2.5 * u]; }
+// a dashed segment with a whole dash at each end (round caps included), the pattern stretched to fit
+function shapeDashSeg(ctx, P, Q, w) {
+  const len = shapeLen(P, Q), [D, G] = shapeDashLen(w);
+  ctx.beginPath(); ctx.moveTo(P[0], P[1]); ctx.lineTo(Q[0], Q[1]);
+  if (len + w >= 0.65 * (2 * D + G)) {                              // room for two dashes, if a little short
+    const n = Math.max(1, Math.round((len + w - D) / (D + G))), k = (len + w) / ((n + 1) * D + n * G);
+    ctx.setLineDash([Math.max(k * D - w, 0.01), k * G + w]); ctx.lineDashOffset = 0;
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+}
+// a dashed polygon: every side ends in half a dash, so each corner gets one dash bent round it
+function shapeDashPoly(ctx, V, closed, w) {
+  const [D, G] = shapeDashLen(w), n = V.length;
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const P = V[i], Q = V[(i + 1) % n], len = shapeLen(P, Q);
+    if (!closed) { shapeDashSeg(ctx, P, Q, w); continue; }
+    ctx.beginPath(); ctx.moveTo(P[0], P[1]); ctx.lineTo(Q[0], Q[1]);
+    if (len >= 0.8 * (D + G)) {
+      const m = Math.max(1, Math.round(len / (D + G))), k = len / (m * (D + G)), d = Math.max(k * D - w, 0.01);
+      ctx.setLineDash([d, k * G + w]); ctx.lineDashOffset = d / 2;
+    } else ctx.setLineDash([]);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]); ctx.lineDashOffset = 0;
+}
+function shapePath(ctx, V, closed) {
+  ctx.moveTo(V[0][0], V[0][1]);
+  for (let i = 1; i < V.length; i++) ctx.lineTo(V[i][0], V[i][1]);
+  if (closed) ctx.closePath();
+}
+function shapeFillHeads(ctx, heads) {
+  ctx.beginPath();
+  for (const h of heads) shapePath(ctx, h.poly, true);
+  ctx.fill();
+}
+
+function shapeDrawLine(ctx, E, pts, w, size) {
+  const A = pts[0], B = pts[1] || pts[0], len = shapeLen(A, B);
+  if (len < 1e-6) { ctx.beginPath(); ctx.arc(A[0], A[1], w / 2, 0, 2 * Math.PI); ctx.fill(); return; }
+  const ux = (B[0] - A[0]) / len, uy = (B[1] - A[1]) / len, at = t => [A[0] + ux * t, A[1] + uy * t];
+  const hb = E.shape !== 'line' ? shapeHead(B, A, size, len) : null, ha = E.shape === 'arrow2' ? shapeHead(A, B, size, len) : null;
+  // the shaft runs into each head, its end hidden under it; dashes are fitted to the part that shows
+  const in0 = ha ? 0.55 * ha.L : 0, in1 = hb ? len - 0.55 * hb.L : len;
+  if (E.dash) {
+    const s0 = ha ? ha.L : 0, s1 = hb ? len - hb.L : len;
+    shapeDashSeg(ctx, at(s0), at(s1), w);
+    if (ha || hb) {
+      ctx.beginPath();
+      if (ha) { ctx.moveTo(...at(in0)); ctx.lineTo(...at(s0 + w / 2)); }
+      if (hb) { ctx.moveTo(...at(s1 - w / 2)); ctx.lineTo(...at(in1)); }
+      ctx.stroke();
+    }
+  } else { ctx.beginPath(); ctx.moveTo(...at(in0)); ctx.lineTo(...at(in1)); ctx.stroke(); }
+  const heads = [ha, hb].filter(Boolean);
+  if (heads.length) shapeFillHeads(ctx, heads);
+}
+function shapeDrawEllipse(ctx, E, pts, w) {
+  const el = shapeEllipseOf(pts);
+  ctx.beginPath(); ctx.ellipse(el.cx, el.cy, el.rx, el.ry, 0, 0, 2 * Math.PI);
+  if (shapeFilled(E)) { const f = ctx.fillStyle; ctx.fillStyle = E.fill; ctx.fill(); ctx.fillStyle = f; }
+  if (E.dash) {
+    const per = shapePerimeter(el.rx, el.ry), [D, G] = shapeDashLen(w);
+    if (per > 2.5 * (D + G)) {
+      const n = Math.max(4, 2 * Math.round(per / (2 * (D + G)))), k = per / (n * (D + G)), d = Math.max(k * D - w, 0.01);
+      ctx.setLineDash([d, k * G + w]); ctx.lineDashOffset = d / 2;
+    }
+  }
+  ctx.stroke();
+}
+function shapeDrawPoly(ctx, E, pts, w) {
+  const V = shapeVerts(E, pts);
+  if (!V || !V.length) return;
+  if (V.length === 1) { ctx.beginPath(); ctx.arc(V[0][0], V[0][1], w / 2, 0, 2 * Math.PI); ctx.fill(); return; }
+  const closed = V.length > 2;
+  if (closed && shapeFilled(E)) { const f = ctx.fillStyle; ctx.beginPath(); shapePath(ctx, V, true); ctx.fillStyle = E.fill; ctx.fill(); ctx.fillStyle = f; }
+  if (E.dash) shapeDashPoly(ctx, V, closed, w);
+  else { ctx.beginPath(); shapePath(ctx, V, closed); ctx.stroke(); }
+}
+
+// Labels as the pieces they draw: text runs { s, x, y (baseline), size, align }, largest first so the font changes
+// least, and fraction bars [x, y, w, h]. Whole numbers at fs; a fraction's digits at ff, stacked over a bar on the
+// labels' center line, with a mixed number's whole part and a minus sign beside it at fs.
+function shapeLabelParts(items, fs, ff, z) {
+  const bar = Math.max(0.075 * ff, 0.6 / z), text = [], bars = [];
+  for (const it of items) {
+    const L = it.L;
+    if (L.s != null) { text.push({ s: L.s, x: it.x, y: it.y + 0.35 * fs, size: fs, align: 'center' }); continue; }
+    let x = it.x - it.w / 2;
+    if (L.neg) { text.push({ s: SHAPE_MINUS, x, y: it.y + 0.295 * fs, size: fs, align: 'left' }); x += shapeTextW(SHAPE_MINUS, fs) + 0.06 * fs; }
+    if (L.whole) { text.push({ s: String(L.whole), x, y: it.y + 0.35 * fs, size: fs, align: 'left' }); x += shapeTextW(L.whole, fs) + 0.08 * fs; }
+    const fw = it.x + it.w / 2 - x;
+    bars.push([x, it.y - bar / 2, fw, bar]);
+    text.push({ s: String(L.num), x: x + fw / 2, y: it.y - 0.2 * ff, size: ff, align: 'center' }, { s: String(L.den), x: x + fw / 2, y: it.y + 0.9 * ff, size: ff, align: 'center' });
+  }
+  text.sort((a, b) => b.size - a.size);
+  return { text, bars };
+}
+// draw label pieces filled, or as a halo (stroked halo wide, in the current stroke / fill style)
+function shapeDrawParts(ctx, P, o, halo) {
+  let size = -1;
+  ctx.textBaseline = 'alphabetic';
+  for (const t of P.text) {
+    if (t.size !== size) { size = t.size; ctx.font = shapeFont(size, o); }
+    ctx.textAlign = t.align;
+    if (halo) ctx.strokeText(t.s, t.x, t.y); else ctx.fillText(t.s, t.x, t.y);
+  }
+  for (const b of P.bars) ctx.fillRect(b[0] - halo / 2, b[1] - halo / 2, b[2] + halo, b[3] + halo);
+}
+// Lines that are level or upright put on whole device pixels, so thin ones stay crisp on a 4K panel: { w(width),
+// x(x, width), y(y, width) } in world units, or null when the context's transform is not a plain scale and shift.
+function shapeSnapper(ctx) {
+  if (typeof ctx.getTransform !== 'function') return null;
+  const t = ctx.getTransform(), k = t.a;
+  if (!(k > 0) || Math.abs(t.b) > 1e-9 || Math.abs(t.c) > 1e-9 || Math.abs(t.d - k) > 1e-9 * k) return null;
+  const px = w => Math.max(1, Math.round(w * k)), at = (v, w, off) => { const W = px(w), d = v * k + off; return ((W % 2 ? Math.floor(d) + 0.5 : Math.round(d)) - off) / k; };
+  return { w: w => px(w) / k, x: (x, w) => at(x, w, t.e), y: (y, w) => at(y, w, t.f) };
+}
+const shapeNoSnap = { w: w => w, x: x => x, y: y => y };
+function shapeDrawNl(ctx, E, pts, o, z, w) {
+  const Ly = shapeNlLayout(E, pts, z), { A, ux, uy, nx, ny, len } = Ly;
+  if (len < 1e-6) { ctx.beginPath(); ctx.arc(A[0], A[1], w / 2, 0, 2 * Math.PI); ctx.fill(); return; }
+  // a level line (the usual case) on whole pixels: its line, ticks and heads moved together
+  const sn = uy === 0 ? shapeSnapper(ctx) || shapeNoSnap : shapeNoSnap, tw = Math.max(Ly.tw, 0.6 / z);
+  const dy = sn.y(A[1], w) - A[1], at = t => [A[0] + ux * t, A[1] + dy + uy * t];
+  ctx.beginPath(); ctx.moveTo(...at(0.55 * Ly.heads[0].L)); ctx.lineTo(...at(len - 0.55 * Ly.heads[1].L));
+  ctx.lineWidth = sn.w(w); ctx.stroke();
+  shapeFillHeads(ctx, Ly.heads.map(h => ({ poly: h.poly.map(p => [p[0], p[1] + dy]) })));
+  ctx.beginPath();
+  for (const tk of Ly.ticks) {
+    const P = at(tk.t), h = tk.major ? Ly.thM : Ly.th, x = uy === 0 ? sn.x(P[0], tw) : P[0];
+    ctx.moveTo(x - nx * h, P[1] - ny * h); ctx.lineTo(x + nx * h, P[1] + ny * h);
+  }
+  ctx.lineWidth = sn.w(tw); ctx.stroke();
+  if (Ly.labels.length) shapeDrawParts(ctx, shapeLabelParts(Ly.labels, Ly.fs, Ly.ff, z), o, 0);
+}
+function shapeDrawPlane(ctx, E, pts, o, z, col) {
+  const Ly = shapePlaneLayout(E, pts, z), { x0, y0, x1, y1, X, Y, opt } = Ly, ga = ctx.globalAlpha;
+  const fill = shapeFilled(E) ? E.fill : null, sn = shapeSnapper(ctx) || shapeNoSnap;
+  if (fill) { ctx.fillStyle = fill; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); ctx.fillStyle = col; }
+  if (opt.grid && x1 - x0 > 0 && y1 - y0 > 0) {
+    // the grid: the ink at 30 % over the paper, on whole pixels, the axes' own lines left to them
+    const gw = Ly.gw, vx = Ly.xs.filter(v => v !== Ly.ax).map(X), vy = Ly.ys.filter(v => v !== Ly.ay).map(Y);
+    if (Math.abs(X(Ly.xs[0]) - x0) > 1e-6 && Ly.AX !== x0) vx.push(x0);
+    if (Math.abs(X(Ly.xs[Ly.xs.length - 1]) - x1) > 1e-6 && Ly.AX !== x1) vx.push(x1);
+    if (Math.abs(Y(Ly.ys[0]) - y1) > 1e-6 && Ly.AY !== y1) vy.push(y1);
+    if (Math.abs(Y(Ly.ys[Ly.ys.length - 1]) - y0) > 1e-6 && Ly.AY !== y0) vy.push(y0);
+    const t = sn.y(y0, gw), b = sn.y(y1, gw), l = sn.x(x0, gw), r = sn.x(x1, gw), w = sn.w(gw);
+    const pc = shapeRGB(o.paper), ic = shapeRGB(col), fc = fill ? shapeRGB(fill) : null;
+    if (pc && ic && ic[3] === 1 && (!fill || fc) && ga === 1) {
+      // known colors: opaque rectangles in the mixed color (crossings stay one color; far cheaper to draw than
+      // wide strokes, which matters for big planes on a 4K panel)
+      const g = shapeOver(fc ? shapeOver(pc, fc, 1) : pc, ic, 0.3);
+      ctx.fillStyle = 'rgb(' + g.slice(0, 3).map(Math.round).join(',') + ')';
+      for (const x of vx) ctx.fillRect(sn.x(x, gw) - w / 2, t - w / 2, w, b - t + w);
+      for (const y of vy) ctx.fillRect(l - w / 2, sn.y(y, gw) - w / 2, r - l + w, w);
+      ctx.fillStyle = col;
+    } else {
+      // otherwise one stroke, see-through (one path, so crossings are no darker than the lines)
+      ctx.beginPath();
+      for (const x of vx) { const xs = sn.x(x, gw); ctx.moveTo(xs, t); ctx.lineTo(xs, b); }
+      for (const y of vy) { const ys = sn.y(y, gw); ctx.moveTo(l, ys); ctx.lineTo(r, ys); }
+      ctx.lineWidth = w; ctx.lineCap = 'square'; ctx.globalAlpha = ga * 0.3; ctx.stroke();
+      ctx.globalAlpha = ga; ctx.lineCap = 'round';
+    }
+  }
+  const parts = Ly.labels.length ? shapeLabelParts(Ly.labels, Ly.fs, Ly.ff, z) : null;
+  if (parts && opt.grid && o.paper) {
+    // halos round the labels in the paper's color (and the plane's fill over it), so grid lines stop short of
+    // the digits; kept to the grid, and drawn before the axes so they never bite an axis or an arrowhead
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+    ctx.lineJoin = 'round'; ctx.lineWidth = 0.32 * Ly.fs;
+    for (const f of [o.paper, fill]) if (f) { ctx.strokeStyle = f; ctx.fillStyle = f; shapeDrawParts(ctx, parts, o, 0.32 * Ly.fs); }
+    ctx.restore();
+  }
+  // the axes, heavier, on whole pixels, with their arrowheads (the line ends hidden under the heads)
+  const aw = Math.max(Ly.aw, 0.6 / z), AX = sn.x(Ly.AX, aw), AY = sn.y(Ly.AY, aw), L = Ly.heads[0].L;
+  ctx.beginPath();
+  for (const [P, Q, hp] of [[[Ly.xa[0][0], AY], [Ly.xa[1][0], AY], opt.xmin < 0], [[AX, Ly.ya[0][1]], [AX, Ly.ya[1][1]], opt.ymin < 0]]) {
+    const d = shapeLen(P, Q) || 1, ux = (Q[0] - P[0]) / d, uy = (Q[1] - P[1]) / d, s = hp ? 0.55 * L : 0, e = d - 0.55 * L;
+    ctx.moveTo(P[0] + ux * s, P[1] + uy * s); ctx.lineTo(P[0] + ux * e, P[1] + uy * e);
+  }
+  ctx.lineWidth = sn.w(aw); ctx.stroke();
+  if (Ly.tick) {
+    const tw = Math.max(0.8 * Ly.aw, 0.6 / z);
+    ctx.beginPath();
+    for (const v of Ly.xs) if (v !== Ly.ax) { const x = sn.x(X(v), tw); ctx.moveTo(x, AY - Ly.tick); ctx.lineTo(x, AY + Ly.tick); }
+    for (const v of Ly.ys) if (v !== Ly.ay) { const y = sn.y(Y(v), tw); ctx.moveTo(AX - Ly.tick, y); ctx.lineTo(AX + Ly.tick, y); }
+    ctx.lineWidth = sn.w(tw); ctx.stroke();
+  }
+  shapeFillHeads(ctx, Ly.heads.map(h => ({ poly: h.poly.map(p => h.axis === 'x' ? [p[0], p[1] + AY - Ly.AY] : [p[0] + AX - Ly.AX, p[1]]) })));
+  if (parts) { ctx.fillStyle = col; shapeDrawParts(ctx, parts, o, 0); }
+  for (const it of Ly.names) {
+    ctx.font = shapeFont(it.fs, o, true); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(it.s, it.x, it.y + (it.s === 'x' ? 0.25 : 0.12) * it.fs);
+  }
+}
+
+// draw it; ctx has the world transform; o = { ink: color when E.color is null, paper: the paper color, z: zoom,
+// font: the labels' font family list }
+function shapeDraw(ctx, E, pts, o) {
+  if (!ctx || !E || !pts || !pts.length) return;
+  o = o || {};
+  const z = o.z > 0 ? o.z : 1, size = shapeSize(E), col = E.color || o.ink || '#1b2a4a', w = Math.max(size, 0.6 / z);
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = w; ctx.strokeStyle = col; ctx.fillStyle = col;
+  ctx.setLineDash([]); ctx.lineDashOffset = 0;
+  const k = E.shape;
+  if (k === 'line' || k === 'arrow' || k === 'arrow2') shapeDrawLine(ctx, E, pts, w, size);
+  else if (k === 'ellipse') shapeDrawEllipse(ctx, E, pts, w);
+  else if (k === 'numberline') shapeDrawNl(ctx, E, pts, o, z, w);
+  else if (k === 'plane') shapeDrawPlane(ctx, E, pts, o, z, col);
+  else shapeDrawPoly(ctx, E, pts, w);
+  ctx.restore();
+}
+
+// ------------------------------------------------------------------ draw-and-hold recognition
+// Thresholds, relative to the stroke's size unless noted. Tuned on synthetic hand-drawn shapes against single-stroke
+// symbols from real handwriting (test/shapes_check.js): be conservative, a wrong "yes" turns a symbol into a shape.
+const SHAPE_REC = {
+  n: 96,            // the stroke resampled to this many points
+  minSize: 16,      // screen pixels: nothing smaller is drawn as a shape on purpose (dots, commas, primes)
+  lineDev: 0.035,   // a line: no point further than this from the fitted line (of its length)
+  lineRms: 0.013,
+  lineBack: 0.02,   // ... and never doubling back by more than this
+  hookIn: 5,        // resampled points that may be dropped where the pen landed (a hook) ...
+  hookOut: 3,       // ... and where it stopped
+  gap: 0.22,        // a closed shape: start and end within this (of the size) ...
+  lead: 0.1,        // ... with at most this much of a run-in before the loop and ...
+  tail: 0.35,       // ... this much of an overshoot after it (of the loop's length), staying on the loop ...
+  stray: 0.07,
+  past: 0.12,       // ... beyond the first bit past the closing point
+  turnNet: 0.15,    // one turn: net turning within this of 360° (as a fraction of a turn) ...
+  turnAbs: 1.6,     // ... no more than this many turns' worth of turning in all ...
+  sharp: 168,       // ... and no switchback (degrees over two neighboring points of 32)
+  dp: 0.035,        // polygon corners: Douglas-Peucker tolerance (of the size) ...
+  merge: 20,        // ... corners turning less than this (degrees) dropped ...
+  chamfer: 0.08,    // ... and two corners closer than this (of the size) that turn as one corner (at most
+  chamferTurn: 150, //     this many degrees together) made one
+  sideDev: 0.07,    // polygon sides: no point of a side's middle further than this from it (of its length) ...
+  sideEnd: 0.12,    // ... nor of its ends (the corners)
+  sideRms: 0.028,
+  sideMin: 0.05,    // ... each side at least this long (of the size)
+  cornerMin: 22,    // degrees a corner must turn
+  rectAngle: 13,    // a rectangle: corners within this of 90° ...
+  rectTilt: 12,     // ... sides within this of upright
+  square: 0.08,     // sides within this of each other make it a square
+  ellRms: 0.04,     // an ellipse: radial error (of the radius) ...
+  ellMax: 0.11,
+  ellOpen: 45,      // ... and no opening wider than this (degrees about its center)
+  round: 1.12,      // axes within this ratio make it a circle
+  ellTilt: 12,      // a longer ellipse must be upright within this (the Board's ellipses are axis-aligned)
+  snap: 4,          // lines within this many degrees of a 15° step are put on it
+};
+
+function shapeRecClean(points, px) {
+  if (!Array.isArray(points)) return null;
+  let P = [];
+  for (const q of points) {
+    if (!q) continue;
+    const x = +q[0], y = +q[1];
+    if (!isFinite(x) || !isFinite(y)) continue;
+    const l = P[P.length - 1];
+    if (!l || Math.abs(x - l[0]) > 1e-9 || Math.abs(y - l[1]) > 1e-9) P.push([x, y]);
+  }
+  if (P.length < 2) return null;
+  // a held pen jitters about where it stopped (and may have dwelt where it landed): one point for each, at the
+  // middle of the jitter
+  const b = sbox(P), S = Math.max(b[2] - b[0], b[3] - b[1]), rho = Math.max(3 * px, 0.025 * S);
+  // Q runs from the stroke's end inwards: how many of its points the pen jittered over, and where it rested
+  const rest = Q => {
+    let k = 1;
+    while (k < Q.length - 1 && shapeLen(Q[k], Q[0]) <= 2 * rho) k++;
+    const xs = Q.slice(0, k).map(p => p[0]).sort((u, v) => u - v), ys = Q.slice(0, k).map(p => p[1]).sort((u, v) => u - v), c = [xs[k >> 1], ys[k >> 1]];
+    let j = 0;
+    while (j < Q.length - 2 && shapeLen(Q[j], c) <= 1.5 * rho) j++;
+    return [j, c];
+  };
+  const [je, e] = rest(P.slice().reverse());
+  if (je) P = P.slice(0, P.length - je).concat([e]);
+  const [js, s] = rest(P);
+  if (js) P = [s].concat(P.slice(js));
+  // where the hand moved slowly the points crowd and jitter: keep one every so often
+  const gap = Math.max(1.2 * px, 0.012 * S), Q = [P[0]];
+  for (let i = 1; i < P.length - 1; i++) if (shapeLen(P[i], Q[Q.length - 1]) >= gap) Q.push(P[i]);
+  if (P.length > 1) Q.push(P[P.length - 1]);
+  return Q.length >= 2 ? Q : null;
+}
+function shapePathLen(P, i0, i1) { let t = 0; for (let i = i0 + 1; i <= i1; i++) t += shapeLen(P[i - 1], P[i]); return t; }
+// n points evenly spaced along a polyline (closed: around it and back, the last point not repeated)
+function shapeResample(P, n, closed) {
+  const Q = closed ? P.concat([P[0]]) : P, L = shapePathLen(Q, 0, Q.length - 1), m = closed ? n : n - 1;
+  if (!(L > 0)) return null;
+  const step = L / m, out = [[Q[0][0], Q[0][1]]];
+  let need = step, i = 1, prev = Q[0];
+  while (out.length < n && i < Q.length) {
+    const d = shapeLen(prev, Q[i]);
+    if (d >= need && d > 0) {
+      const t = need / d, p = [prev[0] + (Q[i][0] - prev[0]) * t, prev[1] + (Q[i][1] - prev[1]) * t];
+      out.push(p); prev = p; need = step;
+    } else { need -= d; prev = Q[i]; i++; }
+  }
+  while (out.length < n) out.push(closed ? Q[Q.length - 2].slice() : Q[Q.length - 1].slice());
+  if (!closed) out[n - 1] = [Q[Q.length - 1][0], Q[Q.length - 1][1]];
+  return out;
+}
+// total least squares line through P[i0..i1]: direction from the first point to the last, deviations along it
+function shapeFitLine(P, i0, i1) {
+  const n = i1 - i0 + 1;
+  let cx = 0, cy = 0;
+  for (let i = i0; i <= i1; i++) { cx += P[i][0]; cy += P[i][1]; }
+  cx /= n; cy /= n;
+  let sxx = 0, syy = 0, sxy = 0;
+  for (let i = i0; i <= i1; i++) { const dx = P[i][0] - cx, dy = P[i][1] - cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+  const phi = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  let ux = Math.cos(phi), uy = Math.sin(phi);
+  if ((P[i1][0] - P[i0][0]) * ux + (P[i1][1] - P[i0][1]) * uy < 0) { ux = -ux; uy = -uy; }
+  let dmax = 0, ss = 0, t0 = Infinity, t1 = -Infinity, back = 0, run = -Infinity;
+  for (let i = i0; i <= i1; i++) {
+    const dx = P[i][0] - cx, dy = P[i][1] - cy, t = dx * ux + dy * uy, d = Math.abs(dy * ux - dx * uy);
+    if (d > dmax) dmax = d;
+    ss += d * d;
+    if (t < t0) t0 = t;
+    if (t > t1) t1 = t;
+    if (t > run) run = t;
+    if (run - t > back) back = run - t;
+  }
+  return { cx, cy, ux, uy, dmax, rms: Math.sqrt(ss / n), t0, t1, back };
+}
+// a line's ends turned onto the nearest 15° step when within SHAPE_REC.snap degrees, about its middle
+function shapeRecSnapLine(A, B) {
+  const th = Math.atan2(B[1] - A[1], B[0] - A[0]), q = Math.PI / 12, ts = Math.round(th / q) * q;
+  if (Math.abs(th - ts) > SHAPE_REC.snap * Math.PI / 180) return [A, B];
+  const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, h = shapeLen(A, B) / 2;
+  let ux = Math.cos(ts), uy = Math.sin(ts);
+  if (Math.abs(ux) < 1e-12) ux = 0;
+  if (Math.abs(uy) < 1e-12) uy = 0;
+  return [[mx - ux * h, my - uy * h], [mx + ux * h, my + uy * h]];
+}
+function shapeRecLine(R, px) {
+  const n = R.length, C = SHAPE_REC;
+  const tries = [];
+  for (let a = 0; a <= C.hookIn; a++) for (let b = 0; b <= C.hookOut; b++) tries.push([a, b]);
+  tries.sort((p, q) => p[0] + p[1] - q[0] - q[1]);
+  for (const [a, b] of tries) {
+    const f = shapeFitLine(R, a, n - 1 - b), c = f.t1 - f.t0;
+    if (!(c > 0) || f.dmax > Math.max(C.lineDev * c, 0.8 * px) || f.rms > C.lineRms * c + 0.25 * px || f.back > C.lineBack * c + 1.5 * px) continue;
+    const proj = p => { const t = (p[0] - f.cx) * f.ux + (p[1] - f.cy) * f.uy; return [f.cx + f.ux * t, f.cy + f.uy * t]; };
+    return { shape: 'line', pts: shapeRecSnapLine(proj(R[a]), proj(R[n - 1 - b])) };
+  }
+  return null;
+}
+function shapeSegX(a, b, c, d) {
+  const rx = b[0] - a[0], ry = b[1] - a[1], sx = d[0] - c[0], sy = d[1] - c[1], den = rx * sy - ry * sx;
+  if (Math.abs(den) < 1e-12) return null;
+  const qx = c[0] - a[0], qy = c[1] - a[1], s = (qx * sy - qy * sx) / den, t = (qx * ry - qy * rx) / den;
+  return s >= 0 && s <= 1 && t >= 0 && t <= 1 ? { s, t, p: [a[0] + rx * s, a[1] + ry * s] } : null;
+}
+function shapeDistPath(p, P, i0, i1) {
+  let d = Infinity;
+  for (let i = Math.max(i0, 0); i < Math.min(i1, P.length - 1); i++) d = Math.min(d, segDist(p, P[i], P[i + 1]));
+  return d;
+}
+// the closed loop a stroke draws: cut where it crosses itself near its ends, or closed across a small gap; the
+// run-in before it and the overshoot after it must be short and stay on it. null when the stroke is not closed.
+function shapeLoop(R, S) {
+  const n = R.length, C = SHAPE_REC, step = shapePathLen(R, 0, n - 1) / (n - 1);
+  let best = null;
+  for (let i = 0; i < Math.floor(0.2 * n); i++) {
+    for (let j = n - 2; j >= Math.floor(0.55 * n); j--) {
+      if (j <= i + 2) continue;
+      const X = shapeSegX(R[i], R[i + 1], R[j], R[j + 1]);
+      if (!X) continue;
+      const lead = i + X.s, tail = n - 1 - (j + X.t);
+      if (!best || lead + tail < best.lead + best.tail) best = { i, j, X, lead, tail };
+    }
+  }
+  let loop, lead = 0, tail = 0, i0 = 0, i1 = n - 1, X = R[0];
+  if (best) {
+    X = best.X.p;
+    loop = [X].concat(R.slice(best.i + 1, best.j + 1));
+    lead = best.lead; tail = best.tail; i0 = best.i + 1; i1 = best.j;
+  } else {
+    let jc = -1, gap = Infinity;
+    for (let j = Math.floor(0.6 * n); j < n; j++) { const d = shapeLen(R[j], R[0]); if (d < gap) { gap = d; jc = j; } }
+    if (gap > C.gap * S) return null;
+    loop = R.slice(0, jc + 1); tail = n - 1 - jc; i1 = jc;
+  }
+  const len = (i1 - i0) * step;
+  if (!(len > 0) || lead * step > C.lead * len || tail * step > C.tail * len) return null;
+  // a short run past the closing corner may go its own way; anything longer must run along the loop
+  const strays = j => shapeLen(R[j], X) > C.past * S && shapeDistPath(R[j], R, i0, i1) > C.stray * S;
+  for (let j = i1 + 1; j < n; j++) if (strays(j)) return null;
+  for (let j = 0; j < i0; j++) if (strays(j)) return null;
+  return loop;
+}
+// net turning (in turns) round a closed loop, its total, and the sharpest turn over two neighboring points (degrees)
+function shapeTurning(R) {
+  const n = R.length, ts = [];
+  let net = 0, abs = 0, sharp = 0;
+  for (let i = 0; i < n; i++) {
+    const a = R[(i + n - 1) % n], b = R[i], c = R[(i + 1) % n];
+    const t = Math.atan2((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]), (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]));
+    net += t; abs += Math.abs(t); ts.push(t);
+  }
+  for (let i = 0; i < n; i++) sharp = Math.max(sharp, Math.abs(ts[i] + ts[(i + 1) % n]));
+  return { net: net / (2 * Math.PI), abs: abs / (2 * Math.PI), sharp: sharp * 180 / Math.PI };
+}
+function shapeSolve(M, v) { // Gaussian elimination with partial pivoting; null when singular
+  const n = v.length, A = M.map((r, i) => r.concat([v[i]]));
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (Math.abs(A[p][c]) < 1e-12) return null;
+    const t = A[c]; A[c] = A[p]; A[p] = t;
+    for (let r = c + 1; r < n; r++) { const f = A[r][c] / A[c][c]; for (let k = c; k <= n; k++) A[r][k] -= f * A[c][k]; }
+  }
+  const x = new Array(n);
+  for (let r = n - 1; r >= 0; r--) { let s = A[r][n]; for (let k = r + 1; k < n; k++) s -= A[r][k] * x[k]; x[r] = s / A[r][r]; }
+  return x;
+}
+// an ellipse through a closed loop's points: center, semi-axes along its principal axes, tilt, radial errors
+function shapeFitEllipse(Q, S) {
+  const n = Q.length;
+  let cx = 0, cy = 0;
+  for (const p of Q) { cx += p[0]; cy += p[1]; }
+  cx /= n; cy /= n;
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const p of Q) { const dx = p[0] - cx, dy = p[1] - cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+  const phi = 0.5 * Math.atan2(2 * sxy, sxx - syy), c = Math.cos(phi), s = Math.sin(phi);
+  // A u² + B v² + C u + D v = 1 in the principal frame (scaled to the stroke's size for a well-conditioned solve)
+  const M = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], r = [0, 0, 0, 0], U = [], V = [];
+  for (const p of Q) {
+    const dx = (p[0] - cx) / S, dy = (p[1] - cy) / S, u = dx * c + dy * s, v = dy * c - dx * s, f = [u * u, v * v, u, v];
+    U.push(u); V.push(v);
+    for (let i = 0; i < 4; i++) { r[i] += f[i]; for (let j = 0; j < 4; j++) M[i][j] += f[i] * f[j]; }
+  }
+  const x = shapeSolve(M, r);
+  if (!x || !(x[0] > 0) || !(x[1] > 0)) return null;
+  const u0 = -x[2] / (2 * x[0]), v0 = -x[3] / (2 * x[1]), K = 1 + x[0] * u0 * u0 + x[1] * v0 * v0;
+  if (!(K > 0)) return null;
+  const a = Math.sqrt(K / x[0]), b = Math.sqrt(K / x[1]);
+  let ss = 0, mx = 0, ang = [];
+  for (let i = 0; i < n; i++) {
+    const du = (U[i] - u0) / a, dv = (V[i] - v0) / b, e = Math.hypot(du, dv) - 1;
+    ss += e * e; mx = Math.max(mx, Math.abs(e)); ang.push(Math.atan2(dv, du));
+  }
+  ang.sort((p, q) => p - q);
+  let open = 2 * Math.PI - (ang[n - 1] - ang[0]);
+  for (let i = 1; i < n; i++) open = Math.max(open, ang[i] - ang[i - 1]);
+  return { cx: cx + (u0 * c - v0 * s) * S, cy: cy + (u0 * s + v0 * c) * S, a: a * S, b: b * S, phi, rms: Math.sqrt(ss / n), max: mx, open };
+}
+function shapeRecEllipse(loop, S) {
+  const C = SHAPE_REC, f = shapeFitEllipse(loop, S);
+  if (!f || f.rms > C.ellRms || f.max > C.ellMax || f.open > C.ellOpen * Math.PI / 180) return null;
+  const big = Math.max(f.a, f.b), small = Math.min(f.a, f.b);
+  if (big / small <= C.round) {
+    const r = (f.a + f.b) / 2;
+    return { shape: 'ellipse', pts: [[f.cx - r, f.cy - r], [f.cx + r, f.cy + r]] };
+  }
+  // the major axis's angle from the nearest of x and y
+  let t = Math.abs(f.phi) % (Math.PI / 2);
+  if (t > Math.PI / 4) t = Math.PI / 2 - t;
+  if (t > C.ellTilt * Math.PI / 180) return null;
+  const alongX = Math.abs(Math.cos(f.phi)) >= Math.abs(Math.sin(f.phi)), rx = alongX ? f.a : f.b, ry = alongX ? f.b : f.a;
+  return { shape: 'ellipse', pts: [[f.cx - rx, f.cy - ry], [f.cx + rx, f.cy + ry]] };
+}
+// corners of a closed loop resampled evenly: Douglas-Peucker from its two points furthest apart (tolerance
+// SHAPE_REC.dp of the size S), then corners that hardly turn dropped, and a corner cut short (two corners close
+// together that turn as one) made one. Indices into R, in order round the loop.
+function shapeCorners(R, S) {
+  const m = R.length, C = SHAPE_REC, eps = C.dp * S;
+  let a = 0, b = 0, d = -1;
+  for (let i = 0; i < m; i++) { const q = shapeLen(R[0], R[i]); if (q > d) { d = q; b = i; } }
+  d = -1;
+  for (let i = 0; i < m; i++) { const q = shapeLen(R[b], R[i]); if (q > d) { d = q; a = i; } }
+  const i0 = Math.min(a, b), i1 = Math.max(a, b), out = [i0];
+  const split = (s, e) => {
+    let best = -1, dm = eps;
+    for (let i = s + 1; i < e; i++) { const q = segDist(R[i % m], R[s % m], R[e % m]); if (q > dm) { dm = q; best = i; } }
+    if (best < 0) return;
+    split(s, best); out.push(best % m); split(best, e);
+  };
+  if (i1 > i0) { split(i0, i1); out.push(i1); split(i1, i0 + m); }
+  const turn = i => { // signed, degrees
+    const p = R[out[(i + out.length - 1) % out.length]], q = R[out[i]], r = R[out[(i + 1) % out.length]];
+    return Math.atan2((q[0] - p[0]) * (r[1] - q[1]) - (q[1] - p[1]) * (r[0] - q[0]), (q[0] - p[0]) * (r[0] - q[0]) + (q[1] - p[1]) * (r[1] - q[1])) * 180 / Math.PI;
+  };
+  while (out.length > 3) {
+    let w = -1, wt = C.merge;
+    for (let i = 0; i < out.length; i++) { const t = Math.abs(turn(i)); if (t < wt) { wt = t; w = i; } }
+    if (w >= 0) { out.splice(w, 1); continue; }
+    let c = -1, cd = C.chamfer * S;
+    for (let i = 0; i < out.length; i++) {
+      const j = (i + 1) % out.length, dd = shapeLen(R[out[i]], R[out[j]]), ti = turn(i), tj = turn(j);
+      if (dd < cd && Math.sign(ti) === Math.sign(tj) && Math.abs(ti + tj) <= C.chamferTurn) { cd = dd; c = i; }
+    }
+    if (c < 0) break;
+    const j = (c + 1) % out.length;
+    let a0 = out[c], a1 = out[j];
+    if (a1 < a0) a1 += m;
+    const mid = Math.round((a0 + a1) / 2) % m;
+    if (j === 0) { out[c] = mid; out.shift(); } else out.splice(c, 2, mid);
+  }
+  return out;
+}
+function shapeRecPoly(loop, S) {
+  const C = SHAPE_REC, m = 128, R = shapeResample(loop, m, true);
+  if (!R) return null;
+  const cs = shapeCorners(R, S), K = cs.length;
+  if (K < 3 || K > 4) return null;
+  const lines = [];
+  for (let s = 0; s < K; s++) {
+    const i0 = cs[s], i1 = cs[(s + 1) % K] + (cs[(s + 1) % K] <= i0 ? m : 0), side = [];
+    for (let i = i0; i <= i1; i++) side.push(R[i % m]);
+    const chord = shapeLen(side[0], side[side.length - 1]);
+    if (chord < C.sideMin * S) return null;
+    // fit the side's middle; its middle must be straight, its ends (the corners: rounded or cut) a little less so
+    const n = side.length, cut = Math.floor((n - 1) * 0.15), f = n - 2 * cut >= 3 ? shapeFitLine(side, cut, n - 1 - cut) : shapeFitLine(side, 0, n - 1);
+    const e = Math.floor((n - 1) * 0.1);
+    let dmid = 0, dall = 0, ss = 0;
+    for (let i = 0; i < n; i++) {
+      const p = side[i], dv = Math.abs((p[1] - f.cy) * f.ux - (p[0] - f.cx) * f.uy);
+      dall = Math.max(dall, dv); ss += dv * dv;
+      if (i >= e && i <= n - 1 - e) dmid = Math.max(dmid, dv);
+    }
+    if (dmid > C.sideDev * chord + 0.012 * S || dall > C.sideEnd * chord + 0.03 * S || Math.sqrt(ss / n) > C.sideRms * chord + 0.004 * S) return null;
+    lines.push(f);
+  }
+  // vertices where neighboring sides' lines meet
+  const V = [];
+  for (let s = 0; s < K; s++) {
+    const f = lines[(s + K - 1) % K], g = lines[s], den = f.ux * g.uy - f.uy * g.ux, P = R[cs[s]];
+    let p = P;
+    if (Math.abs(den) > 1e-9) {
+      const t = ((g.cx - f.cx) * g.uy - (g.cy - f.cy) * g.ux) / den, q = [f.cx + f.ux * t, f.cy + f.uy * t];
+      if (shapeLen(q, P) < 0.2 * S) p = q;
+    }
+    V.push(p);
+  }
+  // convex, with real corners
+  let sign = 0;
+  for (let s = 0; s < K; s++) {
+    const a = V[(s + K - 1) % K], b = V[s], c = V[(s + 1) % K];
+    const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]), dt = (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]);
+    const turn = Math.abs(Math.atan2(cr, dt)) * 180 / Math.PI;
+    if (turn < C.cornerMin) return null;
+    if (sign && Math.sign(cr) !== sign) return null;
+    sign = Math.sign(cr);
+  }
+  if (K === 4) {
+    // an upright rectangle: corners near 90°, sides near upright
+    let rect = true, tilt = 0;
+    for (let s = 0; s < 4 && rect; s++) {
+      const a = V[(s + 3) % 4], b = V[s], c = V[(s + 1) % 4];
+      const ang = Math.abs(Math.atan2((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]), (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]))) * 180 / Math.PI;
+      if (Math.abs(ang - 90) > C.rectAngle) rect = false;
+      let t = Math.abs(Math.atan2(c[1] - b[1], c[0] - b[0])) % (Math.PI / 2);
+      if (t > Math.PI / 4) t = Math.PI / 2 - t;
+      tilt = Math.max(tilt, t * 180 / Math.PI);
+    }
+    if (rect && tilt <= C.rectTilt) {
+      const xs = V.map(p => p[0]).sort((p, q) => p - q), ys = V.map(p => p[1]).sort((p, q) => p - q);
+      let x0 = (xs[0] + xs[1]) / 2, x1 = (xs[2] + xs[3]) / 2, y0 = (ys[0] + ys[1]) / 2, y1 = (ys[2] + ys[3]) / 2;
+      const w = x1 - x0, h = y1 - y0;
+      if (Math.abs(w - h) <= C.square * Math.max(w, h)) {
+        const s = (w + h) / 2, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        x0 = cx - s / 2; x1 = cx + s / 2; y0 = cy - s / 2; y1 = cy + s / 2;
+      }
+      return { shape: 'rect', pts: [[x0, y0], [x1, y1]] };
+    }
+  }
+  // sides close to level or upright are made exactly so
+  for (let s = 0; s < K; s++) {
+    const a = V[s], b = V[(s + 1) % K], t = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI, f = Math.abs(t) % 90;
+    if (Math.min(f, 90 - f) > 4) continue;
+    if (Math.abs(Math.abs(t) - 90) <= 4) { const x = (a[0] + b[0]) / 2; a[0] = b[0] = x; } else { const y = (a[1] + b[1]) / 2; a[1] = b[1] = y; }
+  }
+  return { shape: 'poly', pts: V };
+}
+function shapeRecClosed(R, S) {
+  const C = SHAPE_REC, loop = shapeLoop(R, S);
+  if (!loop || loop.length < 12) return null;
+  const T = shapeTurning(shapeResample(loop, 32, true));
+  if (Math.abs(Math.abs(T.net) - 1) > C.turnNet || T.abs > C.turnAbs || T.sharp > C.sharp) return null;
+  return shapeRecPoly(loop, S) || shapeRecEllipse(loop, S);
+}
+// a line ending in an arrowhead drawn in the same stroke: a long straight run, then barbs on both sides of its end
+function shapeRecArrow(R, px) {
+  const n = R.length;
+  let m = -1, f = null;
+  for (let j = n - 4; j >= Math.floor(0.45 * n); j--) {
+    const g = shapeFitLine(R, 0, j), c = g.t1 - g.t0;
+    if (c > 0 && g.dmax <= Math.max(0.03 * c, 0.8 * px) && g.back <= 0.02 * c + 0.5 * px) { m = j; f = g; break; }
+  }
+  if (!f) return null;
+  const c = f.t1 - f.t0;
+  let tip = -Infinity;
+  for (const p of R) tip = Math.max(tip, (p[0] - f.cx) * f.ux + (p[1] - f.cy) * f.uy);
+  if (tip - f.t1 > 0.06 * c) return null;
+  const T = [f.cx + f.ux * tip, f.cy + f.uy * tip];
+  let size = 0, left = null, right = null;
+  for (let i = m; i < n; i++) {
+    const dx = R[i][0] - T[0], dy = R[i][1] - T[1], a = dx * f.ux + dy * f.uy, p = dy * f.ux - dx * f.uy;
+    size = Math.max(size, Math.hypot(dx, dy));
+    if (a < 0 && (!left || p > left[1])) left = [a, p];
+    if (a < 0 && (!right || p < right[1])) right = [a, p];
+  }
+  if (size < Math.max(0.12 * c, 4 * px) || size > 0.4 * c || !left || !right || shapePathLen(R, m, n - 1) > 4.5 * size) return null;
+  // a barb each side, each a real part of the head, sweeping back at a sensible angle
+  for (const [a, p] of [left, [right[0], -right[1]]]) {
+    const ang = Math.atan2(p, -a) * 180 / Math.PI;
+    if (p < 0.3 * size || Math.hypot(a, p) < 0.6 * size || ang < 12 || ang > 70) return null;
+  }
+  const S0 = [f.cx + f.ux * f.t0, f.cy + f.uy * f.t0];
+  return { shape: 'arrow', pts: shapeRecSnapLine(S0, T) };
+}
+
+// Draw-and-hold: is this freehand stroke ([[x, y, ...], ...] in world units) clearly a shape? { shape, pts } for a
+// line, an ellipse (a circle when nearly round), an upright rectangle (a square when nearly square), a triangle or
+// other convex quadrilateral (poly: its vertices), or an arrow drawn in one stroke; null when it is not clearly one.
+// o (optional): z, the zoom it was drawn at (the pen's jitter is in screen pixels, so tolerances for it scale by 1/z);
+// min, the smallest size in world units that may become a shape (e.g. 24 / z keeps small handwriting out).
+function shapeRecognize(points, o) {
+  const px = o && o.z > 0 ? 1 / o.z : 1, P = shapeRecClean(points, px);
+  if (!P) return null;
+  const b = sbox(P), S = Math.max(b[2] - b[0], b[3] - b[1]);
+  if (!(S >= Math.max(SHAPE_REC.minSize * px, (o && +o.min) || 0))) return null;
+  const R = shapeResample(P, SHAPE_REC.n, false);
+  if (!R) return null;
+  return shapeRecLine(R, px) || shapeRecClosed(R, S) || shapeRecArrow(R, px) || null;
+}
+
+// ================================================================== PDF export
+// A PDF made of pictures, one JPEG per page, written here (no library): PDF 1.4 with a catalog, a page tree, per
+// page one /DCTDecode image XObject and a one-line content stream that draws it, an /Info dictionary and a classic
+// cross-reference table. The JPEG goes into the file unchanged (PDF readers decode JPEG themselves), so a page costs
+// what its JPEG costs, and the file is built from a list of chunks copied once into the result.
+
+// page sizes in points (1/72 in)
+const PDF_SIZES = { letter: [612, 792], 'letter-landscape': [792, 612], a4: [595.28, 841.89], 'a4-landscape': [841.89, 595.28] };
+const PDF_MAX_PAGE = 14400;    // the largest page side PDF 1.4 readers take (200 in); a bigger page is scaled down to it
+const PDF_MIN_PAGE = 3;
+
+// bytes from a Uint8Array (or Node Buffer), any other typed array or DataView, an ArrayBuffer, or a base64 data URL
+// (canvas.toDataURL('image/jpeg')); null for anything else
+function pdfBytes(x) {
+  if (ArrayBuffer.isView(x)) return x instanceof Uint8Array ? x : new Uint8Array(x.buffer, x.byteOffset, x.byteLength);
+  if (x instanceof ArrayBuffer || Object.prototype.toString.call(x) === '[object ArrayBuffer]') return new Uint8Array(x);
+  if (typeof x === 'string' && /^data:[^,]*;base64,/i.test(x)) {
+    try {
+      const bin = atob(x.slice(x.indexOf(',') + 1)), u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      return u;
+    } catch (e) { return null; }
+  }
+  return null;
+}
+
+// A JPEG's pixel size and color components, read from its frame header (SOF):
+// {w, h, comps (1 gray, 3 color, 4 CMYK), bits (8 for every JPEG a PDF can hold), adobe (an Adobe APP14 segment came
+// first)}, or null when the bytes are not a JPEG (no SOI, a damaged marker, no frame header before the scan).
+function pdfJpegSize(bytes) {
+  const b = pdfBytes(bytes);
+  if (!b || b.length < 4 || b[0] !== 0xFF || b[1] !== 0xD8) return null;
+  let i = 2, adobe = false;
+  while (i + 1 < b.length) {
+    if (b[i] !== 0xFF) return null;                                  // not at a marker: damaged
+    const m = b[i + 1];
+    if (m === 0xFF) { i++; continue; }                               // fill byte
+    i += 2;
+    if (m === 0x01 || m === 0xD8 || (m >= 0xD0 && m <= 0xD7)) continue;   // markers without a length
+    if (m === 0xD9 || m === 0xDA) return null;                       // end of image, or the scan, before any frame header
+    if (i + 2 > b.length) return null;
+    const len = (b[i] << 8) | b[i + 1];
+    if (len < 2 || i + len > b.length) return null;
+    if (m === 0xEE && len >= 7 && b[i + 2] === 0x41 && b[i + 3] === 0x64 && b[i + 4] === 0x6F && b[i + 5] === 0x62 && b[i + 6] === 0x65) adobe = true;
+    if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {   // SOF0..SOF15 (not DHT, JPG, DAC)
+      if (len < 8) return null;
+      return { w: (b[i + 5] << 8) | b[i + 6], h: (b[i + 3] << 8) | b[i + 4], comps: b[i + 7], bits: b[i + 2], adobe };
+    }
+    i += len;
+  }
+  return null;
+}
+
+// where a picture of iw × ih px goes to fill a pw × ph pt page without distortion, centered inside a margin (pt):
+// [x, y, w, h] in pt from the page's top-left
+function pdfFit(iw, ih, pw, ph, margin) {
+  const mg = Math.max(0, +margin || 0), aw = Math.max(1e-3, pw - 2 * mg), ah = Math.max(1e-3, ph - 2 * mg);
+  const k = Math.min(aw / iw, ah / ih), w = iw * k, h = ih * k;
+  return [(pw - w) / 2, (ph - h) / 2, w, h];
+}
+
+// a number as PDF writes it: plain decimal (never 1e-7 or 1e+21), at most 4 decimals, no trailing zeros
+function pdfNum(v) {
+  const c = Number.isFinite(v) ? Math.max(-1e9, Math.min(1e9, v)) : 0, r = Math.round(c * 1e4) / 1e4;
+  return r ? r.toFixed(4).replace(/\.?0+$/, '') : '0';
+}
+
+// text for the Info dictionary: a literal string when it is plain printable ASCII (with ( ) \ escaped), else UTF-16BE
+// in hex with a byte-order mark (so "–", "é" and emoji survive)
+function pdfText(s) {
+  s = String(s);
+  if (/^[\x20-\x7e]*$/.test(s)) return '(' + s.replace(/[\\()]/g, '\\$&') + ')';
+  let h = '<FEFF';
+  for (let i = 0; i < s.length; i++) h += (0x10000 + s.charCodeAt(i)).toString(16).slice(1).toUpperCase();
+  return h + '>';
+}
+
+// a PDF date, local time with its offset from UT: D:YYYYMMDDHHmmSS+HH'mm' (Z when the offset is 0)
+function pdfDate(d) {
+  const p = n => String(n).padStart(2, '0'), off = -d.getTimezoneOffset(), a = Math.abs(off);
+  const tz = off === 0 ? 'Z' : (off > 0 ? '+' : '-') + p(Math.floor(a / 60)) + "'" + p(a % 60) + "'";
+  return 'D:' + String(d.getFullYear()).padStart(4, '0') + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + tz;
+}
+
+// ASCII (and the header's four high bytes) to bytes
+function pdfLatin1(s) {
+  const u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i) & 255;
+  return u;
+}
+
+// the trailer's file identifier: a 128-bit hash (four FNV-1a lanes) of strings and of a sample of each picture's bytes
+function pdfIdOf(parts) {
+  const h = [0x811c9dc5, 0x050c5d1f, 0x6a09e667, 0x3c6ef372];
+  const mix = c => { for (let k = 0; k < 4; k++) h[k] = Math.imul(h[k] ^ c, 0x01000193 + 2 * k) >>> 0; };
+  for (const part of parts) {
+    if (typeof part === 'string') for (let i = 0; i < part.length; i++) mix(part.charCodeAt(i));
+    else { const step = Math.max(1, part.length >> 12); for (let i = 0; i < part.length; i += step) mix(part[i]); mix(part.length & 255); }
+  }
+  return h.map(v => v.toString(16).padStart(8, '0')).join('').toUpperCase();
+}
+
+// A PDF made of one picture per page.
+//   pages: [{ jpeg: the bytes of a baseline (or progressive) JPEG, as canvas.toBlob gives (a Uint8Array, an
+//             ArrayBuffer or a data URL); iw, ih: its pixel size (read from the JPEG itself, which wins when they
+//             differ: it is what a reader decodes); pw, ph: the page size in pt (default Letter); place: [x, y, w, h]
+//             where the picture goes, in pt from the page's TOP-left (default: fitted to the page, centered) }]
+//   meta:  { title, author?, subject?, date? (a Date; default now) }
+// Returns a Uint8Array holding a PDF 1.4 file. Pages may differ in size; a page side above 200 in is scaled down to it
+// (picture and all). A gray JPEG goes in as /DeviceGray, a color one as /DeviceRGB, a CMYK one as /DeviceCMYK.
+// Throws an Error naming the page when there are no pages or a page has no usable JPEG.
+function pdfMake(pages, meta) {
+  if (!Array.isArray(pages) || !pages.length) throw new Error('pdfMake: no pages');
+  const M = meta || {};
+  const date = M.date instanceof Date && Number.isFinite(M.date.getTime()) ? M.date : new Date();
+  const chunks = [], at = [0];
+  let size = 0;
+  const add = u => { chunks.push(u); size += u.length; };
+  const text = s => add(pdfLatin1(s));
+  const obj = (n, body) => { at[n] = size; text(n + ' 0 obj\n' + body + '\nendobj\n'); };
+  const idParts = [String(M.title || ''), date.toISOString(), String(pages.length)];
+
+  text('%PDF-1.4\n%' + String.fromCharCode(0xE2, 0xE3, 0xCF, 0xD3) + '\n');   // the second line's high bytes mark the file as binary
+  const title = M.title === undefined || M.title === null ? '' : String(M.title);
+  const kids = pages.map((_, i) => (4 + 3 * i) + ' 0 R').join(' ');
+  obj(1, '<< /Type /Catalog /Pages 2 0 R' + (title ? ' /ViewerPreferences << /DisplayDocTitle true >>' : '') + ' >>');
+  obj(2, '<< /Type /Pages /Kids [' + kids + '] /Count ' + pages.length + ' >>');
+  let info = '<<';
+  if (title) info += ' /Title ' + pdfText(title);
+  if (M.author) info += ' /Author ' + pdfText(M.author);
+  if (M.subject) info += ' /Subject ' + pdfText(M.subject);
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.0) /CreationDate (' + pdfDate(date) + ') >>');
+
+  for (let i = 0; i < pages.length; i++) {
+    const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
+    if (!sof) throw new Error('pdfMake: page ' + (i + 1) + ' has no JPEG (jpeg must hold the bytes of a JPEG file)');
+    if (sof.bits !== 8 || (sof.comps !== 1 && sof.comps !== 3 && sof.comps !== 4)) throw new Error('pdfMake: page ' + (i + 1) + ': a ' + sof.bits + '-bit JPEG with ' + sof.comps + ' components cannot go into a PDF');
+    const iw = sof.w || Math.round(+P.iw), ih = sof.h || Math.round(+P.ih);
+    if (!(iw > 0 && ih > 0)) throw new Error('pdfMake: page ' + (i + 1) + ': the JPEG does not say its size');
+    let pw = +P.pw > 0 && Number.isFinite(+P.pw) ? +P.pw : PDF_SIZES.letter[0];
+    let ph = +P.ph > 0 && Number.isFinite(+P.ph) ? +P.ph : PDF_SIZES.letter[1];
+    const pl = Array.isArray(P.place) && P.place.length >= 4 && P.place.slice(0, 4).every(v => Number.isFinite(+v)) && +P.place[2] > 0 && +P.place[3] > 0
+      ? P.place.slice(0, 4).map(Number) : pdfFit(iw, ih, pw, ph);
+    const k = Math.min(1, PDF_MAX_PAGE / Math.max(pw, ph));
+    if (k < 1) { pw *= k; ph *= k; for (let j = 0; j < 4; j++) pl[j] *= k; }
+    pw = Math.max(PDF_MIN_PAGE, pw); ph = Math.max(PDF_MIN_PAGE, ph);
+    const cs = sof.comps === 1 ? '/DeviceGray' : sof.comps === 3 ? '/DeviceRGB' : '/DeviceCMYK';
+    const decode = sof.comps === 4 && sof.adobe ? ' /Decode [1 0 1 0 1 0 1 0]' : '';   // Adobe CMYK JPEGs are stored inverted
+    obj(n, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pdfNum(pw) + ' ' + pdfNum(ph) + '] /Resources << /XObject << /Im0 ' + (n + 1) +
+      ' 0 R >> /ProcSet [/PDF ' + (sof.comps === 1 ? '/ImageB' : '/ImageC') + '] >> /Contents ' + (n + 2) + ' 0 R >>');
+    at[n + 1] = size;
+    text((n + 1) + ' 0 obj\n<< /Type /XObject /Subtype /Image /Width ' + iw + ' /Height ' + ih + ' /ColorSpace ' + cs +
+      ' /BitsPerComponent 8' + decode + ' /Filter /DCTDecode /Length ' + jpeg.length + ' >>\nstream\n');
+    add(jpeg);
+    text('\nendstream\nendobj\n');
+    // the picture's unit square scaled to w × h and moved to (x, y), y from the page's bottom (PDF's origin)
+    const draw = 'q ' + pdfNum(pl[2]) + ' 0 0 ' + pdfNum(pl[3]) + ' ' + pdfNum(pl[0]) + ' ' + pdfNum(ph - pl[1] - pl[3]) + ' cm /Im0 Do Q';
+    obj(n + 2, '<< /Length ' + draw.length + ' >>\nstream\n' + draw + '\nendstream');
+    idParts.push(pdfNum(pw) + 'x' + pdfNum(ph), jpeg);
+  }
+
+  const count = 4 + 3 * pages.length, xref = size, id = pdfIdOf(idParts);
+  let tail = 'xref\n0 ' + count + '\n0000000000 65535 f \n';        // every entry is 20 bytes: 10-digit offset, generation, n/f, SP LF
+  for (let n = 1; n < count; n++) tail += String(at[n]).padStart(10, '0') + ' 00000 n \n';
+  tail += 'trailer\n<< /Size ' + count + ' /Root 1 0 R /Info 3 0 R /ID [<' + id + '> <' + id + '>] >>\nstartxref\n' + xref + '\n%%EOF\n';
+  text(tail);
+
+  const out = new Uint8Array(size);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
+
+// ================================================================== storage: compact points, images by id
+// The Board keeps every page in localStorage (5 MB for everything), so each stroke's points are kept as a short
+// string; pictures (data URLs, often megabytes) go to IndexedDB by id instead.
+//
+// Packed points: one string of base64url digits (A–Z a–z 0–9 - _, so it sits in JSON without escaping).
+//   digit 0      flags: bit 0 set when pressure is stored ('A' without, 'B' with); the other bits are 0 (a later
+//                format would set them, and this one then reads nothing rather than misreading it)
+//   then         per point Δx, Δy (and Δp): the change from the point before (from 0 for the first) in quantised
+//                units (x and y × 10 rounded, so 0.1 px; p × 100 rounded, 0..100), zigzag-mapped to unsigned
+//                (0, −1, 1, −2, … → 0, 1, 2, 3, …) and written as a varint of base-32 digits, low digit first: a
+//                digit is 5 bits of the number, plus 32 when more digits follow.
+// Pen samples are ~0.7 px apart, so most changes fit one digit: about 2.4 characters a point (JSON: about 15).
+
+const STORE_B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const STORE_CODE = new Uint8Array(64);                   // digit → character code
+const STORE_DIGIT = new Int8Array(128).fill(-1);         // character code → digit (−1: not a digit)
+for (let i = 0; i < 64; i++) { STORE_CODE[i] = STORE_B64.charCodeAt(i); STORE_DIGIT[STORE_CODE[i]] = i; }
+const STORE_MAXQ = 2 ** 49;     // quantised values stay within ±2^49 (±5.6e13 px), so every delta is an exact double
+const STORE_ASCII = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;   // the digits are ASCII: UTF-8 reads them as they are
+let storeBuf = new Uint8Array(1 << 14);                  // scratch for storePack, doubled when a stroke needs more
+
+function storeQ(v) { const r = Math.round(v); return r > STORE_MAXQ ? STORE_MAXQ : r < -STORE_MAXQ ? -STORE_MAXQ : r; }
+
+// one change d, zigzag-mapped, as base-32 digits into buf at n → the new n
+function storeDigits(buf, n, d) {
+  let z = d >= 0 ? 2 * d : -2 * d - 1;
+  if (z < 32) { buf[n] = STORE_CODE[z]; return n + 1; }
+  if (z < 0x40000000) while (z >= 32) { buf[n++] = STORE_CODE[32 | (z & 31)]; z >>>= 5; }
+  else while (z >= 32) { const r = z % 32; buf[n++] = STORE_CODE[32 | r]; z = (z - r) / 32; }
+  buf[n] = STORE_CODE[z];
+  return n + 1;
+}
+
+// one stroke's points → a short string (see above). withPressure: also keep p (0..1); left out, it is on when a point
+// has a p. Points without a finite x and y are left out; a point without a p takes the one before it (0.5 at first).
+function storePack(points, withPressure) {
+  const pts = Array.isArray(points) ? points : [];
+  const wp = withPressure === undefined ? pts.some(q => q && q.length > 3 && Number.isFinite(q[3])) : !!withPressure;
+  let buf = storeBuf, n = 0, lx = 0, ly = 0, lp = 0, any = false;
+  buf[n++] = STORE_CODE[wp ? 1 : 0];
+  for (let i = 0; i < pts.length; i++) {
+    const q = pts[i];
+    if (!q) continue;
+    const x = +q[0], y = +q[1];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (n + 33 > buf.length) { const b = new Uint8Array(buf.length * 2); b.set(buf.subarray(0, n)); storeBuf = buf = b; }   // 3 values of up to 11 digits
+    const X = storeQ(x * 10), Y = storeQ(y * 10);
+    n = storeDigits(buf, n, X - lx); lx = X;
+    n = storeDigits(buf, n, Y - ly); ly = Y;
+    if (wp) {
+      const p = q.length > 3 ? +q[3] : NaN;
+      const P = Number.isFinite(p) ? Math.round((p < 0 ? 0 : p > 1 ? 1 : p) * 100) : any ? lp : 50;
+      n = storeDigits(buf, n, P - lp); lp = P;
+    }
+    any = true;
+  }
+  if (STORE_ASCII && n > 64) return STORE_ASCII.decode(buf.subarray(0, n));
+  if (n < 4096) return String.fromCharCode.apply(null, buf.subarray(0, n));
+  const parts = [];
+  for (let i = 0; i < n; i += 4096) parts.push(String.fromCharCode.apply(null, buf.subarray(i, Math.min(n, i + 4096))));
+  return parts.join('');
+}
+
+// a string from storePack → [[x, y, 0, p?], ...] (t is not stored, so it is 0; p only when it was packed).
+// Anything else ('' , garbage, a cut-off string, a later format) → [] (never throws).
+function storeUnpack(str) {
+  if (typeof str !== 'string' || str.length < 2) return [];
+  const c0 = str.charCodeAt(0), flags = c0 < 128 ? STORE_DIGIT[c0] : -1;
+  if (flags !== 0 && flags !== 1) return [];
+  const stride = flags ? 3 : 2, out = [];
+  let x = 0, y = 0, p = 0, comp = 0, z = 0, mul = 1, digits = 0;
+  for (let i = 1; i < str.length; i++) {
+    const c = str.charCodeAt(i), d = c < 128 ? STORE_DIGIT[c] : -1;
+    if (d < 0) return [];
+    z += (d & 31) * mul;
+    if (d & 32) { if (++digits >= 11) return []; mul *= 32; continue; }
+    const v = z < 4294967296 ? (z >>> 1) ^ -(z & 1) : z % 2 ? -(z + 1) / 2 : z / 2;
+    z = 0; mul = 1; digits = 0;
+    if (comp === 0) x += v; else if (comp === 1) y += v; else p += v;
+    if (++comp === stride) { out.push(stride === 3 ? [x / 10, y / 10, 0, p / 100] : [x / 10, y / 10, 0]); comp = 0; }
+  }
+  return comp || digits || mul !== 1 ? [] : out;
+}
+
+// ------------------------------------------------------------------ images by id
+// IndexedDB database 'nib-board' (version 1), object store 'images': id (a string) → data URL. Opened once and reused.
+// When IndexedDB is not there or refuses (a private window, blocked site data, an opaque origin, a full disk), images
+// are kept in a Map for the life of the page instead, and storeImagesDurable() says false. Nothing here throws or
+// rejects: every function returns a Promise that resolves.
+const STORE_DB = 'nib-board', STORE_IMAGES = 'images', STORE_WAIT = 5000;   // ms an unanswered open waits
+const storeMem = new Map();      // images only this page has (IndexedDB missing, or it refused them)
+let storeOpening = null;         // Promise<IDBDatabase | null>
+
+function storeKey(id) { return typeof id === 'string' ? (id ? id : null) : typeof id === 'number' && Number.isFinite(id) ? String(id) : null; }
+
+function storeOpen() {
+  if (storeOpening) return storeOpening;
+  const me = storeOpening = new Promise(resolve => {
+    let done = false;
+    const finish = db => {
+      if (done) { if (db) try { db.close(); } catch (e) { /* ok */ } return; }
+      done = true; clearTimeout(timer);
+      if (db) {
+        // another tab opening a newer version: step aside; the browser closing it (site data cleared): open again next time
+        db.onversionchange = () => { try { db.close(); } catch (e) { /* ok */ } if (storeOpening === me) storeOpening = null; };
+        db.onclose = () => { if (storeOpening === me) storeOpening = null; };
+      }
+      resolve(db);
+    };
+    const open = version => {
+      let req;
+      try {
+        const f = typeof indexedDB !== 'undefined' ? indexedDB : null;     // reading it can throw (an opaque origin)
+        if (!f) { finish(null); return; }
+        req = version ? f.open(STORE_DB, version) : f.open(STORE_DB);
+      } catch (e) { finish(null); return; }
+      req.onupgradeneeded = () => { try { const db = req.result; if (!db.objectStoreNames.contains(STORE_IMAGES)) db.createObjectStore(STORE_IMAGES); } catch (e) { /* the open then fails */ } };
+      req.onsuccess = () => {
+        let db = null;
+        try { db = req.result; if (!db.objectStoreNames.contains(STORE_IMAGES)) { db.close(); db = null; } } catch (e) { db = null; }
+        finish(db);
+      };
+      req.onerror = e => {
+        if (e && e.preventDefault) e.preventDefault();
+        let name = '';
+        try { name = req.error ? req.error.name : ''; } catch (_) { /* ok */ }
+        if (version && name === 'VersionError') open(0);   // a newer Board made the database: use it as it is
+        else finish(null);
+      };
+    };
+    const timer = setTimeout(() => finish(null), STORE_WAIT);
+    open(1);
+  }).catch(() => null);
+  return me;
+}
+
+// one request on the images store in a transaction of its own → {db: IndexedDB was there, ok: it did it, value}
+// (a write is ok once it is committed). Requests run in the order they are asked for.
+function storeRun(mode, make) {
+  return storeOpen().then(db => !db ? { db: false, ok: false } : new Promise(resolve => {
+    try {
+      const tx = db.transaction(STORE_IMAGES, mode), req = make(tx.objectStore(STORE_IMAGES));
+      let ok = false, value;
+      req.onsuccess = () => { ok = true; value = req.result; };
+      req.onerror = e => { if (e && e.preventDefault) e.preventDefault(); };
+      tx.oncomplete = () => resolve({ db: true, ok, value });
+      tx.onabort = () => resolve({ db: true, ok: false });
+    } catch (e) { resolve({ db: true, ok: false }); }
+  })).catch(() => ({ db: false, ok: false }));
+}
+
+// keep a picture under an id → true (false only for a bad id or a value that is not a string)
+function storeImagePut(id, dataUrl) {
+  const k = storeKey(id);
+  if (k === null || typeof dataUrl !== 'string') return Promise.resolve(false);
+  return storeRun('readwrite', s => s.put(dataUrl, k)).then(r => {
+    if (r.ok) storeMem.delete(k); else storeMem.set(k, dataUrl);     // refused: kept for the life of the page
+    return true;
+  }).catch(() => { storeMem.set(k, dataUrl); return true; });
+}
+
+// the picture kept under an id → its data URL, or null
+function storeImageGet(id) {
+  const k = storeKey(id);
+  if (k === null) return Promise.resolve(null);
+  return storeRun('readonly', s => s.get(k))
+    .then(r => storeMem.has(k) ? storeMem.get(k) : r.ok && typeof r.value === 'string' ? r.value : null)
+    .catch(() => storeMem.has(k) ? storeMem.get(k) : null);
+}
+
+// forget the picture under an id → true (false for a bad id, or when IndexedDB refused to delete it)
+function storeImageDelete(id) {
+  const k = storeKey(id);
+  if (k === null) return Promise.resolve(false);
+  return storeRun('readwrite', s => s.delete(k)).then(r => { storeMem.delete(k); return r.ok || !r.db; }).catch(() => { storeMem.delete(k); return true; });
+}
+
+// the ids of every picture kept → [ids], sorted
+function storeImageIds() {
+  return storeRun('readonly', s => s.getAllKeys()).then(r => {
+    const ids = new Set(r.ok && Array.isArray(r.value) ? r.value.map(String) : []);
+    for (const k of storeMem.keys()) ids.add(k);
+    return [...ids].sort();
+  }).catch(() => [...storeMem.keys()].sort());
+}
+
+// → true when pictures outlive the page: IndexedDB is open and holds every one of them
+function storeImagesDurable() { return storeOpen().then(db => !!db && storeMem.size === 0).catch(() => false); }
+
 // ================================================================== writing pad
 const PAD_DEFAULTS = {
-  ink: null,            // stroke colour; default: the element's CSS --nib-ink, else its text colour
+  ink: null,            // stroke color; default: the element's CSS --nib-ink, else its text color
   width: 3,             // stroke width in CSS px
-  auto: true,           // recognise automatically after the pen rests
-  delay: 450,           // ms of rest before recognising
+  auto: true,           // recognize automatically after the pen rests
+  delay: 450,           // ms of rest before recognizing
   settle: 0,            // ms of rest before read ink changes into its tidy / handwritten / typeset form (the answers do not wait)
   penOnly: false,       // ignore touch and mouse (stylus-only boards)
-  boxes: false,         // draw recognised symbol boxes over the ink
+  boxes: false,         // draw recognized symbol boxes over the ink
   smooth: 0,            // smooth shaky ink along its path before reading (sigma as a share of the writing size)
   view: 'ink',          // how read ink is shown: 'ink' as written, 'tidy', 'hand' (the writer's Replicator handwriting), 'typeset'
   motion: true,         // animate ink into its tidy / handwritten / typeset form (off when the reader asks for less motion)
@@ -3872,12 +5609,23 @@ const PAD_DEFAULTS = {
   fit: false,           // when the pad is resized and the ink no longer fits, shrink and move it in (undoable)
   times: true,          // × can be a times sign; false: every cross is the letter x (multiply with · or brackets)
   train: false,         // keep each piece of writing read (strokes, reading, corrections) in pad.training, for fine-tuning
+  // a canvas (the Board): an endless surface that pans and zooms, with pens, markers, highlighters, shapes, text and
+  // pictures (see "canvas" below); off, the pad is the plain writing box other tools embed
+  infinite: false,      // pan and zoom (wheel, ctrl+wheel or a trackpad pinch, two fingers, the hand tool, space + drag)
+  paper: null,          // {kind, tone}: the background drawn under everything (drawPaper), or null for none
+  fingers: 'write',     // with infinite: 'write' (a finger writes), 'pan' (a finger moves the board: the pen writes) or 'ignore'
+  pinch: true,          // with infinite: two fingers put down together pan and zoom (a second student's finger far away still writes)
+  pressure: true,       // a pen's line follows its pressure (when the pen reports one)
+  eraser: 'stroke',     // 'stroke': the eraser takes whole strokes; 'area': it rubs out only where it passes
+  snap: 0,              // shapes snap to a grid of this spacing (world units; 0: no snapping)
+  hold: true,           // draw a line, circle, rectangle or triangle and hold the pen still: it becomes that shape
+  read: true,           // Nib reads the pen and marker writing (false: a plain whiteboard)
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
 };
 
-// Writing in different places on a board: strokes near each other belong together — neighbours on a line (within
+// Writing in different places on a board: strokes near each other belong together — neighbors on a line (within
 // 1.5 writing heights across, 0.6 up or down) or stacked (fractions, steps of working: within 1.6 heights down and
 // overlapping across). Returns groups of stroke indices in reading order.
 function clustersOf(strokes) {
@@ -3981,6 +5729,87 @@ function joinParts(parts) {
   };
 }
 
+// ================================================================== canvas: colors, elements
+// Colors are named so they can read on any paper: '@red' is a deep red on cream or white paper and a lighter one on a
+// chalkboard or a dark board. A plain CSS color is used as it is. null is the paper's own ink (navy, or cream on dark).
+const PAD_COLORS = {
+  '@ink': [null, null], '@black': ['#16181d', '#f5f3ee'], '@red': ['#d1352b', '#ff7d6e'], '@blue': ['#1f5fbf', '#7fb0ff'],
+  '@green': ['#1d8a4b', '#6fd49c'], '@orange': ['#e0750f', '#ffb15c'], '@purple': ['#7a3db4', '#c79dff'],
+  '@gold': ['#a37c12', '#e8c35a'], '@pink': ['#d23f7e', '#ff90c0'], '@brown': ['#8a5a2b', '#d9a774'], '@gray': ['#6b7280', '#b6bcc8'],
+  // highlighters: the same on any paper (they are see-through)
+  '@hl-yellow': ['#ffe14d', '#ffe14d'], '@hl-green': ['#7ee08a', '#7ee08a'], '@hl-pink': ['#ff8ccf', '#ff8ccf'],
+  '@hl-blue': ['#7cc8ff', '#7cc8ff'], '@hl-orange': ['#ffb347', '#ffb347'],
+};
+function padColor(c, dark, ink) {
+  if (!c || c === '@ink') return ink;
+  const k = PAD_COLORS[c];
+  return k ? (k[dark ? 1 : 0] || ink) : c;
+}
+// a shape's fill: 'tint' (its own color, see-through), 'solid' (its own color), '@red:0.25' (a named color at that
+// opacity) or a CSS color
+function padFill(f, dark, col) {
+  if (!f || f === 'none') return null;
+  if (f === 'tint' || f === 'solid') return padAlpha(col, f === 'tint' ? (dark ? 0.28 : 0.18) : 1);
+  const m = /^(@[a-z-]+):([\d.]+)$/.exec(f);
+  if (m) return padAlpha(padColor(m[1], dark, col), +m[2]);
+  return padColor(f, dark, col);
+}
+// a #rgb / #rrggbb color at an opacity
+function padAlpha(c, a) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim());
+  if (!m || a >= 1) return c;
+  const h = m[1].length === 3 ? m[1].replace(/./g, ch => ch + ch) : m[1];
+  return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`;
+}
+// how light a CSS color is (0 black … 1 white); unknown colors count as light
+function padLum(color) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color || '').trim());
+  let r, g, b;
+  if (m) { const h = m[1].length === 3 ? m[1].replace(/./g, ch => ch + ch) : m[1]; r = parseInt(h.slice(0, 2), 16); g = parseInt(h.slice(2, 4), 16); b = parseInt(h.slice(4, 6), 16); }
+  else { const n = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(String(color || '')); if (!n) return 1; r = +n[1]; g = +n[2]; b = +n[3]; }
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+const PAD_ZMIN = 0.1, PAD_ZMAX = 8;
+function padSnap(p, spacing) { return spacing > 0 && typeof shapeSnap === 'function' ? shapeSnap(p, spacing) : p; }
+const PAD_FONT = '"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+// is world point p inside polygon poly ([[x, y], ...])?
+function padInPoly(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1] || 1e-12) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+// the parts of a stroke outside a circle (the area eraser): runs of points, cut where they cross it
+function padCut(s, c, r) {
+  const out = [], r2 = r * r, outside = q => (q[0] - c[0]) * (q[0] - c[0]) + (q[1] - c[1]) * (q[1] - c[1]) > r2;
+  let run = [];
+  const edge = (a, b) => {            // where segment a→b crosses the circle (a inside, b outside or the other way)
+    const dx = b[0] - a[0], dy = b[1] - a[1], fx = a[0] - c[0], fy = a[1] - c[1];
+    const A = dx * dx + dy * dy, B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - r2;
+    const disc = Math.max(0, B * B - 4 * A * C), sq = Math.sqrt(disc);
+    let t = A ? (-B - sq) / (2 * A) : 0;
+    if (t < 0 || t > 1) t = A ? (-B + sq) / (2 * A) : 0;
+    t = Math.max(0, Math.min(1, t));
+    const q = a.slice(); q[0] = a[0] + dx * t; q[1] = a[1] + dy * t;
+    if (a.length > 3 && b.length > 3) q[3] = a[3] + (b[3] - a[3]) * t;
+    return q;
+  };
+  for (let i = 0; i < s.length; i++) {
+    const q = s[i], o = outside(q), prev = s[i - 1];
+    if (o) {
+      if (prev && !outside(prev)) run.push(edge(prev, q));
+      run.push(q);
+    } else if (run.length) {
+      if (prev) run.push(edge(prev, q));
+      out.push(run); run = [];
+    }
+  }
+  if (run.length) out.push(run);
+  return out.filter(p => p.length > 1 || s.length === 1);
+}
+
 class Pad {
   constructor(el, options) {
     this.el = el;
@@ -4012,6 +5841,20 @@ class Pad {
     this.training = []; this._trainIdx = new Map(); this._trainBytes = new Map(); this._trainSkip = new Set();
     this._seen = new Map(); this._trainTimer = null; this._hashes = new WeakMap(); this._answered = new WeakMap();
     this.trainMeta = null;          // a plain object whose fields go into every training record made while it is set (a drill's prompt)
+    // the canvas (see "canvas" below)
+    this.cam = { x: 0, y: 0, z: 1 };                         // world point (x, y) is at the canvas's top-left; z: zoom
+    this.tool = { kind: 'pen', color: null, size: null };    // what draw mode writes with: 'pen' | 'marker' | 'highlighter'
+    this.shapeTool = { kind: 'rect', color: null, size: 3, fill: null, dash: false };
+    this.textTool = { color: null, size: 32 };
+    this.images = new Map();        // image id -> {src, img, ok}: the pictures on any page
+    this.selection = new Set();     // elements selected (select mode)
+    this.lasers = [];               // laser trails fading out
+    this._bb = new WeakMap(); this._paths = new WeakMap();   // per element: its bounds, its drawing (dropped when it changes)
+    this._bbz = new WeakMap();      // the zoom a number line's or a plane's bounds were worked out for
+    this.touches = new Map();       // touch pointerId -> {x, y, t} on screen: for two-finger gestures
+    this.gesture = null;            // a pan or pinch under way
+    this.spacePan = false;          // the space bar is down: a drag pans
+    this.editing = null;            // the text box being written in
     if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
     c.addEventListener('pointerdown', this._down);
@@ -4020,7 +5863,11 @@ class Pad {
     c.addEventListener('pointercancel', this._up);
     c.addEventListener('lostpointercapture', this._up);     // capture lost without a pointerup: finish the stroke
     c.addEventListener('contextmenu', e => e.preventDefault());
+    c.addEventListener('wheel', e => this._wheel(e), { passive: false });
+    c.addEventListener('dblclick', e => this._dbl(e));
     this._theme = () => this.redraw();
+    this._fonts = () => { if (this.canvas.isConnected) { this._bb = new WeakMap(); this._paths = new WeakMap(); this.redraw(); } };
+    try { if (document.fonts) { document.fonts.ready.then(this._fonts); document.fonts.addEventListener('loadingdone', this._fonts); } } catch (e) { /* no font events */ }
     try { this.mq = matchMedia('(prefers-color-scheme: dark)'); this.mq.addEventListener('change', this._theme); } catch (e) { this.mq = null; }
     this.mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(this._theme) : null;
     if (this.mo) this.mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
@@ -4034,38 +5881,51 @@ class Pad {
     Object.assign(this.o, o || {});
     if (!!this.o.train !== tb) { if (this.o.train) this._trainSee(); else { clearTimeout(this._trainTimer); this._trainTimer = null; this._seen.clear(); } }
     if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
-    // only options that change the reading read the ink again; a view, colour or pen width just redraws
+    // only options that change the reading read the ink again; a view, color or pen width just redraws
     const reread = this._readKey() !== rk;
     if (reread) { this.optsVersion++; this.parts.clear(); }
+    if (!this.o.infinite && (this.cam.x || this.cam.y || this.cam.z !== 1)) this.cam = { x: 0, y: 0, z: 1 };
     if (this.o.view !== before || this.o.hand !== hb || !!this.o.solve !== sb || !!this.o.reveal !== rb) this._replan(true); else this.redraw();
-    if (this.strokes.length && this.o.auto && (reread || (this.resultStrokes || []).length !== this.strokes.length)) this._schedule(0);
+    const ink = this.ink;
+    if (reread && !ink.length && this.result) { this._emit(null); return; }   // reading turned off, or nothing left to read
+    if (ink.length && this.o.auto && (reread || (this.resultStrokes || []).length !== ink.length)) this._schedule(0);
   }
   _readKey() {
-    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange']);
+    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange',
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold']);
     return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
   }
 
   // ---------------------------------------------------------------- input
-  _pt(e) { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top, Math.round(e.timeStamp)]; }
+  // a pointer event's place on the board, in world units (and its time; a pen's pressure when it gives one)
+  _pt(e) {
+    const r = this.canvas.getBoundingClientRect(), z = this.cam.z;
+    const p = [this.cam.x + (e.clientX - r.left) / z, this.cam.y + (e.clientY - r.top) / z, Math.round(e.timeStamp)];
+    if (e.pointerType === 'pen' && typeof e.pressure === 'number' && e.pressure > 0) p.push(Math.round(Math.min(1, e.pressure) * 100) / 100);
+    return p;
+  }
+  _spt(e) { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }   // on screen
   // Several pointers at once (two students at the board): each makes its own stroke, in the mode it started in.
   // A pen wins over touch: touch is ignored while a pen is down and for a second after its last event, a wide
   // contact (a palm) never draws, and a touch stroke only just begun is dropped when a pen comes down.
   get active() { return this.ptrs.size ? this.ptrs.keys().next().value : null; }
-  get cur() { for (const P of this.ptrs.values()) if (P.cur) return P.cur; return null; }
+  get cur() { for (const P of this.ptrs.values()) if (P.cur && P.mode === 'draw') return P.cur; return null; }
   _contact(e) { const w = Math.max(+e.width || 0, +e.height || 0); return w > 1 && isFinite(w) ? w : 0; }   // 0: not known
   // what wrote a finished stroke (a stroke, or its index): {type: 'pen' | 'touch' | 'mouse' | null, width: contact px or null}
   strokeInfo(s) {
     if (typeof s === 'number') s = this.strokes[s];
     const i = s && this.info.get(s);
-    return { type: i ? i.type : null, width: i ? i.width : null };
+    return { type: i ? i.type || null : null, width: i ? i.width || null : null };
   }
   _wide(e) { return (+e.width || 0) >= 28 || (+e.height || 0) >= 28; }   // 0 or 1: the browser does not say
   _young(P, now) { return now - P.t0 < 350 || (P.cur ? P.cur.length : 0) < 6; }
-  _still(P) { if (!P.cur || P.mode !== 'draw') return false; const b = sbox(P.cur); return Math.max(b[2] - b[0], b[3] - b[1]) < 12; }
+  _still(P) { if (!P.cur || P.mode !== 'draw') return false; const b = sbox(P.cur); return Math.max(b[2] - b[0], b[3] - b[1]) < 12 / this.cam.z; }
+  _capture(e) { try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* ok */ } }
   _down(e) {
     const now = performance.now(), type = e.pointerType, touch = type === 'touch';
     // a pointer that has gone quiet for 1.5 s lost its pointerup somewhere: finish it and take the new one
     for (const P of [...this.ptrs.values()]) if (now - P.last > 1500 || P.id === e.pointerId) this._finish(P, null);
+    if (this.editing) this._commitText();                 // a tap on the board ends the text being written
     if (type === 'pen') {
       this.penUntil = now + 1000; this.penSeen = now;
       this._brushed();                                    // brief touches just before the pen were the hand
@@ -4073,30 +5933,43 @@ class Pad {
       for (const P of [...this.ptrs.values()]) if (P.type === 'touch' && (this._young(P, now) || this._still(P))) this._drop(P);
     }
     if (touch) {
-      if (this.o.penOnly) { this.why = 'ignored: pen only'; return; }
+      if (this.o.penOnly || this.o.fingers === 'ignore') { this.why = 'ignored: pen only'; return; }
       if (now < this.penUntil || [...this.ptrs.values()].some(P => P.type === 'pen')) { this.why = 'ignored: pen in use'; return; }
       if (this._wide(e) && this.mode !== 'erase') { this.why = 'ignored: palm'; return; }   // with Erase on, a hand rubs out
+      for (const [id, T] of this.touches) if (now - (T.m || T.t) > 1500) this.touches.delete(id);   // fingers whose pointerup was lost
+      const sp = this._spt(e); this.touches.set(e.pointerId, { x: sp[0], y: sp[1], t: now, m: now });
     }
+    // panning and zooming: the hand tool, space or the middle button with a mouse, fingers set to move the board, two fingers
+    if (this.o.infinite && this._gestureDown(e, now)) return;
     if (type === 'mouse' && e.button !== 0) { this.why = 'ignored: button'; return; }
     e.preventDefault();
     const eraser = type === 'pen' && ((e.buttons & 32) !== 0 || e.button === 5);    // the pen turned round
+    const m = this.mode;
     // mode 'fix': a tap is sent on as nib:tap (the Board's Fix picks the symbol under it); writing still writes
-    const P = { id: e.pointerId, type, mode: eraser || this.mode === 'erase' ? 'erase' : 'draw', eraser, fix: this.mode === 'fix' && !eraser, t0: now, last: now, cur: null, erased: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e) };
+    const mode = eraser || m === 'erase' ? 'erase' : ['select', 'shape', 'text', 'laser'].includes(m) ? m : 'draw';
+    const P = { id: e.pointerId, type, mode, eraser, fix: m === 'fix' && !eraser, t0: now, last: now, cur: null, erased: [], ops: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e),
+      tool: Object.assign({}, this.tool) };
     this.ptrs.set(e.pointerId, P);
     this.why = P.mode + (eraser ? ' (eraser end)' : '');
-    try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* ok */ }
+    this._capture(e);
     clearTimeout(this.timer); this.gen++;
     const p = this._pt(e);
     if (P.mode === 'erase') { P.base = this._eraseBase(p); this._eraseAt(P, p, e); return; }
+    if (P.mode === 'select') { this._selectDown(P, p, e); return; }
+    if (P.mode === 'shape') { P.a = padSnap(p, this.o.snap); P.prev = null; this._frame(); return; }
+    if (P.mode === 'text' || P.mode === 'laser') { P.cur = [p]; if (P.mode === 'laser') this._laserLoop(); return; }
     P.chip = this._chipAt(p);
-    P.cur = [p];
+    P.cur = [p]; P.stillAt = p;
+    this._holdTimer(P);
     if (this.plan && (P.chip || this.plan.items.some(it => it.answer))) { this.redraw(); return; }   // writing over an answer hides it
-    this._ink();
-    this.ctx.beginPath(); this.ctx.arc(p[0], p[1], this.o.width / 2, 0, Math.PI * 2); this.ctx.fill();
+    if (this._live(P)) this._seg(P); else this._frame();
   }
   _move(e) {
     const now = performance.now();
     if (e.pointerType === 'pen') { this.penUntil = now + 1000; this.penSeen = now; if (this.pending.length) this._brushed(); }
+    const T = this.touches.get(e.pointerId);
+    if (T) { const sp = this._spt(e); T.x = sp[0]; T.y = sp[1]; T.m = now; }
+    if (this.gesture && this._gestureMove(e)) return;
     const P = this.ptrs.get(e.pointerId);
     if (!P) return;
     e.preventDefault();
@@ -4107,36 +5980,218 @@ class Pad {
     for (const ev of (evs.length ? evs : [e])) {
       const p = this._pt(ev);
       if (P.mode === 'erase') { this._eraseAt(P, p, ev); continue; }
+      if (P.mode === 'select') { this._selectMove(P, p); continue; }
+      if (P.mode === 'shape') { P.b = p; continue; }
+      if (P.mode === 'text') continue;
       const q = P.cur[P.cur.length - 1];
-      if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) < 0.75) continue;
+      if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) < 0.75 / this.cam.z) continue;
       P.cur.push(p);
-      this._seg(P.cur);
+      if (P.mode === 'laser') continue;
+      if (P.snap) continue;                                // a shape already: the hand moving on changes nothing
+      // still for a moment at the end of a line, circle or box: it may become that shape
+      if (Math.hypot(p[0] - P.stillAt[0], p[1] - P.stillAt[1]) * this.cam.z > 3) { P.stillAt = p; this._holdTimer(P); }
+      if (this._live(P)) this._seg(P);
     }
+    if (P.mode === 'shape' && P.b && typeof shapeFromDrag === 'function') { P.prev = shapeFromDrag(this.shapeTool.kind, P.a, P.b, { snap: this.o.snap, angle: true, z: this.cam.z }); this._frame(); }
+    else if (P.mode === 'laser' || (P.mode === 'draw' && !this._live(P))) this._frame();
   }
   _up(e) {
     if (e.pointerType === 'pen') { this.penUntil = performance.now() + 1000; this.penSeen = performance.now(); }
+    this.touches.delete(e.pointerId);
+    if (this.gesture && this._gestureUp(e)) return;
     const P = this.ptrs.get(e.pointerId);
     if (P) this._finish(P, e);
   }
+  // ---------------------------------------------------------------- panning and zooming
+  // A drag that moves the board: the hand tool, a mouse's middle button or space + drag, or a finger when fingers move
+  // the board. Two fingers put down together (within 0.3 s and a hand's width of each other) pan and zoom; the first
+  // finger's stroke, if it had begun, is taken back. Fingers in a gesture never write, even after one lifts.
+  _gestureDown(e, now) {
+    const type = e.pointerType, touch = type === 'touch', sp = this._spt(e);
+    // a gesture whose fingers have been quiet for 1.5 s lost a pointerup somewhere, and a pen ends a gesture of fingers:
+    // neither may keep the board from listening
+    if (this.gesture && (now - (this.gesture.last || 0) > 1500 || (type === 'pen' && this.gesture.touch))) { this.gesture = null; this._cursor(); this._camMoved(true); }
+    const G = this.gesture;
+    if (G) {
+      G.last = now;
+      if (touch && G.touch && G.ids.length === 1) { G.ids.push(e.pointerId); this._gestureStart(G.ids, true); }
+      e.preventDefault(); this._capture(e);
+      return true;
+    }
+    const pan = (type === 'mouse' && (e.button === 1 || (e.button === 0 && (this.spacePan || this.mode === 'pan'))))
+      || (type !== 'mouse' && this.mode === 'pan') || (touch && this.o.fingers === 'pan');
+    if (pan) {
+      e.preventDefault(); this._capture(e);
+      this.gesture = { ids: [e.pointerId], touch, kind: 'pan', cam0: Object.assign({}, this.cam), s0: sp, cur: sp, last: now };
+      if (touch) this._gestureStart([e.pointerId], true);
+      this.why = 'pan';
+      this.canvas.style.cursor = 'grabbing';
+      return true;
+    }
+    if (touch && this.o.pinch && this.touches.size === 2) {
+      const [oid, o] = [...this.touches.entries()].find(([id]) => id !== e.pointerId) || [];
+      const other = oid !== undefined ? this.ptrs.get(oid) : null;
+      if (o && Math.hypot(o.x - sp[0], o.y - sp[1]) < 420 && now - o.t < 300) {
+        if (other) this._drop(other);                     // whatever the first finger began (a stroke, a lasso, a shape, a move) is taken back
+        e.preventDefault(); this._capture(e);
+        this.gesture = { ids: [oid, e.pointerId], touch: true, last: now };
+        this._gestureStart(this.gesture.ids, true);
+        this.why = 'pinch';
+        return true;
+      }
+    }
+    return false;
+  }
+  // (re)start from where the fingers are now: the camera, their middle and their distance
+  _gestureStart(ids, touch) {
+    const G = this.gesture;
+    const pts = ids.map(id => this.touches.get(id)).filter(Boolean);
+    if (!G || !pts.length) return;
+    const mid = [pts.reduce((a, p) => a + p.x, 0) / pts.length, pts.reduce((a, p) => a + p.y, 0) / pts.length];
+    G.kind = pts.length > 1 ? 'pinch' : 'pan';
+    G.cam0 = Object.assign({}, this.cam); G.mid0 = mid; G.s0 = mid; G.cur = mid;
+    G.d0 = pts.length > 1 ? Math.max(20, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)) : 0;
+  }
+  _gestureMove(e) {
+    const G = this.gesture;
+    if (!G || !G.ids.includes(e.pointerId)) return false;
+    e.preventDefault();
+    G.last = performance.now();
+    if (G.touch) {
+      const pts = G.ids.map(id => this.touches.get(id)).filter(Boolean);
+      if (!pts.length) return true;
+      const mid = [pts.reduce((a, p) => a + p.x, 0) / pts.length, pts.reduce((a, p) => a + p.y, 0) / pts.length];
+      const c0 = G.cam0;
+      let z = c0.z;
+      if (G.kind === 'pinch' && pts.length > 1) z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, c0.z * Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / G.d0));
+      // the world point that was under the fingers' middle stays under it
+      const wx = c0.x + G.mid0[0] / c0.z, wy = c0.y + G.mid0[1] / c0.z;
+      this.cam = { x: wx - mid[0] / z, y: wy - mid[1] / z, z };
+    } else {
+      const sp = this._spt(e);
+      this.cam = { x: G.cam0.x - (sp[0] - G.s0[0]) / G.cam0.z, y: G.cam0.y - (sp[1] - G.s0[1]) / G.cam0.z, z: G.cam0.z };
+    }
+    this._camMoved();
+    return true;
+  }
+  _gestureUp(e) {
+    const G = this.gesture;
+    if (!G || !G.ids.includes(e.pointerId)) return false;
+    try { if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId); } catch (_) { /* ok */ }
+    G.ids = G.ids.filter(id => id !== e.pointerId);
+    // one finger of two lifted: the other goes on panning (it never writes)
+    if (G.ids.length && G.touch) this._gestureStart(G.ids, true);
+    else { this.gesture = null; this._cursor(); this._camMoved(true); }
+    return true;
+  }
+  _wheel(e) {
+    if (!this.o.infinite) return;
+    e.preventDefault();
+    const s = this._spt(e);
+    // a trackpad pinch arrives as ctrl + wheel
+    if (e.ctrlKey || e.metaKey) { this.zoomAt(Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0025)), s[0], s[1]); return; }
+    const k = e.deltaMode === 1 ? 32 : e.deltaMode === 2 ? this.canvas.clientHeight : 1;
+    let dx = e.deltaX * k, dy = e.deltaY * k;
+    if (e.shiftKey && !dx) { dx = dy; dy = 0; }
+    this.panBy(-dx, -dy);
+  }
+  // the camera: world point (x, y) at the canvas's top-left, z screen px per world unit
+  setCamera(c) {
+    if (!c) return;
+    const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, +c.z || 1));
+    this.cam = { x: isFinite(+c.x) ? +c.x : 0, y: isFinite(+c.y) ? +c.y : 0, z };
+    this._camMoved(true);
+  }
+  getCamera() { return Object.assign({}, this.cam); }
+  panBy(dx, dy) { if (!this.o.infinite) return; this.cam = { x: this.cam.x - dx / this.cam.z, y: this.cam.y - dy / this.cam.z, z: this.cam.z }; this._camMoved(); }
+  // zoom by f about a point on screen (default: the middle), keeping what is under it where it is
+  zoomAt(f, sx, sy) {
+    if (!this.o.infinite) return;
+    const W = this.canvas.width / (this.dpr || 1), H = this.canvas.height / (this.dpr || 1);
+    if (sx === undefined) { sx = W / 2; sy = H / 2; }
+    const z0 = this.cam.z, z1 = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, z0 * f));
+    if (z1 === z0) return;
+    const wx = this.cam.x + sx / z0, wy = this.cam.y + sy / z0;
+    this.cam = { x: wx - sx / z1, y: wy - sy / z1, z: z1 };
+    this._camMoved();
+  }
+  zoomTo(z) { this.zoomAt(z / this.cam.z); }
+  // everything on the page in view, with a margin of m screen px (no closer than 100% unless it does not fit)
+  fitContent(m, most) {
+    const b = this.contentRect(0);
+    const W = this.canvas.width / (this.dpr || 1), H = this.canvas.height / (this.dpr || 1);
+    if (!b) { this.setCamera({ x: 0, y: 0, z: 1 }); return; }
+    m = m === undefined ? 48 : m;
+    const z = Math.max(PAD_ZMIN, Math.min(most || 1, (W - 2 * m) / Math.max(b[2] - b[0], 1), (H - 2 * m) / Math.max(b[3] - b[1], 1)));
+    this.setCamera({ x: (b[0] + b[2]) / 2 - W / 2 / z, y: (b[1] + b[3]) / 2 - H / 2 / z, z });
+  }
+  // The view the writer chose: a world rectangle and a zoom. A resize (a tablet turned, a window made smaller) keeps
+  // everything that was in sight of it in sight, from the same top-left corner, zoomed out only as far as it must be;
+  // made bigger again, the zoom the writer chose comes back. Panning or zooming makes the view on screen the chosen one.
+  _keepView() { if (this.canvas.width > 1) this._want = { r: this.viewRect, z: this.cam.z }; }
+  _fitView() {
+    const w = this._want, d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d;
+    if (!w || W < 2 || H < 2) return false;
+    // how far right and down the writing in the chosen view reaches (nothing there: the zoom stays)
+    let ex = w.r[0], ey = w.r[1];
+    for (const s of this.strokes) {
+      const b = this._bounds(s);
+      if (b[2] < w.r[0] || b[0] > w.r[2] || b[3] < w.r[1] || b[1] > w.r[3]) continue;
+      ex = Math.max(ex, Math.min(b[2], w.r[2])); ey = Math.max(ey, Math.min(b[3], w.r[3]));
+    }
+    const m = 8 / w.z, rw = Math.min(w.r[2] - w.r[0], ex - w.r[0] + m), rh = Math.min(w.r[3] - w.r[1], ey - w.r[1] + m);
+    const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, w.z, ex > w.r[0] ? W / rw : Infinity, ey > w.r[1] ? H / rh : Infinity));
+    if (z === this.cam.z && w.r[0] === this.cam.x && w.r[1] === this.cam.y) return false;
+    this.cam = { x: w.r[0], y: w.r[1], z };
+    return true;
+  }
+  _camQuiet(f) { this._quietCam = true; try { f(); } finally { this._quietCam = false; } }
+  get viewRect() { const d = this.dpr || 1, z = this.cam.z; return [this.cam.x, this.cam.y, this.cam.x + this.canvas.width / d / z, this.cam.y + this.canvas.height / d / z]; }
+  toScreen(p) { return [(p[0] - this.cam.x) * this.cam.z, (p[1] - this.cam.y) * this.cam.z]; }
+  toWorld(sx, sy) { return [this.cam.x + sx / this.cam.z, this.cam.y + sy / this.cam.z]; }
+  // the camera moved: draw at the next frame, move the text box with it, and tell the page (at most every 100 ms; at
+  // once when done)
+  _camMoved(done) {
+    if (!this._quietCam) this._keepView();
+    this._frame(); this._placeEditor();
+    clearTimeout(this._camTimer);
+    const fire = () => this.el.dispatchEvent(new CustomEvent('nib:camera', { detail: this.getCamera(), bubbles: true }));
+    if (done) fire(); else this._camTimer = setTimeout(fire, 100);
+  }
+  _cursor() {
+    const m = this.mode;
+    this.canvas.style.cursor = this.spacePan || m === 'pan' ? 'grab' : m === 'select' ? 'default' : m === 'text' ? 'text' : m === 'laser' ? 'none' : 'crosshair';
+  }
+  // ---------------------------------------------------------------- a pointer is lifted
   // a pointer's stroke is done (e: its pointerup / pointercancel, or null when its up was lost)
   _finish(P, e) {
     this.ptrs.delete(P.id);
+    clearTimeout(P.hold);
     try { if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(P.id)) this.canvas.releasePointerCapture(P.id); } catch (_) { /* ok */ }
     if (P.mode === 'erase') {
       P.at = null;
-      if (P.erased.length || P.hid.length) { this._push(Object.assign({ erase: P.erased }, P.hid.length ? { hide: P.hid } : {})); this._changed(); }
+      if (P.ops.length) { this._push(Object.assign({ ops: P.ops }, P.hid.length ? { hide: P.hid } : {})); this._changed(); }
+      else if (P.erased.length || P.hid.length) { this._push(Object.assign({ erase: P.erased }, P.hid.length ? { hide: P.hid } : {})); this._changed(); }
       else this.redraw();                                  // the eraser's ring goes
       return;
     }
+    if (P.mode === 'select') { this._selectUp(P, e); return; }
+    if (P.mode === 'shape') { this._shapeUp(P, e); return; }
+    if (P.mode === 'laser') { if (P.cur && P.cur.length) this.lasers.push({ pts: P.cur, end: performance.now() }); this._laserLoop(); return; }
+    if (P.mode === 'text') {
+      if (P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; return; }   // the heel of the hand
+      if (e && e.type === 'pointerup' && P.cur) this._textAt(P.cur[0]);
+      return;
+    }
     const s = P.cur;
-    if (e && e.type === 'pointercancel' && s && s.length < 3) { this.redraw(); return; }   // a cancelled tap
+    if (e && e.type === 'pointercancel' && s && s.length < 3) { this.redraw(); return; }   // a canceled tap
     // a tap on an answer's chip (up within 10 px and 400 ms of the down, inside the chip) shows that answer
     if (P.chip && e && e.type === 'pointerup' && s && s.length) {
       const q = this._pt(e);
-      if (Math.hypot(q[0] - s[0][0], q[1] - s[0][1]) <= 10 && performance.now() - P.t0 <= 400 && this._inChip(P.chip, q)) { this._reveal(P.chip.key); return; }
+      if (Math.hypot(q[0] - s[0][0], q[1] - s[0][1]) * this.cam.z <= 10 && performance.now() - P.t0 <= 400 && this._inChip(P.chip, q)) { this._reveal(P.chip.key); return; }
     }
     if (!s || !s.length) return;
-    const b = sbox(s.map(q => [q[0], q[1]])), span = Math.max(b[2] - b[0], b[3] - b[1]);
+    const b = sbox(s.map(q => [q[0], q[1]])), span = Math.max(b[2] - b[0], b[3] - b[1]) * this.cam.z;
     // Fix on: a tap (within 10 px, 400 ms) points at a symbol and writes nothing; anything longer is writing
     if (P.fix && span < 10 && performance.now() - P.t0 <= 400) {
       this.why = 'tap (fix)'; this.redraw();
@@ -4146,18 +6201,32 @@ class Pad {
     const now = performance.now(), penSession = now - this.penSeen < 30000;
     // a finger's tap while a pen is in use (within the last 30 s) is the heel of the hand, not a decimal point
     if (P.type === 'touch' && penSession && span < 6) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
-    this.info.set(s, { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null });
+    const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null };
+    const T = P.tool || {};
+    let el = s;
+    if (P.snap) {
+      // drawn and held: the shape it was, in the pen's color and width
+      el = P.snap.pts.map(q => [q[0], q[1]]);
+      if (T.kind === 'highlighter') Object.assign(info, { tool: 'highlighter', size: T.size || 22 });
+      else Object.assign(info, { tool: 'shape', shape: P.snap.shape, size: T.size || this.o.width * (T.kind === 'marker' ? 3 : 1) });
+      if (T.color) info.color = T.color;
+    } else {
+      if (T.kind && T.kind !== 'pen') info.tool = T.kind;
+      if (T.color) info.color = T.color;
+      if (T.size) info.size = T.size;
+    }
+    this.info.set(el, info);
     if (P.fix && this.mode === 'fix') this.mode = 'draw';   // written with Fix on: the writer is writing again
     // a brief touch (under 400 ms) while the pen is the writer's instrument may be the hand brushing the board on its
     // way down: it waits 1.5 s, shown as ink, and goes if the pen follows; a finger writing on its own waits nothing
     if (P.type === 'touch' && penSession && !P.fix && now - P.t0 < 400) {
       this.why = 'touch: waiting for the pen';
-      this.pending.push({ s, timer: setTimeout(() => this._commit(s), 1500) });
+      this.pending.push({ s: el, timer: setTimeout(() => this._commit(el), 1500) });
       this.redraw();
       return;
     }
-    this.strokes.push(s);
-    this._push({ add: s });
+    this.strokes.push(el);
+    this._push({ add: el });
     this._changed();
   }
   // a brief touch stroke the pen did not follow: ink after all
@@ -4180,8 +6249,15 @@ class Pad {
   // a stroke that should never have been (a palm under a pen): gone, and whatever it erased is back
   _drop(P) {
     this.ptrs.delete(P.id);
+    clearTimeout(P.hold);
     try { if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(P.id)) this.canvas.releasePointerCapture(P.id); } catch (_) { /* ok */ }
+    for (let k = P.ops.length - 1; k >= 0; k--) {            // the area eraser's cuts, undone
+      const o = P.ops[k];
+      if (o.ins !== undefined) { const i = this.strokes.indexOf(o.s); if (i >= 0) this.strokes.splice(i, 1); }
+      else this.strokes.splice(Math.min(o.rm, this.strokes.length), 0, o.s);
+    }
     for (const x of P.erased.slice().reverse()) this.strokes.splice(x.i, 0, x.s);
+    if (P.mode === 'select' && P.op && P.op.orig) { for (const [s, was] of P.op.orig) { s.length = 0; for (const q of was) s.push(q.slice()); this._touched(s); } this._planTo(P.op.items, x => x, y => y, 1); }
     for (const k of P.hid) this.revealed.add(k);
     if (P.hid.length) this._syncHidden();
     this.redraw();
@@ -4189,13 +6265,14 @@ class Pad {
   _push(h) { this.history.push(h); if (this.history.length > 500) this.history.splice(0, this.history.length - 500); this.future = []; }
   // the eraser's size: at least 14 px, a fifth of the writing near it (or of all of it), half a finger's contact
   _eraseBase(p) {
-    const m = 150, near = this.strokes.filter(s => { const b = sbox(s); return p[0] > b[0] - m && p[0] < b[2] + m && p[1] > b[1] - m && p[1] < b[3] + m; });
-    const pool = near.length ? near : this.strokes;
-    return Math.max(14, pool.length ? 0.2 * refSize(pool) : 0);
+    const m = 150 / this.cam.z, all = this.ink.length ? this.ink : this.strokes;
+    const near = all.filter(s => { const b = sbox(s); return p[0] > b[0] - m && p[0] < b[2] + m && p[1] > b[1] - m && p[1] < b[3] + m; });
+    const pool = near.length ? near : all;
+    return Math.max(14 / this.cam.z, pool.length ? 0.2 * refSize(pool) : 0);
   }
   _eraseAt(P, p, e) {
     const w = e ? Math.max(+e.width || 0, +e.height || 0) : 0;
-    const r = P.r = Math.max(P.base || 14, w > 1 ? w / 2 : 0);
+    const r = P.r = Math.max(P.base || 14 / this.cam.z, w > 1 ? w / 2 / this.cam.z : 0);
     P.at = p;
     let hit = false;
     // in a tidy, handwritten or typeset view the eraser takes away what it touches as shown
@@ -4213,13 +6290,32 @@ class Pad {
           continue;
         }
         if (!it.from.every(s => live.has(s)) || !itemNear(it, p, r)) continue;
-        for (const s of it.from) { const i = this.strokes.indexOf(s); if (i >= 0) { P.erased.push({ i, s }); this.strokes.splice(i, 1); live.delete(s); hit = true; } }
+        for (const s of it.from) {
+          const i = this.strokes.indexOf(s);
+          if (i < 0) continue;
+          if (this.o.eraser === 'area') P.ops.push({ rm: i, s }); else P.erased.push({ i, s });
+          this.strokes.splice(i, 1); live.delete(s); hit = true;
+        }
       }
     }
+    const area = this.o.eraser === 'area';
     for (let i = this.strokes.length - 1; i >= 0; i--) {
-      if (strokeNear(this.strokes[i], p, r)) { P.erased.push({ i, s: this.strokes[i] }); this.strokes.splice(i, 1); hit = true; }
+      const s = this.strokes[i];
+      if (!this._erasable(s, p, r)) continue;
+      const t = this._tool(s);
+      if (area && (t === 'pen' || t === 'marker' || t === 'highlighter')) {
+        // rub out only where the eraser passed: the stroke is cut into what is left of it
+        const bits = padCut(s, p, r + (t === 'pen' ? 0 : this._size(s) / 2));
+        const E = this.info.get(s);
+        P.ops.push({ rm: i, s }); this.strokes.splice(i, 1);
+        bits.forEach((b, k) => { if (E) this.info.set(b, Object.assign({}, E)); this.strokes.splice(i + k, 0, b); P.ops.push({ ins: i + k, s: b }); });
+        hit = true;
+        continue;
+      }
+      if (area) { P.ops.push({ rm: i, s }); this.strokes.splice(i, 1); hit = true; continue; }
+      P.erased.push({ i, s }); this.strokes.splice(i, 1); hit = true;
     }
-    if (hit) this.redraw(); else this._frame();            // the ring follows the eraser
+    if (hit) { this._dropDead(); this.redraw(); } else this._frame();            // the ring follows the eraser
   }
   _frame() {
     if (this._raf || typeof requestAnimationFrame === 'undefined') return;
@@ -4239,7 +6335,7 @@ class Pad {
     return best;
   }
   // inside the chip, or within a fingertip of it (a target of at least 44 px)
-  _inChip(c, p) { return Math.hypot(p[0] - c.cx, p[1] - c.cy) <= Math.max(c.r, 22); }
+  _inChip(c, p) { return Math.hypot(p[0] - c.cx, p[1] - c.cy) <= Math.max(c.r, 22 / this.cam.z); }
   _reveal(key) {
     this.revealed.add(key);
     const items = this.plan ? this.plan.items.filter(it => it.answer && it.revealKey === key) : [];
@@ -4273,44 +6369,194 @@ class Pad {
   }
   // new writing not read yet, and strokes being written (a tap on a chip is not writing)
   _fresh() {
-    const read = new Set(this.resultStrokes || []), out = this.strokes.filter(s => !read.has(s));
+    const read = new Set(this.resultStrokes || []), out = this.ink.filter(s => !read.has(s));
     for (const P of this.ptrs.values()) {
-      if (!P.cur) continue;
-      if (P.chip) { const b = sbox(P.cur); if (b[2] - b[0] <= 10 && b[3] - b[1] <= 10) continue; }
+      if (!P.cur || P.mode !== 'draw' || P.snap || (P.tool && P.tool.kind === 'highlighter')) continue;
+      if (P.chip) { const b = sbox(P.cur); if ((b[2] - b[0]) * this.cam.z <= 10 && (b[3] - b[1]) * this.cam.z <= 10) continue; }
       out.push(P.cur);
     }
     return out.map(s => sbox(s));
   }
 
   // ---------------------------------------------------------------- drawing
+  // the paper's ink (navy, or cream on a dark paper) and whether the paper is dark; kept for the strokes drawn between frames
   _ink() {
     const cs = getComputedStyle(this.el);
-    const ink = this.o.ink || cs.getPropertyValue('--nib-ink').trim() || cs.color || '#1b2a4a';
+    const themeDark = padLum(cs.getPropertyValue('--nib-paper').trim() || '#ffffff') < 0.45;
+    let ink = this.o.ink || cs.getPropertyValue('--nib-ink').trim() || cs.color || '#1b2a4a', dark = themeDark;
+    this._paperC = cs.getPropertyValue('--nib-paper').trim() || '#ffffff';
+    if (this.o.paper && typeof paperTone === 'function') {
+      try { const t = paperTone(this.o.paper.tone || 'theme', themeDark); dark = !!t.dark; if (!this.o.ink) ink = t.ink; this._paperC = t.paper; } catch (e) { /* the theme's */ }
+    }
+    this._inkC = ink; this._darkP = dark; this._themeDark = themeDark;
     const ctx = this.ctx;
     ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.lineWidth = this.o.width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   }
-  _seg(s) {
-    const n = s.length, ctx = this.ctx;
-    if (n < 2) return;
+  _tool(s) { const E = this.info.get(s); return (E && E.tool) || 'pen'; }
+  // the width a stroke is drawn with (world units)
+  _size(s) {
+    const E = this.info.get(s), t = (E && E.tool) || 'pen';
+    if (E && +E.size > 0) return +E.size;
+    return t === 'highlighter' ? 22 : t === 'marker' ? 3 * this.o.width : t === 'shape' ? 3 : t === 'text' ? 32 : this.o.width;
+  }
+  _toolWidth(T) { return +T.size > 0 ? +T.size : T.kind === 'highlighter' ? 22 : T.kind === 'marker' ? 3 * this.o.width : this.o.width; }
+  // a line's width at a point: the pen's pressure (0.5 is the line's own width) when it reports one
+  _pw(q, w) { return this.o.pressure && q.length > 3 ? w * (0.45 + 1.1 * Math.max(0.05, Math.min(1, q[3]))) : w; }
+  // an element's points or look changed: its bounds and drawing are made again
+  _touched(s) { this._bb.delete(s); this._paths.delete(s); }
+  // everything drawn of an element, in world units (for culling, selection, export)
+  _bounds(s) {
+    let b = this._bb.get(s);
+    const E = this.info.get(s), t = (E && E.tool) || 'pen';
+    // a number line's or a plane's labels never go under 12 screen px: zoomed out, they reach further than at 100%
+    const zl = t === 'shape' && E && (E.shape === 'numberline' || E.shape === 'plane') ? Math.min(1, this.cam.z) : 1;
+    if (b && (zl === 1 || this._bbz.get(s) === zl)) return b;
+    if (t === 'shape' && typeof shapeBounds === 'function') { try { b = shapeBounds(E, s, { z: zl }); } catch (e) { b = null; } }
+    else b = null;
+    if (zl !== 1) this._bbz.set(s, zl);
+    if (!b) {
+      b = sbox(s);
+      const m = t === 'text' || t === 'image' ? 0 : this._size(s) * (t === 'pen' && this.o.pressure ? 0.8 : 0.5) + 1;
+      b = [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+    }
+    this._bb.set(s, b);
+    return b;
+  }
+  // Does the eraser at p (radius r) take this element? It rubs out what was drawn: pen, marker and highlighter strokes,
+  // and shapes where it touches their outline (not inside a filled one). Text, pictures, number lines and coordinate
+  // planes are placed things that writing goes on: they stay (Select and Delete take them away).
+  _erasable(s, p, r) {
+    const E = this.info.get(s), t = (E && E.tool) || 'pen';
+    if (t === 'pen' || t === 'marker' || t === 'highlighter') return this._hit(s, p, r);
+    if (t !== 'shape' || !E || E.shape === 'numberline' || E.shape === 'plane') return false;
+    const b = this._bounds(s);
+    if (p[0] < b[0] - r || p[0] > b[2] + r || p[1] < b[1] - r || p[1] > b[3] + r) return false;
+    return typeof shapeHit === 'function' ? !!shapeHit(E.fill ? Object.assign({}, E, { fill: null }) : E, s, p, r, { z: this.cam.z }) : strokeNear(s, p, r);
+  }
+  // is world point p within r of what an element shows?
+  _hit(s, p, r) {
+    const b = this._bounds(s);
+    if (p[0] < b[0] - r || p[0] > b[2] + r || p[1] < b[1] - r || p[1] > b[3] + r) return false;
+    const E = this.info.get(s), t = (E && E.tool) || 'pen';
+    if (t === 'shape') return typeof shapeHit === 'function' ? !!shapeHit(E, s, p, r, { z: this.cam.z }) : strokeNear(s, p, r);
+    if (t === 'text' || t === 'image') return true;      // anywhere in its box
+    return strokeNear(s, p, r + (t === 'pen' ? 0 : this._size(s) / 2));
+  }
+  // the latest piece of the stroke being written, drawn at once (the rest of the board is not touched)
+  _live(P) { const k = P.tool && P.tool.kind; return P.mode === 'draw' && !P.snap && k !== 'highlighter'; }
+  _seg(P) {
+    const s = P.cur, n = s.length, ctx = this.ctx, T = P.tool || {};
+    if (!n) return;
+    const col = padColor(T.color, this._darkP, this._inkC || '#1b2a4a'), w = this._toolWidth(T);
+    ctx.save();
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const pen = !T.kind || T.kind === 'pen';
+    if (n === 1) { ctx.beginPath(); ctx.arc(s[0][0], s[0][1], (pen ? this._pw(s[0], w) : w) / 2, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
+    ctx.lineWidth = pen ? (this._pw(s[n - 2], w) + this._pw(s[n - 1], w)) / 2 : w;
     ctx.beginPath();
-    if (n === 2) { ctx.moveTo(s[0][0], s[0][1]); ctx.lineTo(s[1][0], s[1][1]); }
+    if (n === 2) { ctx.moveTo(s[0][0], s[0][1]); ctx.lineTo((s[0][0] + s[1][0]) / 2, (s[0][1] + s[1][1]) / 2); }
     else {
       const a = s[n - 3], b = s[n - 2], c = s[n - 1];
       ctx.moveTo((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
       ctx.quadraticCurveTo(b[0], b[1], (b[0] + c[0]) / 2, (b[1] + c[1]) / 2);
     }
     ctx.stroke();
+    ctx.restore();
   }
-  _stroke(s) {
-    const ctx = this.ctx;
-    if (s.length === 1) { ctx.beginPath(); ctx.arc(s[0][0], s[0][1], this.o.width / 2, 0, Math.PI * 2); ctx.fill(); return; }
-    ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1]);
-    for (let i = 1; i < s.length - 1; i++) ctx.quadraticCurveTo(s[i][0], s[i][1], (s[i][0] + s[i + 1][0]) / 2, (s[i][1] + s[i + 1][1]) / 2);
-    ctx.lineTo(s[s.length - 1][0], s[s.length - 1][1]);
-    ctx.stroke();
+  // a stroke as one smooth path (made once, then kept)
+  _path(s) {
+    let P = this._paths.get(s);
+    if (P && P.k === 'path') return P.path;
+    const path = new Path2D();
+    path.moveTo(s[0][0], s[0][1]);
+    for (let i = 1; i < s.length - 1; i++) path.quadraticCurveTo(s[i][0], s[i][1], (s[i][0] + s[i + 1][0]) / 2, (s[i][1] + s[i + 1][1]) / 2);
+    path.lineTo(s[s.length - 1][0], s[s.length - 1][1]);
+    this._paths.set(s, { k: 'path', path });
+    return path;
+  }
+  // a pen stroke whose width follows its pressure: pieces of the same width (to a quarter px) share one path
+  _varPaths(s, w) {
+    let P = this._paths.get(s);
+    if (P && P.k === 'var' && P.w === w) return P.groups;
+    const groups = [], n = s.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    let cur = null;
+    const piece = (from, ctrl, to, ww) => {
+      const q = Math.max(0.25, Math.round(ww * 4) / 4);
+      if (!cur || cur.w !== q) { cur = { w: q, path: new Path2D() }; groups.push(cur); }
+      cur.path.moveTo(from[0], from[1]);
+      if (ctrl) cur.path.quadraticCurveTo(ctrl[0], ctrl[1], to[0], to[1]); else cur.path.lineTo(to[0], to[1]);
+    };
+    piece(s[0], null, mid(s[0], s[1]), (this._pw(s[0], w) + this._pw(s[1], w)) / 2);
+    for (let i = 1; i < n - 1; i++) piece(mid(s[i - 1], s[i]), s[i], mid(s[i], s[i + 1]), this._pw(s[i], w));
+    piece(mid(s[n - 2], s[n - 1]), null, s[n - 1], (this._pw(s[n - 2], w) + this._pw(s[n - 1], w)) / 2);
+    this._paths.set(s, { k: 'var', w, groups });
+    return groups;
+  }
+  // draw one element (E: its look; drawn as a stroke of that look when it is a stroke)
+  _drawEl(s, E) {
+    E = E || this.info.get(s) || {};
+    const t = E.tool || 'pen', ctx = this.ctx;
+    const col = padColor(E.color, this._darkP, this._inkC || '#1b2a4a');
+    if (t === 'shape') {
+      const F = Object.assign({}, E, { color: col });
+      if (E.fill) F.fill = padFill(E.fill, this._darkP, col); else delete F.fill;
+      if (typeof shapeDraw === 'function') { try { shapeDraw(ctx, F, s, { ink: col, paper: this._paperC, z: this.cam.z, font: PAD_FONT }); } catch (e) { /* a shape it cannot draw */ } }
+      return;
+    }
+    if (t === 'text') { this._drawText(s, E, col); return; }
+    if (t === 'image') { this._drawImage(s, E); return; }
+    if (!s.length) return;
+    const w = +E.size > 0 ? +E.size : t === 'highlighter' ? 22 : t === 'marker' ? 3 * this.o.width : this.o.width;
+    ctx.save();
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = w;
+    if (t === 'highlighter') {
+      // see-through, and on light paper it darkens what is under it the way a real highlighter does
+      ctx.globalAlpha = this._darkP ? 0.36 : 0.55;
+      if (!this._darkP) ctx.globalCompositeOperation = 'multiply';
+    }
+    if (s.length === 1) { ctx.beginPath(); ctx.arc(s[0][0], s[0][1], (t === 'pen' ? this._pw(s[0], w) : w) / 2, 0, Math.PI * 2); ctx.fill(); }
+    else if (t === 'pen' && this.o.pressure && s[0].length > 3) for (const g of this._varPaths(s, w)) { ctx.lineWidth = g.w; ctx.stroke(g.path); }
+    else ctx.stroke(this._path(s));
+    ctx.restore();
+  }
+  // a text box: its lines at its size, scaled with its box when the box was made bigger or smaller
+  _textScale(s, E) {
+    const lines = String(E.text || '').split('\n').length || 1, natural = lines * 1.25 * (+E.size || 32);
+    const h = Math.abs(s[1][1] - s[0][1]);
+    return h > 0 && natural > 0 ? h / natural : 1;
+  }
+  _drawText(s, E, col) {
+    if (this.editing && this.editing.el === s) return;     // the text box shows it while it is being written
+    const ctx = this.ctx, k = this._textScale(s, E), size = (+E.size || 32) * k, lh = 1.25 * size;
+    const x = Math.min(s[0][0], s[1][0]), y = Math.min(s[0][1], s[1][1]);
+    ctx.save(); ctx.fillStyle = col; ctx.font = `500 ${size}px ${PAD_FONT}`; ctx.textBaseline = 'top';
+    String(E.text || '').split('\n').forEach((l, i) => ctx.fillText(l, x, y + i * lh + 0.12 * size));
+    ctx.restore();
+  }
+  // the box a text needs at its size, from its top-left corner
+  _fitText(s) {
+    const E = this.info.get(s), ctx = this.ctx, size = +E.size || 32, lines = String(E.text || '').split('\n');
+    ctx.save(); ctx.font = `500 ${size}px ${PAD_FONT}`;
+    const w = Math.max(size * 0.5, ...lines.map(l => ctx.measureText(l).width));
+    ctx.restore();
+    const x = Math.min(s[0][0], s[1][0]), y = Math.min(s[0][1], s[1][1]);
+    s.length = 0; s.push([x, y], [x + w, y + lines.length * 1.25 * size]);
+    this._touched(s);
+  }
+  _drawImage(s, E) {
+    const ctx = this.ctx, im = this.images.get(E.img);
+    const x = Math.min(s[0][0], s[1][0]), y = Math.min(s[0][1], s[1][1]), w = Math.abs(s[1][0] - s[0][0]), h = Math.abs(s[1][1] - s[0][1]);
+    if (im && im.ok) { ctx.drawImage(im.img, x, y, w, h); return; }
+    if (!im) this._needImage(E.img);
+    // not here yet (or lost): a quiet frame where it goes
+    ctx.save(); ctx.fillStyle = 'rgba(127,127,127,.12)'; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(127,127,127,.5)'; ctx.lineWidth = 1 / this.cam.z; ctx.setLineDash([6 / this.cam.z, 4 / this.cam.z]); ctx.strokeRect(x, y, w, h);
+    ctx.restore();
   }
   _answerInk() {
     const cs = getComputedStyle(this.el);
+    // on a paper darker or lighter than the board's theme, the theme's gold may not read: the paper's own gold then
+    if (this._darkP !== undefined && this._darkP !== this._themeDark) return PAD_COLORS['@gold'][this._darkP ? 1 : 0];
     return cs.getPropertyValue('--nib-answer').trim() || '#b08a1e';
   }
   // an answer is hidden while its "=" is gone, or while new writing (not read yet) reaches into it
@@ -4321,27 +6567,52 @@ class Pad {
     return !fresh.some(f => f[0] < b[2] + m && f[2] > b[0] - m && f[1] < b[3] + m && f[3] > b[1] - m);
   }
   redraw() {
-    const c = this.canvas, ctx = this.ctx, d = this.dpr || 1;
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.setTransform(d, 0, 0, d, 0, 0);
+    const c = this.canvas, ctx = this.ctx, d = this.dpr || 1, z = this.cam.z;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height);
+    ctx.setTransform(d * z, 0, 0, d * z, -this.cam.x * d * z, -this.cam.y * d * z);
     this._paint(false);
   }
-  // everything on the pad, on this.ctx (already scaled); image: true leaves out what is only for the writer at the
-  // board (chips, the eraser's ring, boxes)
-  _paint(image) {
+  // Everything on the pad, on this.ctx (already in world units). image: true leaves out what is only for the writer at
+  // the board (chips, the eraser's ring, the selection, the laser); X: {rect, paper, answers: 'shown' | 'all' | 'none',
+  // only: a Set of elements} when exporting.
+  _paint(image, X) {
     const ctx = this.ctx;
     this._ink();
-    const ink = ctx.strokeStyle, live = new Set(this.strokes), shown = new Set();
-    const A = this.anim, e = A ? A.e : 1;
+    const ink = this._inkC, live = new Set(this.strokes), shown = new Set();
+    const A = this.anim, e = A ? A.e : 1, view = (X && X.rect) || this.viewRect, only = X && X.only;
+    const answers = (X && X.answers) || 'shown';
     let ans = null, fresh = null;
     const answerSetup = () => {
       if (ans) return;
       ans = this._answerInk();
       fresh = this._fresh();
     };
+    // the paper, under everything
+    if (this.o.paper && (!X || X.paper !== false) && typeof drawPaper === 'function') {
+      try { drawPaper(ctx, this.o.paper, view, this.cam.z, this._themeDark); } catch (err) { /* no paper then */ }
+    }
+    // which read ink its view draws (tidied, in the writer's hand, typeset), and which is changing back to ink
+    const items = this.plan && !only ? this.plan.items : [];
+    for (const it of items) if (!it.answer && it.from.every(s => live.has(s))) for (const s of it.from) shown.add(s);
+    const leaving = [];
+    if (A && e < 1 && !only) for (const g of A.leaving) {
+      if (g.answer || !g.from.every(s => live.has(s))) continue;
+      const rest = g.from.filter(s => !shown.has(s));
+      if (rest.length) { leaving.push({ g, rest }); for (const s of rest) shown.add(s); }
+    }
+    // pictures, then highlighters, then everything else in the order it was made (what is out of view is skipped)
+    const vis = s => { const b = this._bounds(s); return b[2] >= view[0] && b[0] <= view[2] && b[3] >= view[1] && b[1] <= view[3]; };
+    for (let pass = 0; pass < 3; pass++) for (const s of this.strokes) {
+      if (only && !only.has(s)) continue;
+      const t = this._tool(s), k = t === 'image' ? 0 : t === 'highlighter' ? 1 : 2;
+      if (k !== pass || shown.has(s) || !vis(s)) continue;
+      this._drawEl(s);
+    }
     // the read ink in its view; strokes still moving into it are drawn by the animation
-    if (this.plan) for (const it of this.plan.items) {
+    const colOf = it => padColor((this.info.get(it.from[0]) || {}).color, this._darkP, ink), widthOf = it => (it.from[0] ? this._size(it.from[0]) : this.o.width);
+    for (const it of items) {
       if (it.answer) {
-        if (it.hidden) continue;
+        if (answers === 'none' || (it.hidden && !(image && answers === 'all'))) continue;
         answerSetup();
         if (!this._answerShown(it, live, fresh)) continue;
         const was = A && A.from.get(it);
@@ -4350,22 +6621,25 @@ class Pad {
         continue;
       }
       if (!it.from.every(s => live.has(s))) continue;
-      for (const s of it.from) shown.add(s);
       const was = A && A.from.get(it);
-      if (was && e < 1) morphDraw(ctx, was, it, e, ink, this.o.width);
-      else drawItems(ctx, [it], { ink, width: this.o.width });
+      if (was && e < 1) morphDraw(ctx, was, it, e, colOf(it), widthOf(it));
+      else drawItems(ctx, [it], { ink: colOf(it), width: widthOf(it) });
     }
     // views being left behind (back to ink, or symbols that no longer exist) fade out
-    if (A && e < 1) for (const g of A.leaving) {
-      if (g.answer) { if (g.hidden) continue; answerSetup(); if (this._answerShown(g, live, fresh)) drawItems(ctx, [g], { ink: ans, width: this.o.width, alpha: 1 - e }); continue; }
-      if (!g.from.every(s => live.has(s))) continue;
-      const raw = rawVisual(g.from.filter(s => !shown.has(s)));
-      if (raw.parts[0].paths.length) { morphDraw(ctx, g, raw, e, ink, this.o.width); for (const s of g.from) shown.add(s); }
+    if (A && e < 1 && !only) {
+      for (const g of A.leaving) {
+        if (!g.answer || g.hidden || answers === 'none') continue;
+        answerSetup(); if (this._answerShown(g, live, fresh)) drawItems(ctx, [g], { ink: ans, width: this.o.width, alpha: 1 - e });
+      }
+      for (const { g, rest } of leaving) {
+        const raw = rawVisual(rest);
+        if (raw.parts[0].paths.length) morphDraw(ctx, g, raw, e, colOf(g), widthOf(g));
+      }
     }
     // answers waiting for a tap: a gold chip with a "?" where each would start
     if (!image && this.plan && this.plan.chips && this.plan.chips.length) {
       answerSetup();
-      const paper = getComputedStyle(this.el).getPropertyValue('--nib-paper').trim() || '#ffffff';
+      const paper = this._paperC || getComputedStyle(this.el).getPropertyValue('--nib-paper').trim() || '#ffffff';
       ctx.save();
       for (const ch of this.plan.chips) {
         if (!this._answerShown(ch.item, live, fresh)) continue;
@@ -4377,25 +6651,35 @@ class Pad {
       }
       ctx.restore();
     }
-    this._ink();
-    for (const s of this.strokes) if (!shown.has(s)) this._stroke(s);
-    for (const P of this.ptrs.values()) if (P.cur && !(image && P.chip)) this._stroke(P.cur);
-    if (!image) for (const q of this.pending) this._stroke(q.s);   // brief touches waiting to see whether the pen follows
-    if (!image) {
-      // the eraser: a faint ring where it is
-      for (const P of this.ptrs.values()) {
-        if (P.mode !== 'erase' || !P.at) continue;
-        ctx.save(); ctx.globalAlpha = 0.45; ctx.lineWidth = 1.5; ctx.strokeStyle = ink;
-        ctx.beginPath(); ctx.arc(P.at[0], P.at[1], P.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    if (image) return;
+    // what is being made right now: strokes (in their pen), shapes being dragged out, brief touches waiting for the pen
+    for (const P of this.ptrs.values()) {
+      if (P.mode === 'draw' && P.cur) {
+        const T = P.tool || {};
+        if (P.snap) { this._drawEl(P.snap.pts, Object.assign({ tool: T.kind === 'highlighter' ? 'highlighter' : 'shape', shape: P.snap.shape, size: this._toolWidth(T) }, T.color ? { color: T.color } : {})); continue; }
+        this._drawEl(P.cur, Object.assign({ tool: T.kind || 'pen', size: this._toolWidth(T) }, T.color ? { color: T.color } : {}));
+      } else if (P.mode === 'shape' && P.prev) {
+        const S = this.shapeTool;
+        const axes = P.prev.shape === 'numberline' || P.prev.shape === 'plane';
+        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill && !axes ? { fill: S.fill } : {}, S.dash && !axes ? { dash: true } : {}));
       }
-      if (this.o.boxes && this.result) this._boxes();
     }
+    for (const q of this.pending) this._drawEl(q.s);       // brief touches waiting to see whether the pen follows
+    // the eraser: a faint ring where it is
+    for (const P of this.ptrs.values()) {
+      if (P.mode !== 'erase' || !P.at) continue;
+      ctx.save(); ctx.globalAlpha = 0.45; ctx.lineWidth = 1.5 / this.cam.z; ctx.strokeStyle = ink;
+      ctx.beginPath(); ctx.arc(P.at[0], P.at[1], P.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    }
+    this._drawSel();
+    this._drawLasers();
+    if (this.o.boxes && this.result) this._boxes();
   }
   // The board as a picture: the ink as the view shows it (answers that are showing included), at `scale` times its
   // size in CSS px, on `background` with an optional dot grid ({color, spacing, offset, radius}). Returns a canvas.
   image(o) {
     o = o || {};
-    const k = o.scale || 2, d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d;
+    const k = o.scale || 2, d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d, z = this.cam.z;
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
     const ctx = c.getContext('2d');
@@ -4406,9 +6690,47 @@ class Pad {
       ctx.fillStyle = g.color;
       for (let y = (g.offset || 0) % sp; y <= H; y += sp) for (let x = (g.offset || 0) % sp; x <= W; x += sp) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
     }
+    ctx.setTransform(k * z, 0, 0, k * z, -this.cam.x * k * z, -this.cam.y * k * z);
     const keep = { ctx: this.ctx, anim: this.anim };
     this.ctx = ctx; this.anim = null;
-    try { this._paint(true); } finally { this.ctx = keep.ctx; this.anim = keep.anim; }
+    try { this._paint(true, { paper: !(o.background || o.dots) }); } finally { this.ctx = keep.ctx; this.anim = keep.anim; }
+    return c;
+  }
+  // everything on the page, in world units (with m around it; o.hidden: answers still behind their chips too), or null
+  contentRect(m, o) {
+    let b = null;
+    for (const s of this.strokes) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); }
+    if (this.plan) for (const it of this.plan.items) if (it.answer && (!it.hidden || (o && o.hidden)) && it.box) b = b ? ubox(b, it.box) : it.box.slice();
+    if (!b) return null;
+    m = m || 0;
+    return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+  }
+  // A picture of part of the board: o.rect (world; default everything on it, with o.margin around), at o.scale canvas px
+  // per world unit (default 2; smaller when the picture would pass o.maxPixels or 16,000 px a side), on its paper (o.paper
+  // false: on o.background or clear; o.sheet: on this paper instead of the page's, {kind, tone}, or null for none), answers
+  // as shown, all of them (an answer key) or none, o.only: just these elements.
+  exportImage(o) {
+    o = o || {};
+    const sel = o.only ? new Set(o.only) : null;
+    let rect = o.rect;
+    if (!rect && sel) { let b = null; for (const s of sel) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); } const m = o.margin === undefined ? 16 : o.margin; rect = b && [b[0] - m, b[1] - m, b[2] + m, b[3] + m]; }
+    if (!rect) rect = this.contentRect(o.margin === undefined ? 40 : o.margin, { hidden: o.answers === 'all' }) || this.viewRect;
+    const W = Math.max(1, rect[2] - rect[0]), H = Math.max(1, rect[3] - rect[1]);
+    let k = o.scale || 2;
+    const most = o.maxPixels || 4e7;
+    if (W * k * H * k > most) k = Math.sqrt(most / (W * H));
+    k = Math.min(k, 16000 / W, 16000 / H);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
+    const ctx = c.getContext('2d');
+    if (o.background && (o.paper === false || !this.o.paper)) { ctx.fillStyle = o.background; ctx.fillRect(0, 0, c.width, c.height); }
+    ctx.setTransform(k, 0, 0, k, -rect[0] * k, -rect[1] * k);
+    const keep = { ctx: this.ctx, anim: this.anim, cam: this.cam, paper: this.o.paper };
+    // drawn as the board looks at 100% (paper lines, labels and the like at their size there), k times as many pixels
+    this.ctx = ctx; this.anim = null; this.cam = { x: rect[0], y: rect[1], z: o.look || 1 };
+    if (o.sheet !== undefined) this.o.paper = o.sheet;
+    try { this._paint(true, { rect, paper: o.paper !== false, answers: o.answers || 'shown', only: sel }); }
+    finally { this.ctx = keep.ctx; this.anim = keep.anim; this.cam = keep.cam; this.o.paper = keep.paper; this._ink(); }
     return c;
   }
   // Lays the latest reading out in the pad's view and starts the animation from what was on screen.
@@ -4549,19 +6871,20 @@ class Pad {
     };
     requestAnimationFrame(tick);
   }
-  // An answer that would run off the right edge of the board: squeezed to fit after its "=", or, when that would make
-  // it smaller than 0.6 of the writing, written at full size under its line, ending at the edge (where there is room
-  // below; otherwise squeezed anyway, to no less than 0.35).
+  // An answer that would run off the right edge of the board (on an endless board: of the view, as the writer sees it
+  // when it is worked out): squeezed to fit after its "=", or, when that would make it smaller than 0.6 of the writing,
+  // written at full size under its line, ending at the edge (where there is room below; otherwise squeezed anyway, to
+  // no less than 0.35).
   _fitAnswers(items) {
-    const d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d, m = 10;
-    if (W < 4 * m) return;
+    const v = this.viewRect, m = 10 / this.cam.z, X1 = v[2], Y1 = v[3];
+    if (X1 - v[0] < 4 * m) return;
     const groups = new Map();
     for (const it of items) if (it.answer && it.group) { if (!groups.has(it.groupKey)) groups.set(it.groupKey, []); groups.get(it.groupKey).push(it); }
     for (const list of groups.values()) {
       const b = list[0].group, w = b[2] - b[0], h = b[3] - b[1];
-      if (b[2] <= W - m || w <= 0) continue;
-      let k = (W - m - b[0]) / w, dx = 0, dy = 0;
-      if (k < 0.6 && w <= W - 2 * m && b[3] + 1.4 * h <= H - m) { k = 1; dx = W - m - b[2]; dy = 1.35 * h; }
+      if (b[2] <= X1 - m || w <= 0 || b[0] >= X1 - m) continue;      // it ends in sight, or begins out of it
+      let k = (X1 - m - b[0]) / w, dx = 0, dy = 0;
+      if (k < 0.6 && w <= X1 - v[0] - 2 * m && b[3] + 1.4 * h <= Y1 - m) { k = 1; dx = X1 - m - b[2]; dy = 1.35 * h; }
       else k = Math.max(0.35, k);
       const ox = b[0], oy = b[3], X = x => ox + (x - ox) * k + dx, Y = y => oy + (y - oy) * k + dy;
       for (const it of list) {
@@ -4593,10 +6916,14 @@ class Pad {
     const c = this.canvas, r = c.getBoundingClientRect(), d = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
     const changed = c.width !== w || c.height !== h;
+    // the view on screen until now is the one to keep when the writer has not moved the board yet
+    if (changed && this.o.infinite && this._sized && !this._want) this._want = { r: this.viewRect, z: this.cam.z };
     if (changed) { c.width = w; c.height = h; }
     this.dpr = d;
+    if (r.width >= 2 && r.height >= 2) this._sized = true;
+    if (changed && this.o.infinite) this._camQuiet(() => { if (this._fitView()) this._camMoved(true); });
     // a board turned or made smaller: the ink is brought back in (once, undoable)
-    if (changed && this.o.fit && this._fit(r.width, r.height)) return;
+    if (changed && this.o.fit && !this.o.infinite && this._fit(r.width, r.height)) return;
     // answers near an edge are fitted to the board's size: lay them out again for the new one
     if (changed && this.answers && this.answers.length && this.result) this._replan(false);
     this.redraw();
@@ -4605,7 +6932,7 @@ class Pad {
   // at least 16 px inside, as one undoable step; corrections stay with their strokes (the strokes are the same
   // objects, moved), and what is on screen moves at once while the reading catches up.
   _fit(W, H) {
-    if (this.ptrs.size || !this.strokes.length || W < 120 || H < 120) return false;
+    if (this.o.infinite || this.ptrs.size || !this.strokes.length || W < 120 || H < 120) return false;
     const b = this.strokes.map(sbox).reduce(ubox), m = 16, tol = 8;
     if (b[0] >= -tol && b[1] >= -tol && b[2] <= W + tol && b[3] <= H + tol) return false;
     const bw = Math.max(b[2] - b[0], 1e-6), bh = Math.max(b[3] - b[1], 1e-6);
@@ -4622,6 +6949,24 @@ class Pad {
     return true;
   }
   // the view moved with the ink: t = [ax, ay, bx, by, k] maps x to bx + (x - ax)·k (back: the other way)
+  // the view's items drawn from these elements (and the answers after their "="), kept as they are now, to move with them
+  _planOf(set) {
+    if (!this.plan) return [];
+    return this.plan.items.filter(it => (it.from.length && it.from.every(s => set.has(s))) || (it.answer && it.eqFrom && it.eqFrom.length && it.eqFrom.every(s => set.has(s))))
+      .map(it => ({ it, parts: it.parts, box: it.box.slice(), group: it.group ? it.group.slice() : null, em: it.em }));
+  }
+  // those items, mapped from where they were kept by x → X(x), y → Y(y) (k: how much sizes change)
+  _planTo(kept, X, Y, k) {
+    if (!kept || !kept.length || !this.plan) return;
+    for (const v of kept) {
+      const it = v.it;
+      it.parts = mapParts(v.parts, X, Y, k); it.box = [X(v.box[0]), Y(v.box[1]), X(v.box[2]), Y(v.box[3])];
+      if (v.group) it.group = [X(v.group[0]), Y(v.group[1]), X(v.group[2]), Y(v.group[3])];
+      if (v.em) it.em = v.em * k;
+    }
+    this.plan.chips = this._chips(this.plan.items);
+    this.anim = null;
+  }
   _movePlan(t, back) {
     if (!this.plan) return;
     const [ax, ay, bx, by, k0] = t, k = back ? 1 / k0 : k0;
@@ -4636,12 +6981,504 @@ class Pad {
     this.anim = null;
   }
 
+  // ---------------------------------------------------------------- canvas tools
+  // ---- draw and hold: a line, circle, box or triangle held still at its end becomes that shape
+  _holdTimer(P) {
+    clearTimeout(P.hold);
+    if (!this.o.hold || P.mode !== 'draw' || P.fix || P.snap || P.chip || typeof shapeRecognize !== 'function') return;
+    P.hold = setTimeout(() => {
+      if (this.ptrs.get(P.id) !== P || P.snap || !P.cur || P.cur.length < 6) return;
+      const b = sbox(P.cur);
+      if (Math.max(b[2] - b[0], b[3] - b[1]) * this.cam.z < 24) return;     // too small to be meant as a shape
+      let r = null;
+      try { r = shapeRecognize(P.cur, { z: this.cam.z }); } catch (e) { r = null; }
+      if (!r || !r.pts || (P.tool.kind === 'highlighter' && r.shape !== 'line')) return;
+      P.snap = r; this.why = 'shape: ' + r.shape;
+      this.redraw();
+    }, 600);
+  }
+  // ---- shapes dragged out with the shape tool (a tap makes one of a standard size)
+  _shapeUp(P, e) {
+    let prev = P.prev;
+    // a finger's tap within 3 s of the pen is the heel of the hand (a finger placing a shape or text later is a finger)
+    if (!prev && P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
+    if (!prev && e && e.type === 'pointerup' && typeof shapeFromDrag === 'function') prev = shapeFromDrag(this.shapeTool.kind, P.a, P.a, { snap: this.o.snap, angle: true, z: this.cam.z });
+    if (!prev || !prev.pts || !prev.pts.length) { this.redraw(); return; }
+    const S = this.shapeTool, s = prev.pts.map(q => [q[0], q[1]]);
+    const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: null, tool: 'shape', shape: prev.shape, size: +S.size > 0 ? +S.size : 3 };
+    if (S.color) info.color = S.color;
+    // a number line or a plane is a placed thing to write on: it takes the color and width, not a fill or dashes
+    const axes = prev.shape === 'numberline' || prev.shape === 'plane';
+    if (S.fill && !axes) info.fill = S.fill;
+    if (S.dash && !axes) info.dash = true;
+    if (prev.opt) info.opt = Object.assign({}, prev.opt);
+    this.info.set(s, info);
+    this.strokes.push(s); this._push({ add: s });
+    this._changed();
+    this.el.dispatchEvent(new CustomEvent('nib:shape', { detail: { shape: prev.shape, element: s }, bubbles: true }));
+  }
+  // ---- the laser pointer: a bright trail that fades, never kept
+  _laserLoop() {
+    if (this._laserRaf || typeof requestAnimationFrame === 'undefined') return;
+    const tick = () => {
+      this._laserRaf = 0;
+      const now = performance.now();
+      this.lasers = this.lasers.filter(L => now - L.end < 700);
+      const on = [...this.ptrs.values()].some(P => P.mode === 'laser');
+      this.redraw();
+      if (on || this.lasers.length) this._laserRaf = requestAnimationFrame(tick);
+    };
+    this._laserRaf = requestAnimationFrame(tick);
+  }
+  _drawLasers() {
+    const trails = [];
+    for (const P of this.ptrs.values()) if (P.mode === 'laser' && P.cur) trails.push({ pts: P.cur, end: 0 });
+    trails.push(...this.lasers);
+    if (!trails.length) return;
+    const ctx = this.ctx, z = this.cam.z, now = performance.now();
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const L of trails) {
+      const fade = L.end ? Math.max(0, 1 - (now - L.end) / 700) : 1;
+      // the last 0.8 s of the trail, fainter towards its tail
+      const pts = L.pts.filter(q => now - q[2] < 800 || q === L.pts[L.pts.length - 1]);
+      for (let i = 1; i < pts.length; i++) {
+        const a = Math.max(0, 1 - (now - pts[i][2]) / 800) * fade;
+        if (a <= 0) continue;
+        ctx.strokeStyle = `rgba(255,59,48,${0.22 * a})`; ctx.lineWidth = 14 / z;
+        ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke();
+        ctx.strokeStyle = `rgba(255,59,48,${a})`; ctx.lineWidth = 4 / z;
+        ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke();
+      }
+      const tip = L.pts[L.pts.length - 1];
+      if (tip && fade > 0) {
+        ctx.fillStyle = `rgba(255,59,48,${0.3 * fade})`; ctx.beginPath(); ctx.arc(tip[0], tip[1], 11 / z, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,90,80,${fade})`; ctx.beginPath(); ctx.arc(tip[0], tip[1], 5 / z, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+  // ---- select: a lasso (pen, finger) or a box (mouse) picks elements; drag them, or a handle to make them bigger or smaller
+  _liveSel() { if (!this.selection.size) return []; const live = new Set(this.strokes); return [...this.selection].filter(s => live.has(s)); }
+  _setSel(list) {
+    const before = this.selection.size;
+    this.selection = new Set(list || []);
+    if (before || this.selection.size) this._selChanged();
+  }
+  _dropDead() { if (this.selection.size) { const n = this.selection.size, live = this._liveSel(); if (live.length !== n) { this.selection = new Set(live); this._selChanged(); } } }
+  _selChanged() {
+    const sel = this._liveSel(), b = sel.length ? this._selBox(sel) : null;
+    const box = b ? [...this.toScreen([b[0], b[1]]), ...this.toScreen([b[2], b[3]])] : null;
+    this.el.dispatchEvent(new CustomEvent('nib:select', { detail: { count: sel.length, box, kinds: [...new Set(sel.map(s => this._tool(s)))] }, bubbles: true }));
+  }
+  get selected() { return this._liveSel(); }
+  _selBox(sel) {
+    let b = null;
+    for (const s of sel) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); }
+    const m = 6 / this.cam.z;
+    return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+  }
+  // the 8 handles of a selection box, on screen
+  _handles(b) {
+    const [x0, y0] = this.toScreen([b[0], b[1]]), [x1, y1] = this.toScreen([b[2], b[3]]), xm = (x0 + x1) / 2, ym = (y0 + y1) / 2;
+    return { nw: [x0, y0], n: [xm, y0], ne: [x1, y0], e: [x1, ym], se: [x1, y1], s: [xm, y1], sw: [x0, y1], w: [x0, ym] };
+  }
+  _handleAt(b, sp, touch) {
+    const H = this._handles(b), r = touch ? 22 : 12;
+    let best = null, bd = Infinity;
+    for (const k in H) { const d = Math.hypot(H[k][0] - sp[0], H[k][1] - sp[1]); if (d <= r && d < bd) { best = k; bd = d; } }
+    return best;
+  }
+  // the topmost element at a point (objects: only shapes, text and pictures, which can be picked up and dragged at once)
+  elementAt(p, objects) {
+    const r = (objects ? 12 : 8) / this.cam.z;
+    for (let i = this.strokes.length - 1; i >= 0; i--) {
+      const s = this.strokes[i], t = this._tool(s);
+      if (objects && t !== 'shape' && t !== 'text' && t !== 'image') continue;
+      if (this._hit(s, p, r)) return s;
+    }
+    return null;
+  }
+  _selectDown(P, p, e) {
+    P.p0 = p;
+    const sel = this._liveSel(), sp = this.toScreen(p);
+    if (sel.length) {
+      const b = this._selBox(sel), h = this._handleAt(b, sp, P.type !== 'mouse');
+      if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
+      if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
+    }
+    let hit = this.elementAt(p, true);
+    if (hit && !this.selection.has(hit)) {
+      const t = this._tool(hit), E = this.info.get(hit) || {};
+      if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
+        const b = this._bounds(hit), m = 14 / this.cam.z;
+        if (p[0] - b[0] > m && b[2] - p[0] > m && p[1] - b[1] > m && b[3] - p[1] > m) hit = null;
+      }
+    }
+    if (hit) {
+      P.tapped = this.selection.size === 1 && this.selection.has(hit) ? hit : null;
+      this._setSel([hit]);
+      P.op = { kind: 'move', orig: [[hit, hit.map(q => q.slice())]] };
+      this.redraw();
+      return;
+    }
+    P.lasso = [p]; P.box = P.type === 'mouse';
+    if (this.selection.size) { this._setSel([]); this.redraw(); }
+  }
+  _selectMove(P, p) {
+    if (P.op) {
+      const O = P.op;
+      // a hand that hardly moved has not moved anything (a tap)
+      if (!O.moved && Math.hypot(p[0] - P.p0[0], p[1] - P.p0[1]) * this.cam.z < 3) return;
+      if (O.kind === 'move') {
+        const dx = p[0] - P.p0[0], dy = p[1] - P.p0[1];
+        for (const [s, was] of O.orig) { for (let i = 0; i < s.length; i++) { s[i][0] = was[i][0] + dx; s[i][1] = was[i][1] + dy; } this._touched(s); }
+        this._planTo(O.items, x => x + dx, y => y + dy, 1);
+      } else {
+        const b = O.b0, h = O.h, W = Math.max(b[2] - b[0], 1e-6), H = Math.max(b[3] - b[1], 1e-6);
+        const ax = h.includes('w') ? b[2] : b[0], ay = h.includes('n') ? b[3] : b[1];
+        let kx = h.includes('e') ? (p[0] - b[0]) / W : h.includes('w') ? (b[2] - p[0]) / W : 1;
+        let ky = h.includes('s') ? (p[1] - b[1]) / H : h.includes('n') ? (b[3] - p[1]) / H : 1;
+        kx = Math.max(0.05, kx); ky = Math.max(0.05, ky);
+        if (h.length === 2) kx = ky = Math.max(kx, ky);     // a corner keeps the proportions
+        for (const [s, was] of O.orig) {
+          const t = this._tool(s);
+          // text and pictures keep their shape from a side handle too
+          const kxx = (t === 'text' || t === 'image') && h.length === 1 ? (h === 'e' || h === 'w' ? kx : ky) : kx;
+          const kyy = (t === 'text' || t === 'image') && h.length === 1 ? kxx : ky;
+          for (let i = 0; i < s.length; i++) { s[i][0] = ax + (was[i][0] - ax) * kxx; s[i][1] = ay + (was[i][1] - ay) * kyy; }
+          this._touched(s);
+        }
+        this._planTo(O.items, x => ax + (x - ax) * kx, y => ay + (y - ay) * ky, Math.sqrt(kx * ky));
+      }
+      O.moved = true;
+      this._frame();
+      return;
+    }
+    if (P.lasso) { P.lasso.push(p); this._frame(); }
+  }
+  _selectUp(P, e) {
+    if (P.op) {
+      const O = P.op;
+      if (!O.moved) {
+        // a tap on a text that was already selected: write in it
+        if (P.tapped && this._tool(P.tapped) === 'text' && e && e.type === 'pointerup') { this._editText(P.tapped, false); return; }
+        // a tap inside a group: just what is under it (or nothing)
+        if (O.orig.length > 1 && e && e.type === 'pointerup') { const hit = this.elementAt(P.p0); this._setSel(hit ? [hit] : []); }
+        this.redraw(); this._selChanged(); return;
+      }
+      const h = { move: null, t: null }, rs = [];
+      // a text made bigger or smaller: its size follows its box, and the box fits its text again
+      for (const [s] of O.orig) {
+        const E = this.info.get(s);
+        if (!E || E.tool !== 'text') continue;
+        const k = this._textScale(s, E);
+        if (Math.abs(k - 1) < 1e-3) continue;
+        const now = Object.assign({}, E, { size: Math.max(4, Math.round(E.size * k * 10) / 10) });
+        this.info.set(s, now); rs.push([s, E, now]); this._fitText(s);
+      }
+      h.move = O.orig.map(([s, was]) => [s, was, s.map(q => q.slice())]);
+      if (rs.length) h.restyle = rs;
+      this._inkMoved(O.orig.map(([s]) => s), O.kind === 'scale');
+      this._push(h);
+      this._changed();
+      this._selChanged();
+      return;
+    }
+    if (!P.lasso) return;
+    const L = P.lasso, b = sbox(L);
+    P.lasso = null;
+    if (Math.max(b[2] - b[0], b[3] - b[1]) * this.cam.z < 8) { const hit = this.elementAt(P.p0); this._setSel(hit ? [hit] : []); }
+    else {
+      const poly = P.box ? [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] : L;
+      this._setSel(this.strokes.filter(s => this._inLasso(s, poly)));
+    }
+    this.redraw();
+  }
+  // in the lasso: most of a stroke's points, the middle of a shape or text, or all of a picture, number line or plane
+  // (things writing goes on: a lasso round the writing on one leaves it where it is)
+  _inLasso(s, poly) {
+    const t = this._tool(s), E = this.info.get(s) || {};
+    if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
+      const b = this._bounds(s);
+      return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].every(q => padInPoly(q, poly));
+    }
+    if (t === 'shape' || t === 'text') { const b = this._bounds(s); return padInPoly([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], poly); }
+    let n = 0;
+    for (const q of s) if (padInPoly(q, poly)) n++;
+    return n >= Math.max(1, 0.6 * s.length);
+  }
+  _drawSel() {
+    const ctx = this.ctx, z = this.cam.z;
+    for (const P of this.ptrs.values()) {
+      if (P.mode !== 'select' || !P.lasso || P.lasso.length < 2) continue;
+      ctx.save(); ctx.strokeStyle = 'rgba(201,162,39,.95)'; ctx.fillStyle = 'rgba(201,162,39,.08)'; ctx.lineWidth = 1.5 / z; ctx.setLineDash([5 / z, 4 / z]);
+      ctx.beginPath();
+      if (P.box) { const b = sbox(P.lasso); ctx.rect(b[0], b[1], b[2] - b[0], b[3] - b[1]); }
+      else { ctx.moveTo(P.lasso[0][0], P.lasso[0][1]); for (const q of P.lasso) ctx.lineTo(q[0], q[1]); ctx.closePath(); }
+      ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+    const sel = this._liveSel();
+    if (!sel.length) return;
+    const b = this._selBox(sel);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(201,162,39,.95)'; ctx.lineWidth = 1.5 / z; ctx.setLineDash([6 / z, 4 / z]);
+    ctx.strokeRect(b[0], b[1], b[2] - b[0], b[3] - b[1]);
+    ctx.setLineDash([]);
+    // each element of a group, faintly
+    if (sel.length > 1) { ctx.strokeStyle = 'rgba(201,162,39,.35)'; ctx.lineWidth = 1 / z; for (const s of sel) { const q = this._bounds(s); ctx.strokeRect(q[0], q[1], q[2] - q[0], q[3] - q[1]); } }
+    const H = this._handles(b), hs = 5 / z;
+    ctx.fillStyle = this._paperC || '#ffffff'; ctx.strokeStyle = 'rgba(201,162,39,1)'; ctx.lineWidth = 1.5 / z;
+    for (const k in H) {
+      const w = this.toWorld(H[k][0], H[k][1]);
+      ctx.beginPath(); ctx.rect(w[0] - hs, w[1] - hs, 2 * hs, 2 * hs); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // ink that moved is read again where it is (made bigger or smaller: classified again too)
+  _inkMoved(list, scaled) {
+    if (!list.some(s => this._isInk(s))) return;
+    this.parts.clear();
+    if (scaled) { this.recs = new WeakMap(); this.rec = new Recognizer(); }
+  }
+  // what pointers do: 'draw' (this.tool), 'erase', 'fix', 'select', 'pan', 'shape' (this.shapeTool), 'text' (this.textTool), 'laser'
+  setMode(m) {
+    m = ['draw', 'erase', 'fix', 'select', 'pan', 'shape', 'text', 'laser'].includes(m) ? m : 'draw';
+    if (this.editing && m !== 'text' && m !== 'select') this._commitText();
+    if (m !== 'select' && this.selection.size) this._setSel([]);
+    this.mode = m;
+    this._cursor();
+    this.redraw();
+  }
+  select(list) { this._setSel((list || []).filter(s => this.strokes.includes(s))); this.redraw(); }
+  selectAll() { this._setSel(this.strokes.slice()); this.redraw(); }
+  clearSelection() { if (this.selection.size) { this._setSel([]); this.redraw(); } }
+  // take the selection away (one undoable step); returns how many went
+  deleteSelection() {
+    if (!this.selection.size) return 0;
+    const erase = [];
+    for (let i = this.strokes.length - 1; i >= 0; i--) if (this.selection.has(this.strokes[i])) { erase.push({ i, s: this.strokes[i] }); this.strokes.splice(i, 1); }
+    this._setSel([]);
+    if (!erase.length) return 0;
+    this._push({ erase }); this._changed();
+    return erase.length;
+  }
+  // the selection as data to paste later (on this page or another): {v, items: [{pts, info}], box}
+  copySelection() {
+    const sel = this._liveSel();
+    if (!sel.length) return null;
+    const items = sel.map(s => ({ pts: s.map(q => q.slice()), info: Object.assign({}, this.info.get(s) || {}) }));
+    const clip = { v: 1, items, box: this._selBox(sel) };
+    this._clip = clip;
+    return clip;
+  }
+  // put copied elements on the board (one undoable step), centered on world point at (default: offset from where they were
+  // copied, or the middle of the view when that is out of sight); they come selected
+  paste(clip, at) {
+    clip = clip || this._clip;
+    if (!clip || !Array.isArray(clip.items) || !clip.items.length) return [];
+    const b = clip.box || [0, 0, 0, 0], v = this.viewRect;
+    let dx, dy;
+    if (at) { dx = at[0] - (b[0] + b[2]) / 2; dy = at[1] - (b[1] + b[3]) / 2; }
+    else {
+      dx = dy = 24 / this.cam.z;
+      const cx = (b[0] + b[2]) / 2 + dx, cy = (b[1] + b[3]) / 2 + dy;
+      if (cx < v[0] || cx > v[2] || cy < v[1] || cy > v[3]) { dx = (v[0] + v[2]) / 2 - (b[0] + b[2]) / 2; dy = (v[1] + v[3]) / 2 - (b[1] + b[3]) / 2; }
+    }
+    const ops = [], made = [];
+    for (const it of clip.items) {
+      if (!Array.isArray(it.pts) || !it.pts.length) continue;
+      const s = it.pts.map(q => { const c = q.slice(); c[0] += dx; c[1] += dy; return c; });
+      const E = Object.assign({}, it.info || {});
+      if (E.tool === 'image' && E.img && !this.images.has(E.img)) this._needImage(E.img);
+      this.info.set(s, E);
+      ops.push({ ins: this.strokes.length, s }); this.strokes.push(s); made.push(s);
+    }
+    if (!made.length) return [];
+    this._push({ ops });
+    this._setSel(made);
+    this._changed();
+    return made;
+  }
+  duplicateSelection() { const c = this.copySelection(); return c ? this.paste(c) : []; }
+  // a new look for what is selected: {color, size, fill, dash} (what applies to each element; one undoable step)
+  restyleSelection(f) {
+    const sel = this._liveSel(), rs = [];
+    for (const s of sel) {
+      const E = this.info.get(s) || {}, t = E.tool || 'pen', now = Object.assign({}, E);
+      if ('color' in f && t !== 'image') { if (f.color) now.color = f.color; else delete now.color; }
+      if ('size' in f && +f.size > 0 && t !== 'image' && t !== 'text') now.size = +f.size;
+      if ('textSize' in f && +f.textSize > 0 && t === 'text') now.size = +f.textSize;
+      if ('fill' in f && t === 'shape') { if (f.fill) now.fill = f.fill; else delete now.fill; }
+      if ('dash' in f && t === 'shape') { if (f.dash) now.dash = true; else delete now.dash; }
+      if ('opt' in f && f.opt && t === 'shape' && (E.shape === 'numberline' || E.shape === 'plane')) now.opt = Object.assign({}, E.opt || {}, f.opt);
+      if (JSON.stringify(now) === JSON.stringify(E)) continue;
+      rs.push([s, this.info.get(s), now]);
+    }
+    if (!rs.length) return 0;
+    const h = { restyle: rs };
+    // a text with a new size: its box fits it again
+    const mv = [];
+    for (const [s, , now] of rs) { this.info.set(s, now); this._touched(s); if (now.tool === 'text') { const was = s.map(q => q.slice()); this._fitText(s); mv.push([s, was, s.map(q => q.slice())]); } }
+    if (mv.length) { h.move = mv; h.t = null; }
+    this._push(h); this._changed(); this._selChanged();
+    return rs.length;
+  }
+  // to the front or the back of everything (one undoable step)
+  orderSelection(front) {
+    const sel = this._liveSel();
+    if (!sel.length) return;
+    const keep = this.strokes.filter(s => this.selection.has(s)), ops = [];
+    for (let i = this.strokes.length - 1; i >= 0; i--) if (this.selection.has(this.strokes[i])) { ops.push({ rm: i, s: this.strokes[i] }); this.strokes.splice(i, 1); }
+    keep.forEach((s, k) => { const at = front ? this.strokes.length : k; this.strokes.splice(at, 0, s); ops.push({ ins: at, s }); });
+    this._push({ ops }); this._changed();
+  }
+  // move what is selected by (dx, dy) screen px (the arrow keys)
+  nudgeSelection(dx, dy) {
+    const sel = this._liveSel();
+    if (!sel.length) return;
+    const wx = dx / this.cam.z, wy = dy / this.cam.z, move = [], items = this._planOf(new Set(sel));
+    this._planTo(items, x => x + wx, y => y + wy, 1);
+    for (const s of sel) { const was = s.map(q => q.slice()); for (const q of s) { q[0] += wx; q[1] += wy; } this._touched(s); move.push([s, was, s.map(q => q.slice())]); }
+    this._inkMoved(sel, false);
+    this._push({ move, t: null }); this._changed(); this._selChanged();
+  }
+  // ---- text: a tap with the text tool starts a text box (or opens the one tapped); a tap elsewhere ends it
+  _textAt(p) {
+    const hit = this.elementAt(p, true);
+    if (hit && this._tool(hit) === 'text') { this._editText(hit, false); return; }
+    const T = this.textTool, size = +T.size > 0 ? +T.size : 32;
+    const s = [[p[0], p[1] - 0.6 * size], [p[0] + size, p[1] + 0.65 * size]];
+    const info = { type: null, width: null, tool: 'text', size, text: '' };
+    if (T.color) info.color = T.color;
+    this.info.set(s, info);
+    this._editText(s, true);
+  }
+  _dbl(e) {
+    if (this.mode !== 'select' && this.mode !== 'text') return;
+    const hit = this.elementAt(this._pt(e), true);
+    if (hit && this._tool(hit) === 'text') this._editText(hit, false);
+  }
+  _editText(s, isNew) {
+    this._commitText();
+    if (typeof document === 'undefined') return;
+    const E = this.info.get(s);
+    const ta = document.createElement('textarea');
+    ta.value = E.text || ''; ta.setAttribute('aria-label', 'Text'); ta.setAttribute('part', 'text'); ta.wrap = 'off'; ta.spellcheck = true;
+    ta.style.cssText = 'position:absolute;z-index:3;margin:0;box-sizing:content-box;padding:2px 6px;border:1.5px dashed rgba(201,162,39,.95);border-radius:6px;'
+      + 'background:transparent;resize:none;overflow:hidden;outline:none;white-space:pre;line-height:1.25;font-weight:500;min-width:2ch;';
+    this.el.appendChild(ta);
+    this.editing = { el: s, ta, isNew };
+    ta.addEventListener('input', () => this._placeEditor());
+    ta.addEventListener('keydown', ev => {
+      ev.stopPropagation();                                 // the Board's keys (E, S, 1 … 4) are letters here
+      if (ev.key === 'Escape' || (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey))) { ev.preventDefault(); this._commitText(); }
+    });
+    ta.addEventListener('blur', () => setTimeout(() => { if (this.editing && this.editing.ta === ta && document.activeElement !== ta) this._commitText(); }, 120));
+    this._placeEditor();
+    this.redraw();
+    try { ta.focus({ preventScroll: true }); } catch (err) { ta.focus(); }
+    this.el.dispatchEvent(new CustomEvent('nib:edit', { detail: { editing: true }, bubbles: true }));
+  }
+  _placeEditor() {
+    const ed = this.editing;
+    if (!ed) return;
+    const s = ed.el, E = this.info.get(s), z = this.cam.z, ta = ed.ta;
+    const k = ed.isNew ? 1 : this._textScale(s, E), size = (+E.size || 32) * k * z;
+    const x = Math.min(s[0][0], s[1][0]), y = Math.min(s[0][1], s[1][1]), sc = this.toScreen([x, y]);
+    ta.style.left = (sc[0] - 7.5) + 'px'; ta.style.top = (sc[1] - 3.5) + 'px';
+    ta.style.fontFamily = PAD_FONT; ta.style.fontSize = size + 'px';
+    ta.style.color = padColor(E.color, this._darkP, this._inkC || '#1b2a4a');
+    const lines = ta.value.split('\n'), ctx = this.ctx;
+    ctx.save(); ctx.font = `500 ${size}px ${PAD_FONT}`;
+    const w = Math.max(size * 0.6, ...lines.map(l => ctx.measureText(l).width));
+    ctx.restore();
+    ta.style.width = Math.ceil(w + size * 0.5) + 'px'; ta.style.height = Math.ceil(lines.length * 1.25 * size) + 'px';
+  }
+  // the text box is done: kept (a new one added, a changed one changed: one undoable step), or gone when it is empty
+  _commitText() {
+    const ed = this.editing;
+    if (!ed) return;
+    this.editing = null;
+    const { el: s, ta, isNew } = ed, E = this.info.get(s);
+    const text = ta.value.replace(/[\s ]+$/, '');
+    ta.remove();
+    if (isNew) {
+      if (text.trim()) {
+        this.info.set(s, Object.assign({}, E, { text })); this._fitText(s);
+        this.strokes.push(s); this._push({ add: s }); this._setSel([]); this._changed();
+      } else this.redraw();
+    } else {
+      const i = this.strokes.indexOf(s);
+      if (i < 0) this.redraw();
+      else if (!text.trim()) { this.strokes.splice(i, 1); this._push({ erase: [{ i, s }] }); this._dropDead(); this._changed(); }
+      else if (text !== E.text) {
+        const was = s.map(q => q.slice()), now = Object.assign({}, E, { text });
+        // keep its look (a box made bigger or smaller keeps its size)
+        now.size = Math.max(4, Math.round((+E.size || 32) * this._textScale(s, E) * 10) / 10);
+        this.info.set(s, now); this._fitText(s);
+        this._push({ restyle: [[s, E, now]], move: [[s, was, s.map(q => q.slice())]], t: null }); this._changed();
+      } else this.redraw();
+    }
+    this.el.dispatchEvent(new CustomEvent('nib:edit', { detail: { editing: false }, bubbles: true }));
+  }
+  // ---- pictures: kept by id (the page that holds the pad stores them; nib:needimage asks for one it does not have)
+  putImage(id, src) {
+    if (!id || !src || typeof Image === 'undefined') return null;
+    const have = this.images.get(id);
+    if (have && have.src === src) return have;
+    const rec = { src, img: new Image(), ok: false, bad: false };
+    rec.img.onload = () => { rec.ok = true; this._frame(); };
+    rec.img.onerror = () => { rec.bad = true; this._frame(); };
+    rec.img.src = src;
+    this.images.set(id, rec);
+    return rec;
+  }
+  _needImage(id) {
+    if (!id) return;
+    if (!this._asked) this._asked = new Set();
+    if (this._asked.has(id)) return;
+    this._asked.add(id);
+    this.el.dispatchEvent(new CustomEvent('nib:needimage', { detail: { id }, bubbles: true }));
+  }
+  // a picture (a data: URL) on the board: in the middle of the view (or at o.at), at most 70% of it; one undoable step;
+  // it comes selected; resolves to the element (nib:image {id, src} is sent so the page can keep the picture)
+  async addImage(src, o) {
+    o = o || {};
+    const id = o.id || ('img-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8));
+    const rec = this.putImage(id, src);
+    if (!rec) return null;
+    if (!rec.ok && !rec.bad) await new Promise(res => { rec.img.addEventListener('load', res, { once: true }); rec.img.addEventListener('error', res, { once: true }); });
+    if (rec.bad) { this.images.delete(id); return null; }
+    const v = this.viewRect, vw = v[2] - v[0], vh = v[3] - v[1];
+    const iw = rec.img.naturalWidth || 400, ih = rec.img.naturalHeight || 300, k = Math.min(1 / (o.dpr || 1), 0.7 * vw / iw, 0.7 * vh / ih);
+    const w = iw * k, h = ih * k, c = o.at || [(v[0] + v[2]) / 2, (v[1] + v[3]) / 2];
+    const s = [[c[0] - w / 2, c[1] - h / 2], [c[0] + w / 2, c[1] + h / 2]];
+    this.info.set(s, { type: null, width: null, tool: 'image', img: id });
+    this.strokes.push(s); this._push({ add: s });
+    this._setSel([s]);
+    this._changed();
+    this.el.dispatchEvent(new CustomEvent('nib:image', { detail: { id, src }, bubbles: true }));
+    return s;
+  }
+  // the ids of the pictures on the page now
+  imageIds() { const out = new Set(); for (const s of this.strokes) { const E = this.info.get(s); if (E && E.tool === 'image' && E.img) out.add(E.img); } return [...out]; }
+  // an element made in code: points (world) and its look ({tool, color, size, shape, ...}); one undoable step
+  addElement(pts, look) {
+    if (!Array.isArray(pts) || !pts.length) return null;
+    const s = pts.map(q => [+q[0], +q[1]]);
+    this.info.set(s, Object.assign({ type: null, width: null }, look || {}));
+    this.strokes.push(s); this._push({ add: s }); this._changed();
+    return s;
+  }
+  // an element's look (a copy), or null
+  lookOf(s) { const E = this.info.get(s); return E ? Object.assign({}, E) : null; }
   // ---------------------------------------------------------------- state
   _changed() {
+    this._dropDead();
     this.redraw();
     if (this.o.onChange) this.o.onChange(this);
     this.el.dispatchEvent(new CustomEvent('nib:change', { detail: this, bubbles: true }));
-    if (!this.strokes.length) { clearTimeout(this.timer); this.gen++; this._emit(null); return; }  // nothing left to read
+    if (!this.ink.length) { clearTimeout(this.timer); this.gen++; if (this.result || this.plan) this._emit(null); return; }  // nothing left to read
     if (this.o.auto) this._schedule(this.o.delay);
   }
   // Read the ink without freezing the page: classify the new stroke groups a few milliseconds at a time,
@@ -4662,7 +7499,7 @@ class Pad {
   }
   _emit(res) {
     this.result = res;
-    this.resultStrokes = res ? this.strokes.slice() : [];
+    this.resultStrokes = res ? this.ink : [];
     this._replan(true);
     if (this.o.train) this._trainSee();
     if (this.o.boxes) this.redraw();
@@ -4671,21 +7508,23 @@ class Pad {
   }
   recognize(start) {
     clearTimeout(this.timer); this.gen++;
-    if (!this.strokes.length) { this._emit(null); return null; }
+    const ink = this.ink;
+    if (!ink.length) { this._emit(null); return null; }
     let res;
     if (this.o.separate) res = this._readParts(this._ropts());
-    else res = this.rec.recognize(this.strokes, Object.assign(this._ropts(), { fix: this._fixFor(this.strokes) }));
+    else res = this.rec.recognize(ink, Object.assign(this._ropts(), { fix: this._fixFor(ink) }));
     if (typeof start === 'number') res.ms = Math.round(performance.now() - start); // the whole read, not just its last pass
     this._emit(res);
     return res;
   }
-  // the recogniser's options (the pad's own)
+  // the recognizer's options (the pad's own)
   _ropts() { const o = Object.assign({}, this.o); o.smooth = +o.smooth > 0 ? +o.smooth : 0; return o; }
   // the classifier work for the next read, one stroke group per step (newest ink first)
   *_warm(ro) {
-    if (!this.o.separate) { yield* this.rec.warmup(this.strokes, Object.assign({}, ro, { fix: this._fixFor(this.strokes) })); return; }
-    for (const g of clustersOf(this.strokes)) {
-      const st = g.map(i => this.strokes[i]);
+    const ink = this.ink;
+    if (!this.o.separate) { yield* this.rec.warmup(ink, Object.assign({}, ro, { fix: this._fixFor(ink) })); return; }
+    for (const g of clustersOf(ink)) {
+      const st = g.map(i => ink[i]);
       if (!this._partCached(st, ro)) yield* this._recFor(st[0]).warmup(st, Object.assign({}, ro, { fix: this._fixFor(st) }));
     }
   }
@@ -4695,8 +7534,9 @@ class Pad {
   }
   // A board: each group of writing is read on its own (and kept while it does not change), then put together.
   _readParts(ro) {
+    const ink = this.ink;
     const read = groups => groups.map(g => {
-      const st = g.map(i => this.strokes[i]);
+      const st = g.map(i => ink[i]);
       const key = this._partKey(st, ro);
       let res = this.parts.get(key);
       if (!res) {
@@ -4706,7 +7546,7 @@ class Pad {
       }
       return { idx: g, strokes: st, result: res };
     });
-    let parts = read(clustersOf(this.strokes));
+    let parts = read(clustersOf(ink));
     // a piece that ends in an operator, or begins with one, continues the writing beside it: "2 ·  22 +  2 =" written
     // with spaces (as a prompt shows it) is one expression, not three; read again as one (at most a few rounds)
     for (let round = 0; round < 8; round++) {
@@ -4722,7 +7562,7 @@ class Pad {
   }
   _partCached(st, ro) { return this.parts.has(this._partKey(st, ro)); }
   _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
-  // re-label one recognised symbol (from result.symbols[i].candidates) and re-run
+  // re-label one recognized symbol (from result.symbols[i].candidates) and re-run
   // the reading's LaTeX with the answers written in after their "="
   solvedLatex() {
     const res = this.result;
@@ -4743,7 +7583,7 @@ class Pad {
     // remember the shape so the same writer's next one reads right (stays in this browser)
     if (this.o.learn !== false && this.o.memory !== false) {
       try {
-        const ref = refSize(normStrokes(this.strokes).strokes), sm = this._ropts().smooth;
+        const ref = refSize(normStrokes(this.ink).strokes), sm = this._ropts().smooth;
         let g = normStrokes(ss).strokes;
         if (sm > 0) g = g.map(st => smoothPath(st, sm * ref));
         memLearn(classifyGroup(g, ref).hidden, label === '\\cdot' ? '.' : label);   // a dot is a dot; where it sits says which
@@ -4770,10 +7610,22 @@ class Pad {
     }
     if (h.hide) for (const k of h.hide) { if (back) this.revealed.add(k); else this.revealed.delete(k); }
     if (h.reveal) for (const k of h.reveal) { if (back) this.revealed.delete(k); else this.revealed.add(k); }
+    if (h.ops) {                                          // elements taken out and put in (the area eraser, paste, order)
+      if (back) for (let k = h.ops.length - 1; k >= 0; k--) {
+        const o = h.ops[k];
+        if (o.ins !== undefined) { const i = this.strokes.indexOf(o.s); if (i >= 0) this.strokes.splice(i, 1); }
+        else this.strokes.splice(Math.min(o.rm, this.strokes.length), 0, o.s);
+      }
+      else for (const o of h.ops) {
+        if (o.ins !== undefined) this.strokes.splice(Math.min(o.ins, this.strokes.length), 0, o.s);
+        else { const i = this.strokes.indexOf(o.s); if (i >= 0) this.strokes.splice(i, 1); }
+      }
+    }
+    if (h.restyle) for (const [s, was, now] of h.restyle) { this.info.set(s, back ? was : now); this._touched(s); }
     if (h.move) {
-      for (const [s, was, now] of h.move) { const src = back ? was : now; s.length = 0; for (const p of src) s.push(p.slice()); }
+      for (const [s, was, now] of h.move) { const src = back ? was : now; s.length = 0; for (const p of src) s.push(p.slice()); this._touched(s); }
       this.parts.clear();                                 // the strokes keep their training-log names (this._hashes): moved writing is the same writing
-      this._movePlan(h.t, back);
+      if (h.t) this._movePlan(h.t, back);
     }
     if (h.hide || h.reveal || h.clear) this._syncHidden();
   }
@@ -4789,6 +7641,9 @@ class Pad {
   }
   clear() {
     for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
+    if (this.editing) this._commitText();
+    this.lasers = [];
+    if (this.selection.size) this._setSel([]);
     if (!this.strokes.length) { this.redraw(); return; }
     this.trainFlush();
     const h = { erase: this.strokes.map((s, i) => ({ i, s })).reverse(), clear: true, fixes: this.fixes.slice(), revealed: [...this.revealed] };
@@ -4796,8 +7651,12 @@ class Pad {
     this._push(h); this._changed();
   }
   get canUndo() { return this.history.length > 0; }
+  // the writing Nib reads: pen and marker strokes (not highlighters, shapes, text or pictures); none when read is off
+  _isInk(s) { const E = this.info.get(s), t = E && E.tool; return !t || t === 'pen' || t === 'marker'; }
+  get ink() { return this.o.read === false ? [] : this.strokes.filter(s => this._isInk(s)); }
   get canRedo() { return this.future.length > 0; }
-  getStrokes() { return this.strokes.map(s => s.map(p => p.slice())); }
+  // every element's points as [x, y, t] (a pen's pressure, kept as a fourth number inside, is left out)
+  getStrokes() { return this.strokes.map(s => s.map(p => p.slice(0, 3))); }
   // [[x, y, t?], ...] or {x, y, t?} points, or {points} strokes; a stroke with no usable point is null
   _cleanStrokes(strokes) {
     const pt = p => (Array.isArray(p) ? [+p[0], +p[1], +p[2] || 0] : p && typeof p === 'object' ? [+p.x, +p.y, +p.t || 0] : null);
@@ -4808,10 +7667,10 @@ class Pad {
   setStrokes(strokes) {
     this._dropAll(); this.trainFlush();
     this.strokes = this._cleanStrokes(strokes).filter(Boolean);
-    this.history = []; this.future = []; this.fixes = []; this.revealed = new Set(); this._changed();
-    if (this.strokes.length && this.o.auto) this._schedule(0);   // no need to wait for a pen to rest
+    this.history = []; this.future = []; this.fixes = []; this.revealed = new Set(); this.selection = new Set(); this._changed();
+    if (this.ink.length && this.o.auto) this._schedule(0);   // no need to wait for a pen to rest
   }
-  _dropAll() { for (const P of [...this.ptrs.values()]) this._drop(P); for (const q of this.pending) clearTimeout(q.timer); this.pending = []; }
+  _dropAll() { for (const P of [...this.ptrs.values()]) this._drop(P); for (const q of this.pending) clearTimeout(q.timer); this.pending = []; if (this.editing) this._commitText(); this.gesture = null; }
   // Everything that makes up the pad's page, to keep: the strokes (x, y to 0.1 px), the corrections (as indices
   // into the strokes) and the answers shown by a tap (the strokes of their line, and the answer).
   getState() {
@@ -4823,15 +7682,58 @@ class Pad {
       const cut = key.indexOf('|'), ids = key.slice(0, cut).split(',').filter(Boolean).map(x => bySid.get(x));
       if (ids.length && ids.every(i => i !== undefined)) revealed.push({ strokes: ids, answer: key.slice(cut + 1) });
     }
-    return { strokes, fixes, revealed, types: this.strokes.map(s => this.strokeInfo(s).type) };
+    const out = { strokes, fixes, revealed, types: this.strokes.map(s => this.strokeInfo(s).type) };
+    // each element's look when it is not a plain pen stroke, and a pen's pressure (0 … 100) when it gave one
+    const meta = this.strokes.map(s => {
+      const E = this.info.get(s);
+      if (!E) return null;
+      const m = {};
+      if (E.tool && E.tool !== 'pen') m.k = E.tool;
+      if (E.color) m.c = E.color;
+      if (+E.size > 0) m.s = Math.round(E.size * 100) / 100;
+      if (E.shape) m.sh = E.shape;
+      if (E.fill) m.f = E.fill;
+      if (E.dash) m.d = 1;
+      if (E.opt) m.o = E.opt;
+      if (typeof E.text === 'string') m.x = E.text;
+      if (E.img) m.im = E.img;
+      return Object.keys(m).length ? m : null;
+    });
+    if (meta.some(Boolean)) out.meta = meta;
+    const press = this.strokes.map(s => (s.length && s[0].length > 3 ? s.map(q => Math.round((q.length > 3 ? q[3] : 0.5) * 100)) : null));
+    if (press.some(Boolean)) out.press = press;
+    if (this.o.infinite) {
+      const w = this._want || { r: this.viewRect, z: this.cam.z }, r1 = n => Math.round(n * 10) / 10;
+      out.cam = { x: r1(w.r[0]), y: r1(w.r[1]), z: Math.round(w.z * 1000) / 1000, w: Math.round((w.r[2] - w.r[0]) * w.z), h: Math.round((w.r[3] - w.r[1]) * w.z) };
+    }
+    return out;
   }
   setState(st) {
     st = st || {};
     this._dropAll(); this.trainFlush();
     const all = this._cleanStrokes(st.strokes), at = i => (Number.isInteger(i) && all[i]) || null;
-    const types = Array.isArray(st.types) ? st.types : [];
-    all.forEach((s, i) => { if (s && ['pen', 'touch', 'mouse'].includes(types[i])) this.info.set(s, { type: types[i], width: null }); });
+    const types = Array.isArray(st.types) ? st.types : [], meta = Array.isArray(st.meta) ? st.meta : [], press = Array.isArray(st.press) ? st.press : [];
+    all.forEach((s, i) => {
+      if (!s) return;
+      const E = { type: ['pen', 'touch', 'mouse'].includes(types[i]) ? types[i] : null, width: null }, m = meta[i];
+      if (m && typeof m === 'object') {
+        if (typeof m.k === 'string') E.tool = m.k;
+        if (typeof m.c === 'string') E.color = m.c;
+        if (+m.s > 0) E.size = +m.s;
+        if (typeof m.sh === 'string') E.shape = m.sh;
+        if (typeof m.f === 'string') E.fill = m.f;
+        if (m.d) E.dash = true;
+        if (m.o && typeof m.o === 'object') E.opt = Object.assign({}, m.o);
+        if (typeof m.x === 'string') E.text = m.x;
+        if (m.im) E.img = String(m.im);
+      }
+      if (E.type || Object.keys(E).length > 2) this.info.set(s, E);
+      const pr = press[i];
+      if (Array.isArray(pr) && pr.length === s.length) s.forEach((q, j) => { q[3] = Math.max(0, Math.min(1, (+pr[j] || 0) / 100)); });
+    });
     this.strokes = all.filter(Boolean);
+    this.selection = new Set(); this.lasers = [];
+    if (this.o.infinite) this._putView(st.cam);
     this.fixes = (Array.isArray(st.fixes) ? st.fixes : []).map(f => f && Array.isArray(f.strokes) && typeof f.label === 'string' ? { strokes: f.strokes.map(at), label: f.label } : null)
       .filter(f => f && f.strokes.length && f.strokes.every(Boolean));
     this.revealed = new Set((Array.isArray(st.revealed) ? st.revealed : []).map(r => {
@@ -4840,7 +7742,19 @@ class Pad {
     }).filter(Boolean));
     this.history = []; this.future = []; this.parts.clear();
     if (!this._fitHere()) this._changed();
-    if (this.strokes.length && this.o.auto) this._schedule(0);
+    if (this.ink.length && this.o.auto) this._schedule(0);
+    this._camQuiet(() => this._camMoved(true));
+  }
+  // a page's view put back ({x, y, z, w, h}: the top-left, the zoom, and the size of the screen it was chosen on), fitted
+  // to this screen as a resize would be
+  _putView(c) {
+    const d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d;
+    const ok = c && isFinite(+c.x) && isFinite(+c.y) && +c.z > 0;
+    const z = ok ? Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, +c.z)) : 1, x = ok ? +c.x : 0, y = ok ? +c.y : 0;
+    const w = ok && +c.w > 0 ? +c.w : W, h = ok && +c.h > 0 ? +c.h : H;
+    this.cam = { x, y, z };
+    this._want = { r: [x, y, x + w / z, y + h / z], z };
+    this._fitView();
   }
   // a page put back on a pad smaller than the one it was written on (fit on): brought in, as for a resize
   _fitHere() {
@@ -4849,13 +7763,16 @@ class Pad {
     return this._fit(r.width, r.height);
   }
   // the page as it is right now, history and all (for a page that is put away and taken out again)
-  snapshot() { return { strokes: this.strokes.slice(), fixes: this.fixes.slice(), revealed: new Set(this.revealed), history: this.history.slice(), future: this.future.slice() }; }
+  snapshot() { return { strokes: this.strokes.slice(), fixes: this.fixes.slice(), revealed: new Set(this.revealed), history: this.history.slice(), future: this.future.slice(), cam: Object.assign({}, this.cam), want: this._want ? { r: this._want.r.slice(), z: this._want.z } : null }; }
   restore(snap) {
     this._dropAll(); this.trainFlush();
     this.strokes = snap.strokes.slice(); this.fixes = snap.fixes.slice(); this.revealed = new Set(snap.revealed);
     this.history = snap.history.slice(); this.future = snap.future.slice();
+    this.selection = new Set(); this.lasers = [];
+    if (this.o.infinite && snap.cam) { this.cam = Object.assign({}, snap.cam); this._want = snap.want ? { r: snap.want.r.slice(), z: snap.want.z } : null; this._fitView(); }
     if (!this._fitHere()) this._changed();
-    if (this.strokes.length && this.o.auto) this._schedule(0);
+    if (this.ink.length && this.o.auto) this._schedule(0);
+    this._camQuiet(() => this._camMoved(true));
   }
   // ---------------------------------------------------------------- the training log (train on)
   // Each piece of writing (a part of the board: one expression) that has been read and then left alone for 4 s, or
@@ -5016,12 +7933,15 @@ class Pad {
     for (const p of this._trainParts()) this._trainSkip.add(this._trainKey(p.strokes));
   }
   destroy() {
-    clearTimeout(this.timer); clearTimeout(this._trainTimer); this.gen++; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
+    clearTimeout(this.timer); clearTimeout(this._trainTimer); clearTimeout(this._camTimer); this.gen++; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
+    if (this.editing) { this.editing.ta.remove(); this.editing = null; }
     if (this._raf) cancelAnimationFrame(this._raf);
+    if (this._laserRaf) cancelAnimationFrame(this._laserRaf);
     if (typeof window !== 'undefined') window.removeEventListener('nib:hand', this._handChanged);
     if (this.ro) this.ro.disconnect();
     if (this.mo) this.mo.disconnect();
     if (this.mq) this.mq.removeEventListener('change', this._theme);
+    try { if (document.fonts) document.fonts.removeEventListener('loadingdone', this._fonts); } catch (e) { /* ok */ }
     this.canvas.remove();
   }
 }
@@ -5029,7 +7949,8 @@ class Pad {
 // <nib-pad symbols="school" delay="450" ink="#1b2a4a" stroke-width="3" boxes></nib-pad>
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
-    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'settle', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit', 'train']; }
+    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'settle', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit', 'train',
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'read']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -5053,6 +7974,16 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         reveal: has('reveal') && a('reveal') !== 'false',
         fit: has('fit') && a('fit') !== 'false',
         train: has('train') && a('train') !== 'false',
+        infinite: has('infinite') && a('infinite') !== 'false',
+        // paper="grid" or paper="plane white": a background, and its tone
+        paper: (() => { const v = (a('paper') || '').trim().split(/\s+/); return v[0] && v[0] !== 'none' ? { kind: v[0], tone: v[1] || 'theme' } : null; })(),
+        fingers: ['pan', 'ignore'].includes(a('fingers')) ? a('fingers') : 'write',
+        pinch: a('pinch') !== 'false',
+        pressure: a('pressure') !== 'false',
+        eraser: a('eraser') === 'area' ? 'area' : 'stroke',
+        snap: has('snap') && +a('snap') > 0 ? +a('snap') : 0,
+        hold: a('hold') !== 'false',
+        read: a('read') !== 'false',
       };
     }
     connectedCallback() {
@@ -5110,8 +8041,23 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     trainDrop(keys) { return this.pad ? this.pad.trainDrop(keys) : 0; }
     strokeInfo(s) { return this.pad ? this.pad.strokeInfo(s) : { type: null, width: null }; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
-    // 'draw' | 'erase' | 'fix' (a tap is sent on as nib:tap {x, y, pointerType} instead of writing a dot; writing still writes)
-    set mode(v) { if (this.pad) this.pad.mode = v === 'erase' || v === 'fix' ? v : 'draw'; }
+    // 'draw' | 'erase' | 'fix' (a tap is sent on as nib:tap {x, y, pointerType} instead of writing a dot; writing still
+    // writes) | 'select' | 'pan' | 'shape' | 'text' | 'laser' (see Pad.setMode)
+    set mode(v) { if (this.pad) this.pad.setMode(v); }
+    // the canvas: what draw mode writes with ({kind: 'pen' | 'marker' | 'highlighter', color, size}), the shape and text tools
+    get tool() { return this.pad ? Object.assign({}, this.pad.tool) : null; }
+    set tool(v) { if (this.pad && v) this.pad.tool = Object.assign({ kind: 'pen', color: null, size: null }, v); }
+    get shapeTool() { return this.pad ? Object.assign({}, this.pad.shapeTool) : null; }
+    set shapeTool(v) { if (this.pad && v) this.pad.shapeTool = Object.assign({}, this.pad.shapeTool, v); }
+    get textTool() { return this.pad ? Object.assign({}, this.pad.textTool) : null; }
+    set textTool(v) { if (this.pad && v) this.pad.textTool = Object.assign({}, this.pad.textTool, v); }
+    exportImage(o) { return this.pad ? this.pad.exportImage(o) : null; }
+    addImage(src, o) { return this.pad ? this.pad.addImage(src, o) : Promise.resolve(null); }
+    putImage(id, src) { return this.pad ? this.pad.putImage(id, src) : null; }
+    get camera() { return this.pad ? this.pad.getCamera() : { x: 0, y: 0, z: 1 }; }
+    set camera(c) { if (this.pad) this.pad.setCamera(c); }
+    zoomTo(z) { if (this.pad) this.pad.zoomTo(z); }
+    fitContent(m) { if (this.pad) this.pad.fitContent(m); }
     recognize() { return this.pad && this.pad.recognize(); }
     relabel(sym, label) { return this.pad && this.pad.relabel(sym, label); }
     undo() { if (this.pad) this.pad.undo(); }
@@ -5151,7 +8097,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.5.3',
+  version: '1.6.0',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -5191,6 +8137,18 @@ const Nib = {
   _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
+// The canvas's parts, for a page that holds a board (the Board): named colors, papers, shapes, PDF and storage.
+Nib.canvas = {
+  colors: PAD_COLORS, color: padColor,
+  paperKinds: typeof PAPER_KINDS !== 'undefined' ? PAPER_KINDS : [], paperTones: typeof PAPER_TONES !== 'undefined' ? PAPER_TONES : [],
+  paperTone: typeof paperTone === 'function' ? paperTone : null, drawPaper: typeof drawPaper === 'function' ? drawPaper : null,
+  paperThumb: typeof paperThumb === 'function' ? paperThumb : null,
+  shapeKinds: typeof SHAPE_KINDS !== 'undefined' ? SHAPE_KINDS : [], numberLine: typeof SHAPE_NL !== 'undefined' ? SHAPE_NL : null,
+  plane: typeof SHAPE_PLANE !== 'undefined' ? SHAPE_PLANE : null, shapeFromDrag: typeof shapeFromDrag === 'function' ? shapeFromDrag : null,
+  pdf: typeof pdfMake === 'function' ? pdfMake : null, pdfFit: typeof pdfFit === 'function' ? pdfFit : null, pdfSizes: typeof PDF_SIZES !== 'undefined' ? PDF_SIZES : null,
+  pack: typeof storePack === 'function' ? storePack : null, unpack: typeof storeUnpack === 'function' ? storeUnpack : null,
+  images: typeof storeImagePut === 'function' ? { put: storeImagePut, get: storeImageGet, delete: storeImageDelete, ids: storeImageIds, durable: storeImagesDurable } : null,
+};
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;
 global.Nib = Nib;
 

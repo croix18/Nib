@@ -13,7 +13,7 @@ const D = (process.env.NIB_DATA || require('path').join(__dirname, '..', 'traini
   const errors = [];
   const url = 'file://' + path.resolve(page_);
 
-  // 1. desktop: sample loads and is recognised
+  // 1. desktop: sample loads and is recognized
   let page = await browser.newPage();
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', e => errors.push(String(e)));
@@ -101,7 +101,7 @@ const D = (process.env.NIB_DATA || require('path').join(__dirname, '..', 'traini
   console.log('sample latex :', sampleLatex, `(${sampleMs} ms from navigation, includes page load)`);
   console.log(`result ${readMs} ms after the last pen-up (includes the 450 ms rest delay)`);
   console.log('drew', expr.id, 'truth', expr.truth);
-  console.log('recognised   :', drawn, '|', timing, '| alternatives shown:', alts);
+  console.log('recognized   :', drawn, '|', timing, '| alternatives shown:', alts);
   console.log('views        :', viewFails.length ? 'FAIL ' + viewFails.join('; ') : 'ink, typeset, tidy, my hand (explained) and back: ok');
   console.log('errors:', errors.length ? errors : 'none');
   process.exit(errors.length || viewFails.length ? 1 : 0);

@@ -5,12 +5,12 @@
 <!--FONT_LINK-->
 <style>
 /*FONT_FACES*/
-/* A classroom board: one big writing surface, the tools in a slim rail across the top. */
+/* A classroom board: an endless writing surface, the tools in a slim rail across the top (or any side). */
 :root {
   --board: #fbf8ef;     /* the writing surface */
   --rail: #f3eddc;      /* the tool rail */
   --rule: #e4d9bd;
-  --dot: #e9e0c8;       /* the faint dot grid */
+  --dot: #e9e0c8;
   --ink: #1b2a4a;       /* navy: pen and text */
   --muted: #5d6678;
   --gold: #c9a227;
@@ -19,6 +19,7 @@
   --answer: #8a6a10;    /* answers after "=": gold deep enough for a pen line on cream */
   --coral: #d9654f;
   --on-gold: #1b2a4a;   /* text on a gold button, in either theme */
+  --shadow: 0 18px 40px -20px rgba(0, 0, 0, .6);
   --f-display: "DM Serif Display", Georgia, "Times New Roman", serif;
   --f-body: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
@@ -40,15 +41,17 @@ body { margin: 0; background: var(--board); color: var(--ink); font-family: var(
 .board[data-rail="bottom"] { flex-direction: column-reverse; }
 .board[data-rail="left"] { flex-direction: row; }
 .board[data-rail="right"] { flex-direction: row-reverse; }
-.rail, .fixpop, .settings, .note, .diag { touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.rail, .fixpop, .pop, .note, .diag, .zoom, .selbar { touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .rail {
-  display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; background: var(--rail); border-bottom: 1px solid var(--rule); flex: none;
+  display: flex; align-items: center; gap: 6px 3px; flex-wrap: wrap; background: var(--rail); border-bottom: 1px solid var(--rule); flex: none; z-index: 5;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
   padding-block: calc(6px + env(safe-area-inset-top, 0px)) 6px;
 }
 .board[data-rail="bottom"] .rail { border-bottom: 0; border-top: 1px solid var(--rule); padding-block: 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
-.mark { font: 400 24px/1 var(--f-display); margin: 0 6px 0 0; letter-spacing: .01em; cursor: default; }
+.mark { font: 400 24px/1 var(--f-display); margin: 0 8px 0 0; letter-spacing: .01em; cursor: default; }
 .mark span { color: var(--gold); }
+.grp { display: inline-flex; align-items: center; gap: 2px; }
+.sep { width: 1px; align-self: stretch; margin: 6px 3px; background: var(--rule); flex: none; }
 .seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--board); border: 1px solid var(--rule); gap: 2px; }
 .seg button { font: 500 13px/1 var(--f-body); color: var(--muted); background: transparent; border: 0; border-radius: 999px; padding: 0 13px; min-height: 34px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .seg button[aria-checked="true"] { background: var(--ink); color: var(--board); }
@@ -56,52 +59,61 @@ body { margin: 0; background: var(--board); color: var(--ink); font-family: var(
 .sp { flex: 1; }
 .tool {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: 500 13px/1 var(--f-body); color: var(--ink); background: transparent;
-  border: 1px solid transparent; border-radius: 9px; padding: 0 10px; min-height: 40px; min-width: 40px; box-sizing: border-box; cursor: pointer;
+  border: 1px solid transparent; border-radius: 10px; padding: 0 10px; min-height: 42px; min-width: 42px; box-sizing: border-box; cursor: pointer; position: relative;
 }
-.tool svg { width: 18px; height: 18px; flex: none; }
+.tool svg { width: 20px; height: 20px; flex: none; }
 .tool:hover:not(:disabled) { background: var(--board); }
 .tool:disabled { opacity: .35; cursor: default; }
 .tool[aria-pressed="true"], .tool[aria-expanded="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
-.seg button:focus-visible, .tool:focus-visible, .notebtn:focus-visible, .opt:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.tools .tool { padding: 0; width: 40px; min-width: 40px; }
+.swatchbtn, #solve, #fix, #paperbtn, #undo, #redo, #clear, #exportbtn, #morebtn, #gear, #full { min-width: 40px; }
+#prev, #next { width: 36px; min-width: 36px; }
+/* the color the pen writes with shows under its tool */
+.tool .ink { position: absolute; left: 9px; right: 9px; bottom: 4px; height: 3px; border-radius: 2px; background: var(--tint, transparent); }
+.tool .more { position: absolute; right: 3px; bottom: 3px; width: 0; height: 0; border-left: 4px solid transparent; border-bottom: 4px solid currentColor; opacity: .55; }
+.seg button:focus-visible, .tool:focus-visible, .notebtn:focus-visible, .opt:focus-visible, .sw:focus-visible, .kb:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.swatchbtn { width: 42px; padding: 0; }
+.swatchbtn .dot { width: 22px; height: 22px; border-radius: 50%; background: var(--tint, var(--ink)); box-shadow: 0 0 0 2px var(--rail), 0 0 0 3px var(--rule); }
 .pages { display: inline-flex; align-items: center; gap: 0; }
 .pages .tool { padding: 0; }
-.pageno { font: 500 13px/1 var(--f-body); color: var(--muted); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* rails on a side: one column of icons (two when the screen is short), the labels as titles */
+.pageno { font: 500 13px/1 var(--f-body); color: var(--muted); min-width: 44px; min-height: 42px; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; background: transparent; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
+.pageno:hover { background: var(--board); }
+.pageno[aria-expanded="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
+/* rails on a side: two columns of icons (one on a very tall screen), the labels as titles */
 .board.side .rail {
-  display: grid; grid-template-columns: 44px; grid-auto-rows: min-content; justify-items: center; align-content: start; gap: 4px;
+  display: grid; grid-template-columns: 44px 44px; grid-auto-rows: min-content; justify-items: center; align-content: start; gap: 3px;
   border-bottom: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
   padding: calc(8px + env(safe-area-inset-top, 0px)) 6px calc(8px + env(safe-area-inset-bottom, 0px));
 }
 .board.side .rail::-webkit-scrollbar { display: none; }
 .board[data-rail="left"] .rail { border-right: 1px solid var(--rule); padding-left: max(6px, env(safe-area-inset-left, 0px)); }
 .board[data-rail="right"] .rail { border-left: 1px solid var(--rule); padding-right: max(6px, env(safe-area-inset-right, 0px)); }
-.board.side .mark { font-size: 21px; margin: 2px 0 4px; }
+.board.side .rail > .mark, .board.side .rail > .seg, .board.side .rail > .pages, .board.side .rail > .sep { grid-column: 1 / -1; }
+.board.side .mark { font-size: 21px; margin: 2px 0 4px; display: block; }
 .board.side .sp { display: none; }
-.board.side .seg { flex-direction: column; border-radius: 14px; }
+.board.side .sep { width: 30px; height: 1px; margin: 4px 0; align-self: center; }
+.board.side .grp.tools { display: contents; }
+.board.side .seg { display: grid; grid-template-columns: 38px 38px; border-radius: 14px; }
 .board.side .seg button { padding: 0; width: 38px; min-height: 38px; border-radius: 10px; }
 .board.side .seg .vi { display: block; }
 .board.side .seg .vt { display: none; }
-.board.side .tool { padding: 0; width: 44px; height: 44px; }
+.board.side .tool, .board.side .tools .tool { padding: 0; width: 44px; height: 44px; min-width: 44px; }
 .board.side .tool .t { display: none; }
-.board.side .pages { flex-direction: column; }
-.board.side .pageno { min-width: 0; padding: 2px 0; }
-@media (max-height: 919px) {
-  .board.side .rail { grid-template-columns: 44px 44px; }
-  .board.side .rail > .mark, .board.side .rail > .seg, .board.side .rail > .pages { grid-column: 1 / -1; }
-  .board.side .seg { display: grid; grid-template-columns: 38px 38px; }
-  .board.side .pages { display: grid; grid-template-columns: 44px 44px; grid-template-areas: "p n" "l l" "a a"; justify-items: center; }
-  .board.side #prev { grid-area: p; } .board.side #next { grid-area: n; } .board.side .pageno { grid-area: l; } .board.side #newpage { grid-area: a; }
+.board.side .pages { display: grid; grid-template-columns: 44px 44px; grid-template-areas: "p n" "l a"; justify-items: center; gap: 3px; }
+.board.side #prev { grid-area: p; } .board.side #next { grid-area: n; } .board.side .pageno { grid-area: l; min-width: 0; width: 44px; padding: 0; font-size: 12px; } .board.side #newpage { grid-area: a; }
+@media (max-height: 899px) { .board.side .mark { display: none; } }
+@media (min-height: 1440px) {
+  .board.side .rail { grid-template-columns: 44px; }
+  .board.side .seg { display: flex; flex-direction: column; }
+  .board.side .pages { display: flex; flex-direction: column; align-items: center; }
 }
-.surface { position: relative; flex: 1; min-height: 0; min-width: 0; }
-nib-pad {
-  position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--gold); --nib-answer: var(--answer); --nib-paper: var(--board);
-  background-image: radial-gradient(var(--dot) 1.2px, transparent 1.4px); background-size: 28px 28px; background-position: 14px 14px;
-}
+.surface { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--board); }
+nib-pad { position: absolute; inset: 0; --nib-ink: var(--ink); --nib-box: var(--gold); --nib-answer: var(--answer); --nib-paper: var(--board); }
 .note {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   max-width: min(560px, calc(100% - 32px)); width: max-content; box-sizing: border-box; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: var(--rail); border: 1px solid var(--rule); border-radius: 12px; padding: 10px 12px 10px 14px; color: var(--ink);
-  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .5); font-size: 14px; z-index: 3;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .5); font-size: 14px; z-index: 6;
 }
 .board[data-rail="bottom"] .note { bottom: 18px; }
 .note p { margin: 0; flex: 1; min-width: min(200px, 100%); }
@@ -109,7 +121,7 @@ nib-pad {
 .notebtn.quiet { color: var(--ink); background: transparent; border: 1px solid var(--rule); }
 .fixpop {
   position: absolute; display: flex; gap: 6px; padding: 6px; background: var(--rail); border: 1px solid var(--rule); border-radius: 14px;
-  box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .55); z-index: 2;
+  box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .55); z-index: 4;
 }
 .cand {
   min-width: 52px; height: 52px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--rule); background: var(--board); color: var(--ink);
@@ -118,20 +130,33 @@ nib-pad {
 .cand[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-wash); }
 .cand:hover:not([aria-pressed="true"]) { border-color: var(--ink); }
 .cand:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.settings {
-  position: absolute; z-index: 4; width: min(340px, calc(100% - 16px)); box-sizing: border-box; max-height: calc(100% - 16px); overflow-y: auto;
-  background: var(--rail); border: 1px solid var(--rule); border-radius: 16px; padding: 14px 16px 16px; box-shadow: 0 18px 40px -20px rgba(0, 0, 0, .6);
+/* popovers: settings, colors, shapes, paper, insert, export, pages, more */
+.pop {
+  position: absolute; z-index: 7; width: min(340px, calc(100% - 16px)); box-sizing: border-box; max-height: calc(100% - 16px); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--rail); border: 1px solid var(--rule); border-radius: 16px; padding: 14px 16px 16px; box-shadow: var(--shadow);
 }
-.settings h2 { font: 400 20px/1.1 var(--f-display); margin: 0 0 10px; }
-.settings .row { margin: 0 0 12px; }
-.settings .lab { font: 600 12px/1 var(--f-body); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; margin: 0 0 6px; }
-.settings .seg { display: flex; width: 100%; box-sizing: border-box; }
-.settings .seg button { flex: 1; min-height: 44px; padding: 0 6px; font-size: 14px; }
+.pop.wide { width: min(460px, calc(100% - 16px)); }
+/* Settings in two columns where there is room for them */
+@media (min-width: 900px) and (min-height: 520px) {
+  #settings { width: min(720px, calc(100% - 16px)); column-count: 2; column-gap: 28px; }
+  #settings > h2 { column-span: all; }
+  #settings .row { break-inside: avoid; }
+}
+.pop h2 { font: 400 20px/1.1 var(--f-display); margin: 0 0 10px; }
+.pop .row { margin: 0 0 12px; }
+.pop .lab { font: 600 12px/1 var(--f-body); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; margin: 0 0 6px; }
+.pop .seg { display: flex; width: 100%; box-sizing: border-box; }
+.pop .seg button { flex: 1; min-height: 44px; padding: 0 6px; font-size: 14px; }
+.pop .seg button:disabled { opacity: .35; cursor: default; }
 .opt { font: 500 14px/1 var(--f-body); min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--rule); background: var(--board); color: var(--ink); cursor: pointer; }
 .opt.danger { color: var(--coral); border-color: var(--coral); }
 .opt.solid { background: var(--coral); border-color: var(--coral); color: #fff; }
+.opt.primary { background: var(--gold); border-color: var(--gold); color: var(--on-gold); font-weight: 600; }
+.opt.wide { width: 100%; }
+.opt:disabled { opacity: .4; cursor: default; }
 .confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.settings .sect { border-top: 1px solid var(--rule); padding-top: 12px; }
+.confirm p { margin: 0 0 4px; flex-basis: 100%; }
+.pop .sect { border-top: 1px solid var(--rule); padding-top: 12px; }
 .switch {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; box-sizing: border-box; padding: 0 4px 0 0;
   font: 500 14px/1.25 var(--f-body); color: var(--ink); background: transparent; border: 0; cursor: pointer; text-align: left;
@@ -144,29 +169,79 @@ nib-pad {
 @media (prefers-reduced-motion: no-preference) { .switch .track, .switch .track::after { transition: background .15s, left .15s; } }
 .count { margin: 4px 0 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .btns { display: flex; gap: 8px; flex-wrap: wrap; }
-.opt:disabled { opacity: .4; cursor: default; }
-.confirm p { margin: 0 0 4px; flex-basis: 100%; }
+.hint { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+/* colors and sizes */
+.swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.sw { width: 100%; aspect-ratio: 1; max-width: 44px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); justify-self: center; }
+.sw[aria-checked="true"] { box-shadow: 0 0 0 3px var(--rail), 0 0 0 5px var(--gold); }
+.sw.custom { background: conic-gradient(#d1352b, #e0750f, #e8c35a, #1d8a4b, #1f5fbf, #7a3db4, #d23f7e, #d1352b); position: relative; overflow: hidden; }
+.sw.custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0; }
+.sizes { display: flex; gap: 6px; }
+.sz { flex: 1; min-height: 46px; border-radius: 10px; border: 1px solid var(--rule); background: var(--board); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.sz span { display: block; border-radius: 999px; background: var(--ink); }
+.sz[aria-checked="true"] { border-color: var(--gold); background: var(--gold-wash); }
+.sz.txt span { background: none; font: 600 var(--fs, 14px)/1 var(--f-body); color: var(--ink); }
+/* shapes, paper, insert */
+.kinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.kb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; padding: 6px 4px; border-radius: 10px; border: 1px solid var(--rule); background: var(--board); color: var(--ink); font: 500 11.5px/1.15 var(--f-body); cursor: pointer; text-align: center; }
+.kb svg { width: 24px; height: 24px; }
+.kb[aria-checked="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
+.papers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pb { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 5px 4px 6px; border-radius: 10px; border: 1px solid var(--rule); background: var(--board); color: var(--ink); font: 500 11.5px/1.15 var(--f-body); cursor: pointer; }
+.pb canvas { width: 100%; height: auto; aspect-ratio: 3 / 2; border-radius: 6px; display: block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); }
+.pb[aria-checked="true"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
+.menu { display: flex; flex-direction: column; gap: 4px; }
+.mi { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 12px; border-radius: 10px; border: 0; background: transparent; color: var(--ink); font: 500 14px/1.2 var(--f-body); cursor: pointer; text-align: left; }
+.mi:hover:not(:disabled) { background: var(--board); }
+.mi:disabled { opacity: .4; cursor: default; }
+.mi svg { width: 20px; height: 20px; flex: none; }
+.mi kbd { margin-left: auto; font: 500 12px/1 var(--f-body); color: var(--muted); }
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 4px 20px; }
+.keys dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0 0 10px; align-items: baseline; }
+.keys dt { font: 600 12px/1.2 var(--f-body); color: var(--ink); background: var(--board); border: 1px solid var(--rule); border-radius: 6px; padding: 3px 6px; white-space: nowrap; justify-self: start; }
+.keys dd { margin: 0; font: 400 13px/1.3 var(--f-body); color: var(--muted); }
+#helppop { width: min(640px, calc(100% - 16px)); }
+.fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.fields label { display: flex; flex-direction: column; gap: 4px; font: 600 12px/1 var(--f-body); color: var(--muted); }
+.fields input { font: 500 16px/1 var(--f-body); color: var(--ink); background: var(--board); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; width: 100%; box-sizing: border-box; min-width: 0; }
+/* the pages, side by side */
+.pagegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.pg { position: relative; display: flex; flex-direction: column; gap: 5px; padding: 6px; border-radius: 12px; border: 1px solid var(--rule); background: var(--board); color: var(--ink); cursor: pointer; font: 500 12px/1 var(--f-body); }
+.pg canvas { width: 100%; aspect-ratio: 4 / 3; border-radius: 6px; display: block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); }
+.pg[aria-current="page"] { border-color: var(--gold); background: var(--gold-wash); color: var(--gold-ink); }
+/* zoom, bottom right of the board */
+.zoom { position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 4; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px; background: var(--rail); border: 1px solid var(--rule); box-shadow: 0 8px 24px -16px rgba(0, 0, 0, .5); }
+.board[data-rail="bottom"] .zoom { bottom: 12px; }
+.zoom button { min-width: 40px; height: 38px; border: 0; border-radius: 999px; background: transparent; color: var(--ink); font: 500 15px/1 var(--f-body); cursor: pointer; padding: 0 8px; font-variant-numeric: tabular-nums; display: grid; place-items: center; }
+.zoom button:hover { background: var(--board); }
+.zoom svg { width: 18px; height: 18px; }
+#zpct { min-width: 58px; font-size: 13px; }
+/* what is selected: a bar of what can be done with it */
+.selbar { position: absolute; z-index: 4; display: flex; gap: 2px; padding: 4px; border-radius: 14px; background: var(--rail); border: 1px solid var(--rule); box-shadow: 0 12px 30px -18px rgba(0, 0, 0, .55); }
+.selbar button { min-width: 42px; height: 42px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); cursor: pointer; display: grid; place-items: center; padding: 0 8px; }
+.selbar button:hover { background: var(--board); }
+.selbar svg { width: 19px; height: 19px; }
+.selbar .dot { width: 20px; height: 20px; border-radius: 50%; background: var(--tint, var(--ink)); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15); }
+.selbar .danger { color: var(--coral); }
 .diag {
-  position: absolute; left: 8px; top: 8px; z-index: 5; margin: 0; padding: 8px 10px; max-width: calc(100% - 16px); box-sizing: border-box; overflow: hidden;
+  position: absolute; left: 8px; top: 8px; z-index: 8; margin: 0; padding: 8px 10px; max-width: calc(100% - 16px); box-sizing: border-box; overflow: hidden;
   font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--rail); border: 1px solid var(--rule); border-radius: 10px; opacity: .94; pointer-events: none; white-space: pre;
 }
-.latexbox { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); top: 10px; z-index: 3; }
+.latexbox { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); top: 10px; z-index: 6; }
 .latexbox textarea { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--rail); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; resize: none; user-select: text; -webkit-user-select: text; }
-/* the top or bottom rail stays one row as the screen narrows: labels go first, then the views become icons */
-@media (max-width: 1659px) { .tool .t2 { display: none; } }
-@media (max-width: 1479px) { .tool .t3 { display: none; } }
-@media (max-width: 1179px) { .tool .t { display: none; } .tool { padding: 0; } .tool .t0 { display: inline; } .tool:has(.t0) { padding: 0 8px; } }
-@media (max-width: 719px) { .tool .t0 { display: none; } .tool:has(.t0) { padding: 0; } }
-@media (max-width: 1079px) {
-  .rail { gap: 4px 2px; padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px)); }
-  .mark { display: none; } .seg .vi { display: block; } .seg .vt { display: none; } .seg button { padding: 0 9px; } .pageno { min-width: 34px; }
-}
-@media (prefers-reduced-motion: no-preference) { .tool, .seg button { transition: background .15s, color .15s, border-color .15s; } }
+.drop { position: absolute; inset: 10px; z-index: 6; border: 3px dashed var(--gold); border-radius: 16px; background: color-mix(in srgb, var(--gold) 10%, transparent); pointer-events: none; display: grid; place-items: center; font: 400 26px/1.2 var(--f-display); color: var(--gold-ink); }
+/* the top or bottom rail stays one row as the screen narrows: labels go first, then the views become icons, then the mark */
+.tool .t { display: none; }
+.wide-only { display: none !important; }
+@media (min-width: 1500px) { .wide-only:not([hidden]) { display: inline-flex !important; } }
+@media (min-width: 1880px) { .tool .t2 { display: inline; } .tool:has(.t2) { padding: 0 10px; } }
+@media (max-width: 1499px) { .seg .vi { display: block; } .seg .vt { display: none; } .seg button { padding: 0 8px; } }
+@media (max-width: 1239px) { .mark { display: none; } }
+@media (max-width: 1179px) { .rail { padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px)); } .pageno { min-width: 38px; } }
+@media (prefers-reduced-motion: no-preference) { .tool, .seg button, .sw, .sz, .kb, .pb { transition: background .15s, color .15s, border-color .15s, box-shadow .15s; } }
 /* the drill: one problem at a time to copy onto the board, across the top of the writing surface */
-.opt.primary { background: var(--gold); border-color: var(--gold); color: var(--on-gold); font-weight: 600; }
-.hint { margin: 0 0 8px; color: var(--muted); font-size: 13px; line-height: 1.35; }
 .drill {
-  position: absolute; left: 0; right: 0; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; box-sizing: border-box;
+  position: absolute; left: 0; right: 0; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; box-sizing: border-box;
   padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
   background: var(--rail); border-bottom: 1px solid var(--rule); box-shadow: 0 12px 28px -22px rgba(0, 0, 0, .55);
   touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
@@ -199,38 +274,118 @@ nib-pad {
 @media (max-width: 719px) { .drill { gap: 8px; } .dbtn { padding: 0 12px; min-width: 52px; } .dbtn.go { min-width: 80px; } }
 </style>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-select" viewBox="0 0 24 24"><path d="M5 3.5 18.5 10l-6 1.6-2.4 6.4z"/><path d="m12.5 11.6 5 5"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+    <symbol id="i-marker" viewBox="0 0 24 24"><path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/></symbol>
+    <symbol id="i-highlighter" viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+    <symbol id="i-shapes" viewBox="0 0 24 24"><path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="m5 19 7-14 7 14"/><path d="M8.5 12.5h7"/></symbol>
+    <symbol id="i-laser" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></symbol>
+    <symbol id="i-insert" viewBox="0 0 24 24"><path d="M16 5h6"/><path d="M19 2v6"/><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><circle cx="9" cy="9" r="2"/></symbol>
+    <symbol id="i-paper" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></symbol>
+    <symbol id="i-full" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+    <symbol id="i-dup" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/><path d="M14.5 11.5v6M11.5 14.5h6"/></symbol>
+    <symbol id="i-front" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2" fill="currentColor" fill-opacity=".18"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><rect x="4" y="4" width="12" height="12" rx="2" fill="currentColor" fill-opacity=".18"/><path d="M20 8v11a1 1 0 0 1-1 1H8"/></symbol>
+    <symbol id="i-picture" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 13-4.5-4.5L7 17"/><path d="M12 21h7"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+    <symbol id="i-latex" viewBox="0 0 24 24"><path d="M4 7h6M7 7v10"/><path d="m13 7 7 10M20 7l-7 10"/></symbol>
+    <symbol id="i-hand2" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-pages" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="9" rx="1"/><rect x="3" y="15" width="7" height="6" rx="1"/><rect x="14" y="15" width="7" height="6" rx="1"/></symbol>
+    <!-- shapes -->
+    <symbol id="s-line" viewBox="0 0 24 24"><path d="M5 19 19 5"/></symbol>
+    <symbol id="s-arrow" viewBox="0 0 24 24"><path d="M5 19 19 5"/><path d="M10 5h9v9"/></symbol>
+    <symbol id="s-arrow2" viewBox="0 0 24 24"><path d="M5 19 19 5"/><path d="M10 5h9v9"/><path d="M14 19H5v-9"/></symbol>
+    <symbol id="s-rect" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="1"/></symbol>
+    <symbol id="s-square" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/></symbol>
+    <symbol id="s-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9.5" ry="6"/></symbol>
+    <symbol id="s-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></symbol>
+    <symbol id="s-triangle" viewBox="0 0 24 24"><path d="M12 4 21 20H3z"/></symbol>
+    <symbol id="s-rtriangle" viewBox="0 0 24 24"><path d="M5 4v16h15z"/><path d="M5 16h4v4"/></symbol>
+    <symbol id="s-numberline" viewBox="0 0 24 24"><path d="M2 12h20"/><path d="m4.5 9.5-2.5 2.5 2.5 2.5"/><path d="m19.5 9.5 2.5 2.5-2.5 2.5"/><path d="M7 9.5v5M12 9.5v5M17 9.5v5"/></symbol>
+    <symbol id="s-plane" viewBox="0 0 24 24"><path d="M12 2.5v19M2.5 12h19"/><path d="M7 3v18M17 3v18M3 7h18M3 17h18" stroke-opacity=".35"/></symbol>
+  </defs>
+</svg>
+
 <div class="board" id="board" data-rail="top">
   <header class="rail" id="rail">
     <h1 class="mark" id="mark" title="Nib">Nib<span>.</span></h1>
+    <div class="grp tools" role="radiogroup" aria-label="Tools" id="toolbar">
+      <button type="button" class="tool" data-tool="select" role="radio" aria-checked="false" aria-pressed="false" title="Select: lasso or tap, then move or resize (V)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-select"/></svg></button>
+      <button type="button" class="tool" data-tool="hand" role="radio" aria-checked="false" aria-pressed="false" title="Move the board (H, or hold Space)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-hand"/></svg></button>
+      <button type="button" class="tool" data-tool="pen" role="radio" aria-checked="true" aria-pressed="true" title="Pen (P) — tap again for color and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-pen"/></svg><span class="ink"></span></button>
+      <button type="button" class="tool" data-tool="marker" role="radio" aria-checked="false" aria-pressed="false" title="Marker (M) — tap again for color and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-marker"/></svg><span class="ink"></span></button>
+      <button type="button" class="tool" data-tool="highlighter" role="radio" aria-checked="false" aria-pressed="false" title="Highlighter (I) — tap again for color and size"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-highlighter"/></svg><span class="ink"></span></button>
+      <button type="button" class="tool" id="erase" data-tool="eraser" role="radio" aria-checked="false" aria-pressed="false" aria-label="Erase" title="Eraser (E) — tap again: whole strokes or part of a stroke"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-eraser"/></svg></button>
+      <button type="button" class="tool" data-tool="shape" role="radio" aria-checked="false" aria-pressed="false" title="Shapes (R) — tap again to pick one"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#s-rect" id="shapeicon"/></svg><span class="more"></span></button>
+      <button type="button" class="tool" data-tool="text" role="radio" aria-checked="false" aria-pressed="false" title="Text (T) — tap the board to type"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-text"/></svg></button>
+      <button type="button" class="tool" data-tool="laser" role="radio" aria-checked="false" aria-pressed="false" title="Laser pointer (L): points, keeps nothing"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-laser"/></svg></button>
+    </div>
+    <button type="button" class="tool swatchbtn" id="stylebtn" aria-label="Color and size" aria-expanded="false" aria-controls="stylepop" title="Color and size"><span class="dot"></span></button>
+    <span class="sep"></span>
     <div class="seg" role="radiogroup" aria-label="How writing is shown" id="views">
       <button type="button" role="radio" data-view="ink" aria-checked="true" title="Ink: as written (1)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15c2.5-6 4.5-6 6 0s3.5 6 6 0 3.5-6 6 0"/></svg><span class="vt">Ink</span></button>
       <button type="button" role="radio" data-view="tidy" aria-checked="false" title="Tidy (2)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg><span class="vt">Tidy</span></button>
       <button type="button" role="radio" data-view="hand" aria-checked="false" title="My hand (3)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="vt">My hand</span></button>
       <button type="button" role="radio" data-view="typeset" aria-checked="false" title="Typeset (4)"><svg class="vi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg><span class="vt">Typeset</span></button>
     </div>
-    <button type="button" class="tool" id="solve" aria-label="Solve" aria-pressed="false" title="Answers after =, and x = under an equation (S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h10"/><path d="M4 15h10"/><path d="M19 4v5"/><path d="M16.5 6.5h5"/><path d="M18 14.5v3"/><path d="M16.5 16h3"/></svg><span class="t">Solve</span></button>
+    <button type="button" class="tool" id="solve" aria-label="Solve" aria-pressed="false" title="Answers after =, and x = under an equation (S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h10"/><path d="M4 15h10"/><path d="M19 4v5"/><path d="M16.5 6.5h5"/><path d="M18 14.5v3"/><path d="M16.5 16h3"/></svg><span class="t t2">Solve</span></button>
+    <button type="button" class="tool" id="fix" aria-label="Fix" aria-pressed="false" title="Fix a misread symbol (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/><path d="m16 20 2 2 4-4"/></svg><span class="t t2">Fix</span></button>
     <span class="sp"></span>
+    <button type="button" class="tool" id="paperbtn" aria-label="Paper" aria-expanded="false" aria-controls="paperpop" title="Paper: blank, lined, grids, a coordinate plane, number lines"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-paper"/></svg></button>
+    <span class="sep"></span>
     <div class="pages" role="group" aria-label="Pages">
       <button type="button" class="tool" id="prev" aria-label="Previous page" title="Previous page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
-      <span class="pageno" id="pageno" aria-live="polite">1 / 1</span>
+      <button type="button" class="pageno" id="pageno" aria-live="polite" aria-expanded="false" aria-controls="pagespop" title="All the pages">1 / 1</button>
       <button type="button" class="tool" id="next" aria-label="Next page" title="Next page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
       <button type="button" class="tool" id="newpage" aria-label="New page" title="New page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
     </div>
-    <button type="button" class="tool" id="erase" aria-label="Erase" aria-pressed="false" title="Erase (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg><span class="t t0">Erase</span></button>
-    <button type="button" class="tool" id="fix" aria-label="Fix" aria-pressed="false" title="Fix a misread symbol (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m6 16 6-12 6 12"/><path d="M8 12h8"/><path d="m16 20 2 2 4-4"/></svg><span class="t t0">Fix</span></button>
-    <button type="button" class="tool" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span class="t t2">Undo</span></button>
-    <button type="button" class="tool" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg><span class="t t2">Redo</span></button>
-    <button type="button" class="tool" id="clear" aria-label="Clear" title="Clear this page (undo brings it back)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg><span class="t t3">Clear</span></button>
-    <button type="button" class="tool" id="saveimg" aria-label="Save image" title="Save this page as a picture"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="14" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 13-4.5-4.5L7 17"/><path d="M12 21h7"/></svg><span class="t t3">Save image</span></button>
-    <button type="button" class="tool" id="hand" aria-label="My handwriting" title="Open the handwriting you saved from Replicator"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="t t3">My handwriting</span></button>
-    <button type="button" class="tool" id="copy" aria-label="Copy LaTeX" title="Copy the LaTeX of everything on this page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span class="t t3">Copy LaTeX</span></button>
-    <button type="button" class="tool" id="full" aria-label="Full screen" title="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg><span class="t t2">Full screen</span></button>
-    <button type="button" class="tool" id="gear" aria-label="Settings" aria-expanded="false" aria-controls="settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <span class="sep"></span>
+    <button type="button" class="tool" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-undo"/></svg></button>
+    <button type="button" class="tool" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-redo"/></svg></button>
+    <button type="button" class="tool" id="clear" aria-label="Clear" title="Clear this page (undo brings it back)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash"/></svg></button>
+    <span class="sep"></span>
+    <button type="button" class="tool" id="exportbtn" aria-label="Export" aria-expanded="false" aria-controls="exportpop" title="Export: PDF or picture, to post for students"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-export"/></svg><span class="t t2">Export</span></button>
+    <button type="button" class="tool wide-only" id="full" aria-label="Full screen" title="Full screen (F)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-full"/></svg></button>
+    <button type="button" class="tool" id="morebtn" aria-label="More" aria-expanded="false" aria-controls="morepop" title="More"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-more"/></svg></button>
+    <button type="button" class="tool" id="gear" aria-label="Settings" aria-expanded="false" aria-controls="settings" title="Settings"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-gear"/></svg></button>
     <input type="file" id="file" accept=".json,application/json" hidden>
+    <input type="file" id="picfile" accept="image/*" hidden>
+    <input type="file" id="boardfile" accept=".nibboard,.json,application/json" hidden>
   </header>
   <div class="surface" id="surface">
-    <nib-pad id="pad" view="ink" stroke-width="3.5" settle="2500" separate times="false" reveal fit aria-label="Board"></nib-pad>
+    <nib-pad id="pad" view="ink" stroke-width="3.5" settle="2500" separate times="false" reveal infinite paper="dots" aria-label="Board"></nib-pad>
     <div class="fixpop" id="fixpop" role="group" aria-label="What this symbol is" hidden></div>
+    <div class="selbar" id="selbar" role="toolbar" aria-label="What is selected" hidden>
+      <button type="button" id="selcolor" title="Color and size" aria-label="Color and size"><span class="dot"></span></button>
+      <button type="button" id="seledit" title="Change it" aria-label="Change it" hidden><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-edit"/></svg></button>
+      <button type="button" id="seldup" title="Duplicate (Ctrl+D)" aria-label="Duplicate"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-dup"/></svg></button>
+      <button type="button" id="selcopy" title="Copy (Ctrl+C)" aria-label="Copy"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg></button>
+      <button type="button" id="selfront" title="Bring to front" aria-label="Bring to front"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-front"/></svg></button>
+      <button type="button" id="selback" title="Send to back" aria-label="Send to back"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-back"/></svg></button>
+      <button type="button" id="selpic" title="Save as a picture" aria-label="Save as a picture"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-picture"/></svg></button>
+      <button type="button" id="seldel" class="danger" title="Delete (Del)" aria-label="Delete"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash"/></svg></button>
+    </div>
+    <div class="zoom" id="zoom" role="group" aria-label="Zoom">
+      <button type="button" id="zout" aria-label="Zoom out" title="Zoom out (−)">−</button>
+      <button type="button" id="zpct" aria-label="Back to 100%" title="Back to 100% (Ctrl+0)">100%</button>
+      <button type="button" id="zin" aria-label="Zoom in" title="Zoom in (+)">+</button>
+      <button type="button" id="zfit" aria-label="Show everything" title="Show everything on the page (Ctrl+1)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-fit"/></svg></button>
+    </div>
     <div class="drill" id="drill" role="region" aria-label="Drill" hidden>
       <div class="dq" id="dq"><p class="dprompt" id="dprompt"></p><p class="dhow" id="dhow"></p><p class="dread" id="dread" aria-live="polite"></p></div>
       <p class="dsum" id="dsum" hidden></p>
@@ -240,26 +395,107 @@ nib-pad {
         <div class="dbtns" id="dend" hidden><button type="button" class="dbtn go" id="dsave">Save training</button><button type="button" class="dbtn" id="dagain">Start again</button><button type="button" class="dbtn" id="dclose">Close</button></div>
       </div>
     </div>
-    <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
+
+    <div class="pop" id="stylepop" role="dialog" aria-label="Color and size" hidden>
+      <h2 id="styletitle">Pen</h2>
+      <div class="row"><p class="lab">Color</p><div class="swatches" id="swatches" role="radiogroup" aria-label="Color"></div></div>
+      <div class="row" id="sizerow"><p class="lab">Size</p><div class="sizes" id="sizes" role="radiogroup" aria-label="Size"></div></div>
+      <div class="row" id="fillrow"><p class="lab" id="lab-fill">Fill</p><div class="seg" role="radiogroup" aria-labelledby="lab-fill" data-set="fill">
+        <button type="button" role="radio" data-v="none">None</button><button type="button" role="radio" data-v="tint">Light</button><button type="button" role="radio" data-v="solid">Solid</button></div></div>
+      <div class="row" id="dashrow"><p class="lab" id="lab-dash">Line</p><div class="seg" role="radiogroup" aria-labelledby="lab-dash" data-set="dash">
+        <button type="button" role="radio" data-v="solid">Solid</button><button type="button" role="radio" data-v="dashed">Dashed</button></div></div>
+      <div class="row" id="eraserrow"><p class="lab" id="lab-erasepop">The eraser takes</p><div class="seg" role="radiogroup" aria-labelledby="lab-erasepop" data-set="eraser">
+        <button type="button" role="radio" data-v="stroke">Whole strokes</button><button type="button" role="radio" data-v="area">Only where it rubs</button></div>
+        <p class="hint" style="margin:8px 0 0">It rubs out what was drawn: pens, markers, highlighters and shapes. Text, pictures, number lines and coordinate planes stay: select them to delete them.</p></div>
+    </div>
+    <div class="pop wide" id="shapepop" role="dialog" aria-label="Shapes" hidden>
+      <h2>Shapes</h2>
+      <div class="kinds" id="kinds" role="radiogroup" aria-label="Shape"></div>
+      <p class="hint" style="margin-top:10px">Drag on the board to draw one, or tap for one of a standard size. Or draw a line, circle, box or triangle with the pen and hold it still.</p>
+      <div class="btns"><button type="button" class="opt" id="shapepic">A picture…</button></div>
+    </div>
+    <div class="pop wide" id="paperpop" role="dialog" aria-label="Paper" hidden>
+      <h2>Paper</h2>
+      <div class="row"><div class="papers" id="papers" role="radiogroup" aria-label="Paper"></div></div>
+      <div class="row"><p class="lab" id="lab-tone">Color</p><div class="seg" role="radiogroup" aria-labelledby="lab-tone" id="tones"></div></div>
+      <p class="hint" id="paperhint">For this page. New pages take the paper last chosen.</p>
+    </div>
+    <div class="pop" id="axispop" role="dialog" aria-label="Number line" hidden>
+      <h2 id="axistitle">Number line</h2>
+      <div class="row fields" id="axisfields"></div>
+      <div class="row"><button type="button" class="switch" id="axislabels" role="switch" aria-checked="true"><span>Numbers on the ticks</span><span class="track" aria-hidden="true"></span></button>
+        <button type="button" class="switch" id="axisfrac" role="switch" aria-checked="false"><span>As fractions</span><span class="track" aria-hidden="true"></span></button>
+        <button type="button" class="switch" id="axisgrid" role="switch" aria-checked="true"><span>Grid lines</span><span class="track" aria-hidden="true"></span></button></div>
+      <div class="btns"><button type="button" class="opt primary" id="axisok">Done</button></div>
+    </div>
+    <div class="pop wide" id="pagespop" role="dialog" aria-label="Pages" hidden>
+      <h2>Pages</h2>
+      <div class="pagegrid" id="pagegrid"></div>
+      <div class="btns" style="margin-top:12px"><button type="button" class="opt" id="pgdup">Duplicate this page</button><button type="button" class="opt" id="pgleft">Move it left</button><button type="button" class="opt" id="pgright">Move it right</button><button type="button" class="opt primary" id="pgnew">New page</button></div>
+    </div>
+    <div class="pop wide" id="exportpop" role="dialog" aria-label="Export" hidden>
+      <h2>Export</h2>
+      <div class="row"><p class="lab" id="lab-what">What</p><div class="seg" role="radiogroup" aria-labelledby="lab-what" data-set="what">
+        <button type="button" role="radio" data-v="page">This page</button><button type="button" role="radio" data-v="all">All pages</button><button type="button" role="radio" data-v="view">On screen</button><button type="button" role="radio" data-v="sel">Selected</button></div></div>
+      <div class="row"><p class="lab" id="lab-as">As</p><div class="seg" role="radiogroup" aria-labelledby="lab-as" data-set="as">
+        <button type="button" role="radio" data-v="pdf">PDF</button><button type="button" role="radio" data-v="png">Picture</button><button type="button" role="radio" data-v="clip">Copy picture</button></div></div>
+      <div class="row" id="sizerowx"><p class="lab" id="lab-psize">Page</p><div class="seg" role="radiogroup" aria-labelledby="lab-psize" data-set="psize">
+        <button type="button" role="radio" data-v="letter">Letter</button><button type="button" role="radio" data-v="a4">A4</button><button type="button" role="radio" data-v="fit">The writing's size</button></div></div>
+      <div class="row"><p class="lab" id="lab-ans">Answers</p><div class="seg" role="radiogroup" aria-labelledby="lab-ans" data-set="ans">
+        <button type="button" role="radio" data-v="shown">As shown</button><button type="button" role="radio" data-v="all">All (a key)</button><button type="button" role="radio" data-v="none">None</button></div></div>
+      <div class="row"><p class="lab" id="lab-xpaper">Paper</p><div class="seg" role="radiogroup" aria-labelledby="lab-xpaper" data-set="xpaper">
+        <button type="button" role="radio" data-v="on">With its lines</button><button type="button" role="radio" data-v="white">Plain white</button></div></div>
+      <div class="btns"><button type="button" class="opt primary wide" id="exportgo">Export</button></div>
+      <div class="row sect" style="margin-top:14px"><p class="lab">The whole board, to open on another computer</p>
+        <div class="btns"><button type="button" class="opt" id="boardsave">Save the board</button><button type="button" class="opt" id="boardopen">Open a board</button><button type="button" class="opt" id="saveimg" title="What is on screen, as a picture">Picture of the screen</button></div>
+        <div class="confirm" id="openask" hidden style="margin-top:10px"><p id="openq">A board of 3 pages. Put it…</p><button type="button" class="opt primary" id="openadd">After these pages</button><button type="button" class="opt solid" id="openreplace">Instead of this board</button><button type="button" class="opt" id="openno">Cancel</button></div>
+      </div>
+    </div>
+    <div class="pop" id="morepop" role="dialog" aria-label="More" hidden>
+      <div class="menu">
+        <button type="button" class="mi" id="copy"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-latex"/></svg>Copy LaTeX<kbd>of this page</kbd></button>
+        <button type="button" class="mi" id="hand"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-hand2"/></svg>My handwriting<kbd>from Replicator</kbd></button>
+        <button type="button" class="mi" id="inspic"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-picture"/></svg>Insert a picture<kbd>or paste, or drop one</kbd></button>
+        <button type="button" class="mi" id="morepaste" disabled><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg>Paste what was copied<kbd>Ctrl+V</kbd></button>
+        <button type="button" class="mi" id="selall"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-select"/></svg>Select everything<kbd>Ctrl+A</kbd></button>
+        <button type="button" class="mi" id="moredfit"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-fit"/></svg>Show everything on the page<kbd>Ctrl+1</kbd></button>
+        <button type="button" class="mi" id="morehelp"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>Keys and gestures</button>
+        <button type="button" class="mi" id="morefull"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-full"/></svg>Full screen<kbd>F</kbd></button>
+      </div>
+    </div>
+    <div class="pop wide" id="helppop" role="dialog" aria-label="Keys and gestures" hidden>
+      <h2>Keys and gestures</h2>
+      <div class="keys">
+        <section><p class="lab">Tools</p><dl><dt>V</dt><dd>Select</dd><dt>H</dt><dd>Move the board</dd><dt>P</dt><dd>Pen</dd><dt>M</dt><dd>Marker</dd><dt>I</dt><dd>Highlighter</dd><dt>E</dt><dd>Eraser (again: back)</dd><dt>R</dt><dd>Shapes</dd><dt>T</dt><dd>Text</dd><dt>L</dt><dd>Laser</dd><dt>[ ]</dt><dd>Smaller, bigger</dd></dl></section>
+        <section><p class="lab">The board</p><dl><dt>Space + drag</dt><dd>Move it</dd><dt>Wheel</dt><dd>Scroll (Shift: sideways)</dd><dt>Ctrl + wheel</dt><dd>Zoom</dd><dt>Two fingers</dt><dd>Pinch to zoom, drag to move</dd><dt>Ctrl+0</dt><dd>100%</dd><dt>Ctrl+1</dt><dd>Show everything</dd><dt>+ −</dt><dd>Zoom in, out</dd><dt>Arrows</dt><dd>Move it (or nudge what is selected)</dd></dl></section>
+        <section><p class="lab">Editing</p><dl><dt>Ctrl+Z</dt><dd>Undo</dd><dt>Ctrl+Y</dt><dd>Redo</dd><dt>Ctrl+C X V</dt><dd>Copy, cut, paste</dd><dt>Ctrl+D</dt><dd>Duplicate</dd><dt>Ctrl+A</dt><dd>Select everything</dd><dt>Delete</dt><dd>Delete what is selected</dd><dt>Esc</dt><dd>Close, let go</dd></dl></section>
+        <section><p class="lab">Nib</p><dl><dt>1 2 3 4</dt><dd>Ink, Tidy, My hand, Typeset</dd><dt>S</dt><dd>Answers on or off</dd><dt>X</dt><dd>Fix a misread symbol</dd><dt>F</dt><dd>Full screen</dd></dl><p class="hint" style="margin-top:8px">Draw a line, circle, box or triangle and hold still: it becomes a clean one.</p></section>
+      </div>
+    </div>
+    <div class="pop" id="settings" role="dialog" aria-label="Settings" hidden>
       <h2>Settings</h2>
       <div class="row"><p class="lab" id="lab-rail">Tools</p><div class="seg" role="radiogroup" aria-labelledby="lab-rail" data-set="rail">
         <button type="button" role="radio" data-v="top">Top</button><button type="button" role="radio" data-v="bottom">Bottom</button><button type="button" role="radio" data-v="left">Left</button><button type="button" role="radio" data-v="right">Right</button></div></div>
       <div class="row"><p class="lab" id="lab-theme">Theme</p><div class="seg" role="radiogroup" aria-labelledby="lab-theme" data-set="theme">
         <button type="button" role="radio" data-v="light">Light</button><button type="button" role="radio" data-v="dark">Dark</button><button type="button" role="radio" data-v="system">System</button></div></div>
-      <div class="row"><p class="lab" id="lab-pen">Pen</p><div class="seg" role="radiogroup" aria-labelledby="lab-pen" data-set="pen">
-        <button type="button" role="radio" data-v="thin">Thin</button><button type="button" role="radio" data-v="medium">Medium</button><button type="button" role="radio" data-v="thick">Thick</button></div></div>
-      <div class="row"><p class="lab" id="lab-finger">Finger</p><div class="seg" role="radiogroup" aria-labelledby="lab-finger" data-set="finger">
-        <button type="button" role="radio" data-v="writes">Writes</button><button type="button" role="radio" data-v="ignored">Ignored (pen only)</button></div></div>
+      <div class="row"><p class="lab" id="lab-finger">A finger</p><div class="seg" role="radiogroup" aria-labelledby="lab-finger" data-set="finger">
+        <button type="button" role="radio" data-v="writes">Writes</button><button type="button" role="radio" data-v="pans">Moves the board</button><button type="button" role="radio" data-v="ignored">Nothing</button></div></div>
+      <div class="row"><p class="lab" id="lab-pinch">Two fingers together</p><div class="seg" role="radiogroup" aria-labelledby="lab-pinch" data-set="pinch">
+        <button type="button" role="radio" data-v="on">Zoom and move</button><button type="button" role="radio" data-v="off">Write</button></div></div>
       <div class="row"><p class="lab" id="lab-solve">Answers</p><div class="seg" role="radiogroup" aria-labelledby="lab-solve" data-set="solve">
         <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
       <div class="row"><p class="lab" id="lab-reveal">Reveal answers on tap</p><div class="seg" role="radiogroup" aria-labelledby="lab-reveal" data-set="reveal">
         <button type="button" role="radio" data-v="on">On</button><button type="button" role="radio" data-v="off">Off</button></div></div>
+      <div class="row"><button type="button" class="switch" id="holdsw" role="switch" aria-checked="true"><span>Draw a shape and hold still: it snaps to a clean one</span><span class="track" aria-hidden="true"></span></button>
+        <button type="button" class="switch" id="snapsw" role="switch" aria-checked="true"><span>Shapes snap to the paper's grid</span><span class="track" aria-hidden="true"></span></button>
+        <button type="button" class="switch" id="pressw" role="switch" aria-checked="true"><span>The pen's line follows its pressure</span><span class="track" aria-hidden="true"></span></button>
+        <button type="button" class="switch" id="readsw" role="switch" aria-checked="true"><span>Nib reads the writing</span><span class="track" aria-hidden="true"></span></button></div>
       <div class="row sect" role="group" aria-labelledby="lab-train"><p class="lab" id="lab-train">Training</p>
         <button type="button" class="switch" id="train" role="switch" aria-checked="false"><span>Keep writing for training</span><span class="track" aria-hidden="true"></span></button>
         <p class="count" id="traincount" aria-live="polite">0 expressions kept · 0 corrected</p>
         <p class="hint" id="drillhint">The drill: 60 problems to copy onto the board, one at a time, each kept with what it should say.</p>
         <div class="btns" id="drillbtns"><button type="button" class="opt primary" id="drillgo">Start the drill</button><button type="button" class="opt" id="drillagain" hidden>Start again</button></div>
-        <div class="btns" id="trainbtns"><button type="button" class="opt" id="savetrain" title="Save what has been kept as a file">Save training</button><button type="button" class="opt danger" id="forgettrain">Forget training</button></div>
+        <div class="btns" id="trainbtns" style="margin-top:8px"><button type="button" class="opt" id="savetrain" title="Save what has been kept as a file">Save training</button><button type="button" class="opt danger" id="forgettrain">Forget training</button></div>
         <div class="confirm" id="forgetask" hidden><p id="forgetq">Forget everything kept for training?</p><button type="button" class="opt solid" id="forgetyes">Forget</button><button type="button" class="opt" id="forgetno">Keep it</button></div>
       </div>
       <div class="row sect" id="delrow"><button type="button" class="opt danger" id="delpage">Delete this page</button></div>
@@ -267,735 +503,12 @@ nib-pad {
     </div>
     <div class="latexbox" id="latexbox" hidden><textarea id="latexout" rows="3" readonly aria-label="LaTeX"></textarea></div>
     <div class="note" id="note" role="status" hidden><p id="notetext"></p><button type="button" class="notebtn" id="noteact" hidden></button><button type="button" class="notebtn quiet" id="noteclose">OK</button></div>
+    <div class="drop" id="drop" hidden>Drop the picture on the board</div>
     <pre class="diag" id="diag" hidden></pre>
   </div>
 </div>
 
 <script>/*ENGINE*/</script>
 <script>
-(function () {
-  'use strict';
-  const $ = id => document.getElementById(id);
-  const pad = $('pad'), board = $('board'), KEY = 'nib-board-v1', TKEY = 'nib-train-v1';
-  const VIEWS = ['ink', 'tidy', 'hand', 'typeset'], RAILS = ['top', 'bottom', 'left', 'right'], THEMES = ['light', 'dark', 'system'];
-  const PENS = { thin: 2.5, medium: 3.5, thick: 5 };
-  // the board survives a reload: its pages, view and settings are kept in this browser (one key)
-  let saved = null;
-  try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { /* first visit or storage blocked */ }
-  if (!saved || typeof saved !== 'object') saved = {};
-  const pick = (v, list, d) => (list.includes(v) ? v : d);
-  const S = {
-    view: pick(saved.view, VIEWS, 'ink'),
-    solve: typeof saved.solve === 'boolean' ? saved.solve : true,
-    reveal: typeof saved.reveal === 'boolean' ? saved.reveal : true,
-    rail: pick(saved.rail, RAILS, 'top'),
-    theme: pick(saved.theme, THEMES, 'system'),
-    pen: pick(saved.pen, Object.keys(PENS), 'medium'),
-    finger: pick(saved.finger, ['writes', 'ignored'], 'writes'),   // 'ignored': pen only (a tablet where the hand rests on the glass)
-    train: saved.train === true,          // keep writing for training: off until the teacher turns it on
-    trainNoted: saved.trainNoted === true,
-  };
-  // pages: each its own strokes, corrections and shown answers (a board saved before pages is page 1)
-  const blank = () => ({ strokes: [], fixes: [], revealed: [] });
-  const okPage = p => (p && typeof p === 'object' && Array.isArray(p.strokes) ? { strokes: p.strokes, fixes: Array.isArray(p.fixes) ? p.fixes : [], revealed: Array.isArray(p.revealed) ? p.revealed : [], types: Array.isArray(p.types) ? p.types : [] } : null);
-  let pages = Array.isArray(saved.pages) ? saved.pages.map(okPage).filter(Boolean) : Array.isArray(saved.strokes) ? [okPage(saved)] : [];
-  if (!pages.length) pages = [blank()];
-  let cur = Number.isInteger(saved.page) ? Math.max(0, Math.min(pages.length - 1, saved.page)) : 0;
-  const snaps = [];                       // each page's undo history while the board is open
-  let ready = false, saveTimer = null, warned = false;
-  function write() {
-    clearTimeout(saveTimer); saveTimer = null;
-    if (!ready) return;
-    pages[cur] = pad.getState();
-    try { localStorage.setItem(KEY, JSON.stringify(Object.assign({ v: 2 }, S, { page: cur, pages }))); }
-    catch (e) { if (!warned) { warned = true; note("The board can't be saved in this browser. Save an image to keep it."); } }
-  }
-  // nothing is written until the board has been put back and something changes (a reload never re-saves what it read)
-  const persist = () => { if (!ready) return; clearTimeout(saveTimer); saveTimer = setTimeout(write, 500); };
-  const flush = () => { if (saveTimer) write(); };
-  window.addEventListener('pagehide', flush);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
-
-  // the training log: its own key, saved 0.5 s after each record and at once when the page goes
-  let trainTimer = null, trainWarned = false;
-  function writeTrain() {
-    clearTimeout(trainTimer); trainTimer = null;
-    if (!pad.pad) return;
-    try {
-      if (pad.pad.training.length) localStorage.setItem(TKEY, JSON.stringify({ v: 1, records: pad.pad.training }));
-      else localStorage.removeItem(TKEY);
-    } catch (e) { if (!trainWarned) { trainWarned = true; note("The writing kept for training can't be stored in this browser. Save training to keep it."); } }
-  }
-  const persistTrain = () => { clearTimeout(trainTimer); trainTimer = setTimeout(writeTrain, 500); };
-  window.addEventListener('pagehide', () => { if (pad.pad) pad.pad.trainFlush(); if (trainTimer) writeTrain(); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && trainTimer) writeTrain(); });
-
-  // ---------------------------------------------------------------- notes
-  let noteAction = null, noteTimer = null;
-  function note(text, action, label, stay) {
-    $('notetext').textContent = text; $('note').hidden = false;
-    noteAction = action || null; $('noteact').hidden = !action; if (action) $('noteact').textContent = label;
-    // a note that only tells something goes away by itself; one that asks for something (or holds the LaTeX) stays
-    clearTimeout(noteTimer);
-    if (!action && !stay) noteTimer = setTimeout(() => { if ($('latexbox').hidden && $('notetext').textContent === text) $('note').hidden = true; }, 6000);
-  }
-  $('noteact').onclick = () => { const a = noteAction; $('note').hidden = true; if (a) a(); };
-  $('noteclose').onclick = () => { $('note').hidden = true; };
-
-  // ---------------------------------------------------------------- views
-  function setView(v, quiet) {
-    S.view = v; pad.view = v; persist(); closePop();
-    document.querySelectorAll('#views button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.view === v)));
-    if (v === 'hand' && !Nib.hand.size && !quiet) note('Your handwriting is not on this computer yet. Open the file you saved from Replicator; until then the board shows your writing tidied.', () => $('file').click(), 'Open handwriting');
-    else if (!quiet) $('note').hidden = true;
-  }
-  document.querySelectorAll('#views button').forEach(b => { b.onclick = () => setView(b.dataset.view); });
-  // handwriting arriving from elsewhere (the Replicator in another tab) answers the note asking for it
-  window.addEventListener('nib:hand', () => { if (Nib.hand.size && !$('note').hidden && !$('noteact').hidden && noteAction && /Replicator/.test($('notetext').textContent)) $('note').hidden = true; });
-
-  // ---------------------------------------------------------------- tools
-  function tools() {
-    $('undo').disabled = !(pad.pad && pad.pad.canUndo); $('redo').disabled = !(pad.pad && pad.pad.canRedo);
-    $('clear').disabled = !pad.strokes.length; $('copy').disabled = !pad.latex; $('saveimg').disabled = !pad.strokes.length;
-    const any = !!(pad.result && pad.result.symbols.length);
-    $('fix').disabled = !any; if (!any && fixing) fixMode(false);
-    $('pageno').textContent = (cur + 1) + ' / ' + pages.length;
-    $('pageno').title = 'Page ' + (cur + 1) + ' of ' + pages.length;
-    $('prev').disabled = cur === 0; $('next').disabled = cur === pages.length - 1;
-  }
-  pad.addEventListener('nib:change', () => { closePop(); tools(); persist(); });
-  pad.addEventListener('change', () => { closePop(); tools(); persist(); if (!$('latexbox').hidden) $('latexout').value = S.solve ? pad.solved : pad.latex; });
-
-  // ---------------------------------------------------------------- answers after "="
-  function setSolve(on, quiet) {
-    S.solve = on; pad.solve = on; persist(); marks();
-    $('solve').setAttribute('aria-pressed', String(on));
-    if (!$('latexbox').hidden) $('latexout').value = on ? pad.solved : pad.latex;
-    if (!quiet) note(!on ? 'Answers are hidden.' : S.reveal ? 'End a problem with = and tap the gold ? to see its answer. Under an equation, write x = to solve it.' : 'End a problem with = to see its answer. Under an equation, write x = to solve it.');
-  }
-  function setReveal(on) { S.reveal = on; pad.reveal = on; persist(); marks(); }
-  $('solve').onclick = () => setSolve(!S.solve);
-  const erase = on => { pad.mode = on ? 'erase' : 'draw'; $('erase').setAttribute('aria-pressed', String(on)); if (on && fixing) fixMode(false); if (typeof drillRead === 'function') drillRead(); };
-
-  // ---------------------------------------------------------------- settings
-  function setRail(r) {
-    S.rail = r; board.dataset.rail = r; board.classList.toggle('side', r === 'left' || r === 'right'); persist(); marks();
-    if (!$('settings').hidden) placeSettings();
-  }
-  function setTheme(t) {
-    S.theme = t; persist(); marks();
-    if (t === 'system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
-    const m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', getComputedStyle(document.documentElement).getPropertyValue('--rail').trim() || '#f3eddc');
-  }
-  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (S.theme === 'system') setTheme('system'); }); } catch (e) { /* ok */ }
-  function setPen(p) { S.pen = p; pad.setAttribute('stroke-width', String(PENS[p])); persist(); marks(); }
-  function setFinger(f) { S.finger = f; if (f === 'ignored') pad.setAttribute('pen-only', ''); else pad.removeAttribute('pen-only'); persist(); marks(); if (typeof drillRead === 'function') drillRead(); }
-  function marks() {
-    const val = { rail: S.rail, theme: S.theme, pen: S.pen, finger: S.finger, solve: S.solve ? 'on' : 'off', reveal: S.reveal ? 'on' : 'off' };
-    document.querySelectorAll('#settings .seg').forEach(g => g.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', String(b.dataset.v === val[g.dataset.set]))));
-  }
-  const SETTERS = { rail: setRail, theme: setTheme, pen: setPen, finger: setFinger, solve: v => setSolve(v === 'on', true), reveal: v => setReveal(v === 'on') };
-  document.querySelectorAll('#settings .seg').forEach(g => g.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (b && b.dataset.v) SETTERS[g.dataset.set](b.dataset.v);
-  }));
-  function placeSettings() {
-    const el = $('settings'), Sf = $('surface').getBoundingClientRect(), G = $('gear').getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight, m = 8;
-    let left, top;
-    if (S.rail === 'left') { left = m; top = G.top - Sf.top; }
-    else if (S.rail === 'right') { left = Sf.width - w - m; top = G.top - Sf.top; }
-    else { left = G.right - Sf.left - w; top = S.rail === 'top' ? m : Sf.height - h - m; }
-    el.style.left = Math.max(m, Math.min(Sf.width - w - m, left)) + 'px';
-    el.style.top = Math.max(m, Math.min(Sf.height - h - m, top)) + 'px';
-  }
-  function openSettings(on) {
-    $('settings').hidden = !on; $('gear').setAttribute('aria-expanded', String(on));
-    askDelete(false); askForget(false);
-    if (on) { closePop(); marks(); trainLine(); placeSettings(); }
-  }
-  $('gear').onclick = () => openSettings($('settings').hidden);
-  // a tap anywhere else closes it (and, on the board, writes nothing)
-  document.addEventListener('pointerdown', e => {
-    if ($('settings').hidden || $('settings').contains(e.target) || $('gear').contains(e.target)) return;
-    openSettings(false);
-    if ($('surface').contains(e.target)) { e.preventDefault(); e.stopPropagation(); }
-  }, true);
-  function askDelete(on) {
-    $('delask').hidden = !on; $('delrow').hidden = on;
-    if (on) $('delq').textContent = pages.length > 1 ? `Delete page ${cur + 1} and its writing?` : 'Delete the writing on this page?';
-  }
-  $('delpage').onclick = () => askDelete(true);
-  $('delno').onclick = () => askDelete(false);
-  $('delyes').onclick = () => { openSettings(false); deletePage(); };
-
-  // ---------------------------------------------------------------- training: keep the writing, to fine-tune Nib
-  const records = () => (pad.pad ? pad.pad.training : []);
-  function trainLine() {
-    const R = records(), n = R.length, c = R.filter(r => r.fixed && r.fixed.length).length;
-    $('traincount').textContent = `${n} expression${n === 1 ? '' : 's'} kept · ${c} corrected`;
-    $('savetrain').disabled = !n; $('forgettrain').disabled = !n;
-    if (!n) askForget(false);
-    drillLine();
-    if (D && D.active && D.pos >= N) $('dsave').disabled = !n;
-  }
-  function setTrain(on, quiet) {
-    S.train = on; pad.train = on; $('train').setAttribute('aria-checked', String(on)); persist();
-    if (!on && D && D.active) { stopDrill(); if (!quiet) note('The drill keeps its place while training is off.'); }
-    if (on && !S.trainNoted && !quiet) {
-      S.trainNoted = true; persist();
-      note('Nib keeps what is written on this board — the strokes and how they were read — on this computer only, until you save it. Nothing else is kept.', null, null, true);
-    }
-  }
-  $('train').onclick = () => setTrain(!S.train);
-  pad.addEventListener('nib:train', () => { trainLine(); persistTrain(); });
-  function askForget(on) {
-    $('forgetask').hidden = !on; $('trainbtns').hidden = on;
-    if (on) { const n = records().length; $('forgetq').textContent = `Forget the ${n} expression${n === 1 ? '' : 's'} kept for training?`; }
-  }
-  $('forgettrain').onclick = () => askForget(true);
-  $('forgetno').onclick = () => askForget(false);
-  $('forgetyes').onclick = () => {
-    if (pad.pad) pad.pad.trainForget();
-    askForget(false); writeTrain(); trainLine();
-    note('The writing kept for training is forgotten.');
-  };
-  $('savetrain').onclick = async () => {
-    const R = records(); if (!R.length) return;
-    const file = { format: 'nib-training', version: 1, exported: new Date().toISOString(), engine: Nib.version, records: R };
-    const name = `Nib-training-${today()}.json`;
-    if (await offer(name, new Blob([JSON.stringify(file)], { type: 'application/json' }))) note(`Saved ${name} (${R.length} expression${R.length === 1 ? '' : 's'}).`);
-  };
-
-  // ---------------------------------------------------------------- the drill: problems to copy, each kept with what it should say
-  // Each prompt is LaTeX (what the writing should read as), with how to write it ('any', 'pen' or 'finger') and an
-  // optional note. Progress is kept in this browser (nib-drill-v1) so the drill can be stopped and taken up again.
-  const DKEY = 'nib-drill-v1';
-  const DRILL = { id: 'v1', items: [
-    ...['7-1=', '17+71=', '1001-101=', '46\\cdot 9=', '69+96=', '555-55=', '2\\cdot 22+2=', '444\\div 4=',
-      '0.5+0.25=', '3.14\\cdot 2=', '4\\cdot 0.4=', '12.5\\%\\cdot 80=', '7.07-0.7=',
-      '\\frac{1}{2}+\\frac{1}{3}=', '2\\frac{3}{4}-1\\frac{1}{2}=', '\\frac{2}{3}\\cdot\\frac{9}{4}=', '\\frac{3+5}{2+2}='].map(tex => ({ tex })),
-    { tex: '7+\\frac{1}{8}=', note: 'fraction small and a little off-centre' },
-    ...['2^{5}-5^{2}=', '3^{-2}=', '(-4)^{2}=', '\\sqrt{144}=', '\\sqrt[3]{64}=', '\\sqrt[3]{1000}=', '|-12|+|7|=', '10^{3}\\cdot 10^{-1}=',
-      '4x+4-x=', '2a+3b-a+b=', '5t-7t=', '3(2x-4)=', '(x+1)(x+4)=', '2(x+3)-4(x-1)=', '\\frac{1}{2}x+\\frac{1}{4}x=', 'g+g+g=', '6p-2q+p=',
-      '4x-7=21 \\\\ x=', '2(x+3)=14 \\\\ x=', '\\frac{x}{5}+2=6 \\\\ x=', '3x+4=x+10 \\\\ x=', 'x^{2}=64 \\\\ x=', 'x^{2}+6x+8=0 \\\\ x=', '2x+3y=12 \\\\ y=', 'x+y=9 \\\\ x-y=1 \\\\ x=',
-      '3x-2<10 \\\\ x<', '-2x+1\\ge 7 \\\\ x\\le', '5\\ne 4',
-      '(12)(3)=', '12(3)+1=', '(-3)(-7)=', '1(1+1)='].map(tex => ({ tex })),
-    { tex: '144\\cdot 69=', note: 'small' }, { tex: '144\\cdot 69=', note: 'large' }, { tex: '144\\cdot 69=', note: 'fast' },
-    { tex: '7+4=', note: 'your usual 4' }, { tex: '7+4=', note: 'a closed 4' },
-    ...['7+4=', '13-6=', '2x+5x=', '\\frac{1}{2}+\\frac{1}{4}=', '3(x-2)='].map(tex => ({ tex, how: 'finger' })),
-  ].map((it, i) => ({ item: i + 1, tex: it.tex, how: it.how || 'any', note: it.note || null })) };
-  const NOTES = { small: 'Write it small', large: 'Write it large', fast: 'Write it fast', 'your usual 4': 'Write your usual 4', 'a closed 4': 'Write a closed 4',
-    'fraction small and a little off-centre': 'The fraction small and a little off-centre' };
-  // two readings are the same problem when they differ only in spacing, · for \cdot, how a fraction or power is
-  // braced, \leq for \le and the like, or a final "=" (tools/training_to_jsonl.py does the same)
-  function normLine(l) {
-    return l.replace(/\\left(?![a-zA-Z])|\\right(?![a-zA-Z])/g, '').replace(/\\[,;:! ]/g, '').replace(/~/g, '').replace(/\s+/g, '')
-      .replace(/[·⋅]/g, '\\cdot').replace(/\\[dt]frac(?![a-zA-Z])/g, '\\frac').replace(/\\(le|ge|ne)q(?![a-zA-Z])/g, '\\$1').replace(/\\%/g, '%')
-      .replace(/\\frac([^{\\])/g, '\\frac{$1}').replace(/\\frac(\{[^{}]*\})([^{\\])/g, '\\frac$1{$2}').replace(/([\^_])([^{\\])/g, '$1{$2}');
-  }
-  function normTex(t) {
-    const lines = String(t || '').replace(/\\begin\{gathered\}|\\end\{gathered\}/g, '').split('\\\\').map(normLine).filter(Boolean);
-    if (lines.length) lines[lines.length - 1] = lines[lines.length - 1].replace(/=$/, '');
-    return lines.join('\\\\');
-  }
-  // LaTeX as plain text, for a page without KaTeX: fractions a/b, roots √ ∛, powers in superscript digits
-  const SUP = { '−': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '-': '⁻', '+': '⁺', '(': '⁽', ')': '⁾', n: 'ⁿ', x: 'ˣ' };
-  const OPS = { '\\cdot': '·', '\\times': '×', '\\div': '÷', '\\ge': '≥', '\\le': '≤', '\\ne': '≠', '\\geq': '≥', '\\leq': '≤', '\\neq': '≠', '\\pm': '±', '+': '+', '=': '=', '<': '<', '>': '>', '-': '−' };
-  const SYMS = { '\\%': '%', '\\ldots': '…', '\\pi': 'π', '\\infty': '∞', '\\circ': '°' };
-  function texLine(src) {
-    let i = 0, stacked = false;
-    const group = () => {
-      while (src[i] === ' ') i++;
-      if (src[i] !== '{') return src[i++] || '';
-      let d = 0, j = i;
-      for (; j < src.length; j++) { if (src[j] === '{') d++; else if (src[j] === '}' && --d === 0) break; }
-      const g = src.slice(i + 1, j); i = j + 1; return g;
-    };
-    const toks = [];                       // {op} or {a: text}
-    const atom = a => { const p = toks[toks.length - 1]; if (p && p.a !== undefined) p.a += a; else toks.push({ a }); };
-    const simple = t => /^[0-9A-Za-z.]+$/.test(t);
-    const wrap = t => (simple(t) ? t : '(' + t + ')');
-    while (i < src.length) {
-      const c = src[i];
-      if (c === ' ' || c === '{' || c === '}') { i++; continue; }
-      if (c === '\\') {
-        const m = /^\\([a-zA-Z]+|.)/.exec(src.slice(i)), cmd = m[0]; i += cmd.length;
-        if (cmd === '\\frac') {
-          const a = texLine(group()), b = texLine(group()); stacked = true;
-          const p = toks[toks.length - 1];
-          if (p && p.a !== undefined && /[0-9]$/.test(p.a)) p.a += ' ';      // a mixed number: 2 3/4
-          atom(wrap(a.text) + '/' + wrap(b.text));
-          if (/^[A-Za-z(]/.test(src.slice(i).trim())) atom(' ');           // ½x: 1/2 x
-          continue;
-        }
-        if (cmd === '\\sqrt') {
-          let n = '';
-          if (src[i] === '[') { const j = src.indexOf(']', i); n = src.slice(i + 1, j); i = j + 1; }
-          const b = texLine(group()); if (b.stacked) stacked = true;
-          atom((n === '3' ? '∛' : n === '4' ? '∜' : n ? n + '√' : '√') + wrap(b.text));
-          continue;
-        }
-        if (OPS[cmd]) { toks.push({ op: OPS[cmd] }); continue; }
-        if (SYMS[cmd]) { atom(SYMS[cmd]); continue; }
-        if (/^\\[,;:! ]$/.test(cmd) || cmd === '\\left' || cmd === '\\right') continue;
-        if (/^\\(begin|end)$/.test(cmd)) { group(); continue; }
-        atom(cmd.slice(1)); continue;
-      }
-      if (c === '^' || c === '_') {
-        i++; const g = texLine(group()), t = g.text.replace(/\s+/g, '');
-        if (c === '^' && [...t].every(ch => SUP[ch])) atom([...t].map(ch => SUP[ch]).join(''));
-        else atom(c + wrap(t));
-        continue;
-      }
-      i++;
-      if (c === '-') {                     // a minus sign after nothing, an operator or "(" is part of the number
-        const p = toks[toks.length - 1];
-        if (!p || p.op || /[(|]$/.test(p.a)) { atom('−'); continue; }
-      }
-      if (OPS[c]) { toks.push({ op: OPS[c] }); continue; }
-      atom(c === ',' ? ', ' : c);
-    }
-    let text = '';
-    for (const t of toks) text += t.op ? ' ' + t.op + ' ' : t.a;
-    return { text: text.replace(/\s+/g, ' ').trim(), stacked };
-  }
-  const texLines = t => String(t || '').replace(/\\begin\{gathered\}|\\end\{gathered\}/g, '').split('\\\\').map(l => l.trim()).filter(Boolean);
-  const plain = t => texLines(t).map(l => texLine(l).text).join(' / ');
-  // KaTeX when the page has it, else plain text in the typeset fonts (the Board's own builds have no KaTeX)
-  function showTex(el, tex) {
-    el.textContent = '';
-    for (const l of texLines(tex)) {
-      const d = document.createElement('span'); d.className = 'dl';
-      let done = false;
-      if (window.katex && typeof window.katex.render === 'function') { try { window.katex.render(l, d, { throwOnError: true, displayMode: false }); done = true; } catch (e) { done = false; } }
-      if (!done) {
-        // letters in the maths italic, as typeset
-        const r = texLine(l);
-        for (const run of r.text.split(/([A-Za-z]+)/)) {
-          if (!run) continue;
-          if (/^[A-Za-z]+$/.test(run)) { const v = document.createElement('i'); v.textContent = run; d.appendChild(v); }
-          else d.appendChild(document.createTextNode(run));
-        }
-        if (r.stacked) { const s = document.createElement('span'); s.className = 'stk'; s.textContent = '(stacked)'; d.appendChild(s); }
-      }
-      el.appendChild(d);
-    }
-  }
-  const N = DRILL.items.length;
-  const fresh = () => ({ v: 1, drill: DRILL.id, pos: 0, skipped: [], done: [], fixed: [], active: false });
-  let D = null;
-  try {
-    const d = JSON.parse(localStorage.getItem(DKEY) || 'null');
-    if (d && d.drill === DRILL.id && Number.isInteger(d.pos)) D = Object.assign(fresh(), d, { pos: Math.max(0, Math.min(N, d.pos)),
-      skipped: Array.isArray(d.skipped) ? d.skipped : [], done: Array.isArray(d.done) ? d.done : [], fixed: Array.isArray(d.fixed) ? d.fixed : [], active: d.active === true });
-  } catch (e) { /* none, or storage blocked */ }
-  const saveDrill = () => { try { if (D) localStorage.setItem(DKEY, JSON.stringify(D)); else localStorage.removeItem(DKEY); } catch (e) { /* the drill then lasts while the page is open */ } };
-  const underway = () => !!(D && D.pos < N && (D.pos > 0 || D.done.length || D.skipped.length));
-  function drillLine() {
-    const go = $('drillgo'), again = $('drillagain');
-    if (underway()) { go.textContent = `Continue the drill · ${D.pos + 1} / ${N}`; again.hidden = false; }
-    else { go.textContent = D && D.pos >= N ? 'Start the drill again' : 'Start the drill'; again.hidden = true; }
-  }
-  let dCur = null, dTimer = null, dHow = '';          // dCur: the piece of writing read for this prompt {strokes, key, match}
-  function startDrill(over) {
-    if (!D || over || D.pos >= N) D = fresh();
-    D.active = true; saveDrill();
-    openSettings(false);
-    pad.trainMeta = null;
-    // a new page, unless this one is empty already (before training goes on: what was written with it off stays out)
-    if (pad.strokes.length) { pages[cur] = pad.getState(); snaps[cur] = pad.pad.snapshot(); pages.push(blank()); goPage(pages.length - 1); }
-    if (!S.train) setTrain(true);          // with the first-time note
-    try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
-    drillShow();
-  }
-  function stopDrill() {
-    if (!D) return;
-    D.active = false; saveDrill();
-    if (fixing) fixMode(false);
-    pad.trainMeta = null; dCur = null; clearTimeout(dTimer);
-    $('drill').hidden = true; $('drill').classList.remove('warn');
-    drillLine();
-  }
-  function drillShow() {
-    const bar = $('drill');
-    if (!D || !D.active) { bar.hidden = true; return; }
-    bar.hidden = false;
-    const end = D.pos >= N;
-    $('dq').hidden = end; $('dplay').hidden = end; $('dsum').hidden = !end; $('dend').hidden = !end;
-    if (end) {
-      pad.trainMeta = null; dCur = null; bar.classList.remove('warn');
-      const fixedN = D.fixed.length, sk = D.skipped.slice().sort((a, b) => a - b);
-      $('dn').textContent = `${N} / ${N}`;
-      $('dsum').textContent = `${D.done.length} done, ${sk.length} skipped, ${fixedN} fixed`;
-      if (sk.length) { const s = document.createElement('small'); s.textContent = 'Skipped: ' + sk.join(', '); $('dsum').appendChild(s); }
-      $('dsave').disabled = !records().length;
-      return;
-    }
-    const it = DRILL.items[D.pos];
-    pad.trainMeta = Object.assign({ expect: it.tex, drill: DRILL.id, item: it.item, how: it.how }, it.note ? { note: it.note } : {});
-    showTex($('dprompt'), it.tex);
-    const lines = texLines(it.tex).length, how = [];
-    if (it.how === 'finger') how.push('With your finger');
-    if (it.note) how.push(NOTES[it.note] || it.note);
-    if (lines > 1) how.push(lines > 2 ? 'Each line under the one before' : 'The first line, then the second under it');
-    dHow = how.join(' · '); $('dhow').textContent = dHow;
-    $('dn').textContent = `${D.pos + 1} / ${N}`;
-    $('dfix').setAttribute('aria-pressed', String(fixing));
-    $('dback').disabled = D.pos === 0;
-    drillRead();
-  }
-  // the writing for this prompt: read, and the pen rested for a second
-  function drillRead() {
-    clearTimeout(dTimer); dTimer = null;
-    if (!D || !D.active || D.pos >= N) return;
-    const P = pad.pad, el = $('dread'), it = DRILL.items[D.pos], bar = $('drill');
-    const say = (txt, state) => { el.textContent = txt; el.dataset.state = state; };
-    dCur = null; bar.classList.remove('warn'); $('dhow').textContent = dHow;
-    $('dright').disabled = true;
-    if (P && P.mode === 'erase') { say('Erase is on: the pen rubs out. Tap Erase again to write.', 'wait'); return; }
-    if (it.how === 'finger' && S.finger === 'ignored' && (!P || !P.strokes.length)) { say('Finger is set to Ignored in Settings: turn it to Writes for this one, or Skip.', 'wait'); return; }
-    if (!P || !P.strokes.length) { say('Write it on the board.', 'wait'); return; }
-    if (!P.result || P.ptrs.size || P.resultStrokes.length !== P.strokes.length || P.resultStrokes.some((s, i) => s !== P.strokes[i])) { say('Reading…', 'wait'); return; }
-    let last = 0;
-    for (const s of P.strokes) { const q = s[s.length - 1]; if (q && q[2] > last) last = q[2]; }
-    const rest = last ? 1000 - (performance.now() - last) : 0;
-    if (rest > 0) { say('Reading…', 'wait'); dTimer = setTimeout(drillRead, rest + 20); return; }
-    // the board's pieces, and the lines each one starts at (answers are numbered by line across the board)
-    const parts = [];
-    let li = 0;
-    for (const p of P.result.parts || [{ strokes: P.resultStrokes, result: P.result }]) {
-      const r = p.result;
-      if (!r || !r.lines || !r.lines.length || !p.strokes.length) continue;
-      parts.push({ strokes: p.strokes, result: r, line: li, n: r.tree.length });
-      li += r.tree.length;
-    }
-    if (!parts.length) { say('Nothing read yet. Write it a little bigger?', 'wait'); return; }
-    const want = normTex(it.tex);
-    const joined = p => p.result.lines.map(l => l.latex).join(' \\\\ ');
-    const newest = p => Math.max(...p.strokes.map(s => (s[s.length - 1] || [])[2] || 0));
-    const part = parts.find(p => normTex(joined(p)) === want) || parts.slice().sort((a, b) => newest(b) - newest(a) || b.strokes.length - a.strokes.length)[0];
-    const tex = joined(part), match = normTex(tex) === want;
-    const ans = pad.answers.filter(a => a.line >= part.line && a.line < part.line + part.n).map(a => plain(a.latex));
-    dCur = { strokes: part.strokes, match };
-    say('', match ? 'match' : 'miss');
-    const b = document.createElement('b'); b.textContent = 'Read: ';
-    el.appendChild(b); el.appendChild(document.createTextNode(plain(tex) + (ans.length ? ' → ' + ans.join(', ') : '') + (match ? '' : '  (not what it should be)')));
-    // a prompt for the finger, written with a pen or a mouse: said again, in coral (it is still kept)
-    const by = it.how === 'finger' ? part.strokes.map(s => P.strokeInfo(s).type).find(t => t && t !== 'touch') : null;
-    if (by) { bar.classList.add('warn'); $('dhow').textContent = `${dHow} — that was ${by === 'pen' ? 'the pen' : 'a mouse'}: with your finger, please`; }
-    $('dright').disabled = false;
-  }
-  function drillNext() {
-    D.pos++; saveDrill(); dCur = null;
-    if (D.pos >= N) note('The drill is done. Save training keeps it as a file.');
-    drillShow();
-  }
-  $('dright').onclick = () => {
-    if (!dCur || !pad.pad) return;
-    if (fixing) fixMode(false);
-    const it = DRILL.items[D.pos], P = pad.pad;
-    const rec = P.trainKeep(dCur.strokes);
-    if (!rec) { drillRead(); return; }
-    P.trainVerify(rec.key, true);
-    if (!D.done.includes(rec.key)) D.done.push(rec.key);
-    if (rec.fixed && rec.fixed.length && !D.fixed.includes(it.item)) D.fixed.push(it.item);
-    D.skipped = D.skipped.filter(k => k !== it.item);
-    pad.trainMeta = null;                  // anything else on the page is kept as free writing
-    pad.clear();
-    drillNext();
-  };
-  $('dskip').onclick = () => {
-    if (!D) return;
-    if (fixing) fixMode(false);
-    const it = DRILL.items[D.pos];
-    if (!D.skipped.includes(it.item)) D.skipped.push(it.item);
-    pad.trainMeta = null;
-    if (pad.pad) pad.pad.trainIgnore();    // a skipped prompt keeps nothing
-    pad.clear();
-    drillNext();
-  };
-  $('dfix').onclick = () => { fixMode(!fixing); };
-  $('dundo').onclick = () => { if (fixing) fixMode(false); pad.undo(); };
-  // back to the prompt before: what Right kept for it is dropped, a skip is unmarked, and it is written again
-  $('dback').onclick = () => {
-    if (!D || D.pos === 0) return;
-    if (fixing) fixMode(false);
-    pad.trainMeta = null;
-    if (pad.pad) pad.pad.trainIgnore();           // what is on the board for the current prompt keeps nothing
-    pad.clear();
-    D.pos--;
-    const it = DRILL.items[D.pos], P = pad.pad;
-    // the record kept for that prompt, if any: the newest record carrying its item number
-    const kept = (P ? P.training : []).filter(r => r.drill === DRILL.id && r.item === it.item).map(r => r.key);
-    if (kept.length && P) P.trainDrop(kept);
-    D.done = D.done.filter(k => !kept.includes(k));
-    D.skipped = D.skipped.filter(k => k !== it.item);
-    D.fixed = D.fixed.filter(k => k !== it.item);
-    saveDrill(); drillShow();
-  };
-  $('dstop').onclick = () => { stopDrill(); note(`Stopped at ${D.pos + 1} of ${N}. Settings, Training continues the drill.`); };
-  $('dclose').onclick = () => stopDrill();
-  $('dagain').onclick = () => startDrill(true);
-  $('dsave').onclick = () => $('savetrain').onclick();
-  $('drillgo').onclick = () => { if (D && D.active) { openSettings(false); return; } startDrill(false); };
-  $('drillagain').onclick = () => startDrill(true);
-  pad.addEventListener('change', () => drillRead());
-  pad.addEventListener('nib:change', () => drillRead());
-
-  // ---------------------------------------------------------------- pages
-  function goPage(i) {
-    if (i < 0 || i >= pages.length || i === cur) return;
-    if (fixing) fixMode(false);
-    pages[cur] = pad.getState(); snaps[cur] = pad.pad.snapshot();
-    cur = i;
-    if (snaps[i]) pad.pad.restore(snaps[i]); else pad.setState(pages[i]);
-    tools(); persist();
-  }
-  function newPage() {
-    pages[cur] = pad.getState(); snaps[cur] = pad.pad.snapshot();
-    pages.push(blank()); goPage(pages.length - 1);
-    note(`Page ${cur + 1}. The arrows go back to the others.`);
-  }
-  function deletePage() {
-    if (fixing) fixMode(false);
-    if (pages.length === 1) { pages = [blank()]; snaps.length = 0; pad.setState(pages[0]); tools(); persist(); note('The page is empty now.'); return; }
-    const gone = cur + 1;
-    pages.splice(cur, 1); snaps.splice(cur, 1);
-    cur = Math.min(cur, pages.length - 1);
-    if (snaps[cur]) pad.pad.restore(snaps[cur]); else pad.setState(pages[cur]);
-    tools(); persist(); note(`Page ${gone} deleted.`);
-  }
-  $('prev').onclick = () => goPage(cur - 1);
-  $('next').onclick = () => goPage(cur + 1);
-  $('newpage').onclick = newPage;
-
-  // ---------------------------------------------------------------- fix a misread symbol: tap it, pick what it is
-  const SHOW = { '-': '−', '\\times': '×', '\\div': '÷', '\\pm': '±', '\\le': '≤', '\\ge': '≥', '\\ne': '≠',
-    '\\cdot': '⋅', '\\pi': 'π', '\\theta': 'θ', '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\lambda': 'λ',
-    '\\mu': 'μ', '\\sigma': 'σ', '\\phi': 'ϕ', '\\Delta': 'Δ', '\\sqrt': '√', '\\infty': '∞', '\\rightarrow': '→',
-    '\\in': '∈', '\\circ': '°', '\\prime': '′', '\\{': '{', '\\}': '}', '\\ldots': '…', '\\sum': '∑', '\\int': '∫',
-    '\\forall': '∀', '\\exists': '∃', '\\lim': 'lim', '\\log': 'log', '\\sin': 'sin', '\\cos': 'cos', '\\tan': 'tan' };
-  const shownAs = l => SHOW[l] || l;
-  let fixing = false, popFor = null, emptyTaps = 0;
-  function fixMode(on) {
-    fixing = on; emptyTaps = 0; $('fix').setAttribute('aria-pressed', String(on)); $('dfix').setAttribute('aria-pressed', String(on)); closePop();
-    if (on) {
-      if (pad.mode === 'erase') erase(false);
-      pad.mode = 'fix';                       // a tap picks a symbol; writing still writes (and leaves Fix)
-      try { Nib._internals.typeFontsReady(); } catch (e) { /* the system's maths font then */ }
-      note('Tap a symbol to fix how it was read. Just write to carry on.');
-    } else {
-      if (pad.mode === 'fix') pad.mode = 'draw';
-      if (/^Tap a symbol/.test($('notetext').textContent)) $('note').hidden = true;
-    }
-  }
-  // written while Fix was on: the writer is writing again
-  pad.addEventListener('nib:change', () => { if (fixing && pad.mode !== 'fix') fixMode(false); });
-  function closePop() { if (!$('fixpop').hidden) { $('fixpop').hidden = true; $('fixpop').textContent = ''; } popFor = null; }
-  // the symbol drawn under a point (as the view shows it: tidied, in your hand, typeset or as written): the smallest
-  // one the point is inside, else the closest one within a finger's width
-  function symbolAt(x, y) {
-    const P = pad.pad, res = P && P.result;
-    if (!res || !res.symbols.length) return null;
-    let inside = null, near = null;
-    for (const sym of res.symbols) {
-      const objs = sym.strokes.map(i => P.resultStrokes[i]);
-      const it = P.plan && P.plan.items.find(q => q.from.length === objs.length && q.from.every(o => objs.includes(o)));
-      const b = it ? it.box : [sym.box.x, sym.box.y, sym.box.x + sym.box.w, sym.box.y + sym.box.h];
-      const d = Math.hypot(Math.max(b[0] - x, 0, x - b[2]), Math.max(b[1] - y, 0, y - b[3]));
-      const area = Math.max(b[2] - b[0], 4) * Math.max(b[3] - b[1], 4);
-      if (d === 0) { if (!inside || area < inside.area) inside = { sym, box: b, area }; }
-      else if (d <= 12 && (!near || d < near.d)) near = { sym, box: b, d };
-    }
-    return inside || near;
-  }
-  function openPop(hit) {
-    const pop = $('fixpop'), sym = hit.sym;
-    pop.textContent = '';
-    // a dot can be a times dot or a decimal point: offer both
-    const cands = sym.candidates.map(c => c[0]);
-    const dot = cands.indexOf('.');
-    if (dot >= 0 && !cands.includes('\\cdot')) cands.splice(sym.label === '.' ? 0 : dot, 0, '\\cdot');
-    const labels = [sym.label].concat(cands.filter(l => l !== sym.label)).slice(0, 6);
-    for (const l of labels) {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'cand'; b.textContent = shownAs(l); b.dataset.label = l;
-      b.setAttribute('aria-pressed', String(l === sym.label)); b.setAttribute('aria-label', l === sym.label ? 'Keep ' + l : 'Make it ' + l);
-      b.onclick = () => {
-        closePop();                                      // Fix stays on for the next symbol
-        if (l === sym.label) return;
-        pad.relabel(sym, l);
-        note(`Changed to ${shownAs(l)}. Nib will read this shape better from now on.`);
-      };
-      pop.appendChild(b);
-    }
-    pop.hidden = false; popFor = sym;
-    // just below the symbol, or above it when there is no room; always inside the board
-    const Sf = pop.parentNode.getBoundingClientRect(), C = pad.querySelector('canvas').getBoundingClientRect();
-    const ox = C.left - Sf.left, oy = C.top - Sf.top, w = pop.offsetWidth, h = pop.offsetHeight;
-    let left = ox + (hit.box[0] + hit.box[2]) / 2 - w / 2, top = oy + hit.box[3] + 12;
-    if (top + h > Sf.height - 8) top = oy + hit.box[1] - h - 12;
-    pop.style.left = Math.max(8, Math.min(Sf.width - w - 8, left)) + 'px';
-    pop.style.top = Math.max(8, Math.min(Sf.height - h - 8, top)) + 'px';
-    const alt = pop.querySelector('.cand[aria-pressed="false"]'); (alt || pop.firstChild).focus();
-  }
-  $('fix').onclick = () => fixMode(!fixing);
-  pad.addEventListener('nib:tap', e => {
-    if (!fixing) return;
-    const hit = symbolAt(e.detail.x, e.detail.y);
-    if (!hit) {
-      closePop();
-      // empty space twice in a row: done fixing
-      if (++emptyTaps >= 2) { fixMode(false); return; }
-      note('Tap a symbol to fix how it was read. Tap empty space again to stop.');
-      return;
-    }
-    emptyTaps = 0;
-    if (popFor === hit.sym) { closePop(); return; }
-    $('note').hidden = true;
-    openPop(hit);
-  });
-  $('erase').onclick = () => erase(pad.mode !== 'erase');
-  $('undo').onclick = () => pad.undo();
-  $('redo').onclick = () => pad.redo();
-  $('clear').onclick = () => { pad.clear(); note(pages.length > 1 ? 'Page cleared. Undo brings it back.' : 'Board cleared. Undo brings it back.'); };
-  $('hand').onclick = () => $('file').click();
-  $('file').onchange = () => {
-    const f = $('file').files[0]; $('file').value = '';
-    if (!f) return;
-    f.text().then(t => {
-      let n = 0;
-      try { n = Nib.hand.load(t); } catch (e) { note('That file is not handwriting saved from Replicator.'); return; }
-      setView('hand', true);
-      note(`Your handwriting is ready: ${n} characters${Nib.hand.name ? ' from ' + Nib.hand.name : ''}. It stays in this browser.`);
-    });
-  };
-  let lastPointer = 'mouse';
-  document.addEventListener('pointerdown', e => { lastPointer = e.pointerType || 'mouse'; }, true);
-  $('copy').onclick = () => {
-    const t = S.solve ? pad.solved : pad.latex; if (!t) return;
-    const done = () => { $('latexbox').hidden = true; note('LaTeX copied.'); };
-    const manual = () => {
-      $('latexbox').hidden = false; $('latexout').value = t; $('latexout').focus(); $('latexout').select();
-      let ok = false;
-      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-      if (ok) { done(); return; }
-      note(lastPointer === 'touch' || lastPointer === 'pen' ? 'Long-press the text to copy.' : 'Press Ctrl+C to copy the LaTeX.');
-    };
-    try { navigator.clipboard.writeText(t).then(done, manual); } catch (e) { manual(); }
-  };
-  $('noteclose').addEventListener('click', () => { $('latexbox').hidden = true; });
-
-  // ---------------------------------------------------------------- save image
-  // Published on claude.ai the page cannot download by itself: it asks the viewer through the downloads capability.
-  let saver = null;
-  const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
-  try { if (window.claude && typeof window.claude.use === 'function') window.claude.use('downloads').then(d => { saver = d; }, () => {}); } catch (e) { /* not in a viewer */ }
-  async function offer(name, blob) {
-    if (saver) {
-      try { await saver.save({ filename: name, data: new Uint8Array(await blob.arrayBuffer()) }); return true; }
-      catch (e) { if (e && e.code === 'declined') return false; }
-    }
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
-    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    return true;
-  }
-  $('saveimg').onclick = async () => {
-    const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim();
-    const c = pad.image({ scale: 2, background: v('--board'), dots: { color: v('--dot'), spacing: 28, offset: 0, radius: 1.3 } });
-    if (!c) return;
-    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
-    if (!blob) { note('The picture could not be made.'); return; }
-    const name = `Nib-board-${cur + 1}-${today()}.png`;
-    if (await offer(name, blob)) note('Saved ' + name + '.');
-  };
-
-  // ---------------------------------------------------------------- full screen, keys
-  const canFull = !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false);
-  $('full').hidden = !canFull;
-  const toggleFull = () => { if (!canFull) return; (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); };
-  $('full').onclick = toggleFull;
-  document.addEventListener('keydown', e => {
-    const k = e.key.toLowerCase();
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-    if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? pad.redo() : pad.undo(); return; }
-    if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); pad.redo(); return; }
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (k === 'escape') { if (!$('settings').hidden) openSettings(false); else if (!$('fixpop').hidden) closePop(); else if (fixing) fixMode(false); return; }
-    if (e.target && e.target.classList && e.target.classList.contains('cand') && (k === ' ' || k === 'enter')) return;
-    if (k === 'e') erase(pad.mode !== 'erase');
-    else if (k === 's') setSolve(!S.solve);
-    else if (k === 'x') { if (!$('fix').disabled || fixing) fixMode(!fixing); }
-    else if (k === 'f') toggleFull();
-    else if (k >= '1' && k <= '4') setView(VIEWS[+k - 1]);
-  });
-  // a long press is for writing, not for the browser's menu (the LaTeX box keeps its own, to copy from)
-  document.addEventListener('contextmenu', e => { if (!(e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT'))) e.preventDefault(); });
-
-  // ---------------------------------------------------------------- what the panel sends (hold the "Nib." mark)
-  const log = [];
-  let diagOn = false, diagRaf = 0, pressTimer = null;
-  const showDiag = () => {
-    diagRaf = 0; if (!diagOn) return;
-    $('diag').textContent = 'Pointer events (hold Nib. to close)\n' + (log.length ? log.map(r => r.join('  ')).join('\n') : 'Touch or write on the board.');
-  };
-  const rec = e => {
-    const P = pad.pad, onPad = e.target === pad.querySelector('canvas');
-    log.unshift([e.type.replace('pointer', '').padEnd(6), (e.pointerType || '?').padEnd(5), 'w ' + (+e.width || 0).toFixed(1), 'h ' + (+e.height || 0).toFixed(1),
-      'p ' + (+e.pressure || 0).toFixed(2), 'b ' + e.buttons, e.isPrimary ? 'primary' : 'second', e.type === 'pointerdown' && onPad && P ? P.why : '']);
-    if (log.length > 14) log.length = 14;
-    if (diagOn && !diagRaf) diagRaf = requestAnimationFrame(showDiag);
-  };
-  for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) document.addEventListener(t, rec);
-  const unpress = () => { clearTimeout(pressTimer); pressTimer = null; };
-  $('mark').addEventListener('pointerdown', e => {
-    unpress();
-    const x = e.clientX, y = e.clientY;
-    pressTimer = setTimeout(() => { pressTimer = null; diagOn = !diagOn; $('diag').hidden = !diagOn; showDiag(); }, 600);
-    const mv = ev => { if (Math.hypot(ev.clientX - x, ev.clientY - y) > 10) unpress(); };
-    $('mark').addEventListener('pointermove', mv);
-    const end = () => { unpress(); $('mark').removeEventListener('pointermove', mv); };
-    $('mark').addEventListener('pointerup', end, { once: true });
-    $('mark').addEventListener('pointercancel', end, { once: true });
-    $('mark').addEventListener('pointerleave', end, { once: true });
-  });
-
-  // Corrections are remembered as the network's own embeddings of the corrected shapes, so a new network (a
-  // retrained Nib) cannot use the ones remembered for the old: they would be ignored and the writer would have to
-  // fix the same 1s and 6s again. The training log keeps every corrected symbol's strokes, so the new network is
-  // taught them again, once, the first time the Board opens with it.
-  function relearn() {
-    try {
-      const M = JSON.parse(localStorage.getItem('nib-memory-v1') || 'null');
-      if (!M || M.model === Nib.memory.model) return 0;          // nothing remembered, or remembered for this network
-      let n = 0;
-      for (const r of pad.pad.training || []) {
-        if (!r.fixed || !r.fixed.length || !Array.isArray(r.strokes)) continue;
-        const ink = r.strokes.map(st => st.map(q => [q[0], q[1]])), ref = Nib._internals.refSize(ink);
-        for (const f of r.fixed) {
-          const g = (f.strokes || []).map(i => ink[i]).filter(Boolean);
-          if (g.length && f.label) { Nib.memory.learn(g, f.label === '\\cdot' ? '.' : f.label, ref); n++; }
-        }
-      }
-      return n;
-    } catch (e) { return 0; }                                     // storage blocked: nothing to carry over
-  }
-
-  // ---------------------------------------------------------------- start
-  setRail(S.rail); setTheme(S.theme); setPen(S.pen); setFinger(S.finger); setReveal(S.reveal); setSolve(S.solve, true); setTrain(S.train, true);
-  customElements.whenDefined('nib-pad').then(() => {
-    setView(S.view, true);
-    // the training log first, so writing put back on the board is known and not kept twice
-    try { const T = JSON.parse(localStorage.getItem(TKEY) || 'null'); if (T && Array.isArray(T.records)) pad.pad.trainLoad(T.records); } catch (e) { /* none, or storage blocked */ }
-    relearn();
-    trainLine();
-    const p = pages[cur];
-    if (p && p.strokes.length) pad.setState(p);
-    ready = true;
-    tools();
-    // a drill under way when the page was closed comes back where it was
-    if (D && D.active && !S.train) { D.active = false; saveDrill(); }
-    drillLine(); drillShow();
-  });
-})();
+/*BOARD_SCRIPT*/
 </script>

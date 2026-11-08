@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nib paper test page</title>
+<style>
+/* the Board inlines DM Sans; here it comes from the same fontsource files */
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 500; src: url(../demo/node_modules/@fontsource/dm-sans/files/dm-sans-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 600; src: url(../demo/node_modules/@fontsource/dm-sans/files/dm-sans-latin-600-normal.woff2) format("woff2"); }
+body { margin: 0; background: #7a7a7a; font: 500 13px "DM Sans", system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<!-- test/paper_browser.js adds src/paper.js here, wrapped in one strict-mode function as the build wraps src/,
+     and it sets window.Paper = { PAPER_KINDS, PAPER_TONES, paperTone, drawPaper, paperThumb } -->
+<script>
+'use strict';
+// A canvas of w × h CSS px at device ratio d, with the pad's world transform for zoom z and the world point (cx, cy)
+// at its top-left: ctx.setTransform(d·z, 0, 0, d·z, −cx·d·z, −cy·d·z). rect is the visible world rectangle.
+window.view = (w, h, d, z, cx, cy, readable) => {
+  const c = document.createElement('canvas'); c.width = Math.round(w * d); c.height = Math.round(h * d);
+  const ctx = c.getContext('2d', readable === false ? {} : { willReadFrequently: true });
+  ctx.setTransform(d * z, 0, 0, d * z, -cx * d * z, -cy * d * z);
+  return { c, ctx, rect: [cx, cy, cx + w / z, cy + h / z] };
+};
+// draw a paper: o = { w, h, d, z, cx, cy, dark }
+window.paint = (spec, o) => {
+  const v = view(o.w, o.h, o.d || 1, o.z, o.cx, o.cy);
+  Paper.drawPaper(v.ctx, spec, v.rect, o.z, !!o.dark);
+  return v;
+};
+window.hex = (d, i) => '#' + [d[i], d[i + 1], d[i + 2]].map(x => x.toString(16).padStart(2, '0')).join('');
+// handwriting strokes (arrays of [x, y]) fitted into the box [x, y, w, h] of a 2D context, as a pen draws them
+window.ink = (ctx, strokes, box, color, width) => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of strokes) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+  const k = Math.min(box[2] / (x1 - x0), box[3] / (y1 - y0));
+  ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const s of strokes) {
+    ctx.beginPath();
+    s.forEach((p, i) => { const x = box[0] + (p[0] - x0) * k, y = box[1] + (p[1] - y0) * k; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    if (s.length === 1) ctx.lineTo(box[0] + (s[0][0] - x0) * k + 0.01, box[1] + (s[0][1] - y0) * k);
+    ctx.stroke();
+  }
+  ctx.restore();
+};
+</script>
+</body>
+</html>

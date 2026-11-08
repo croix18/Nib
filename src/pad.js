@@ -1,12 +1,12 @@
 // ================================================================== writing pad
 const PAD_DEFAULTS = {
-  ink: null,            // stroke colour; default: the element's CSS --nib-ink, else its text colour
+  ink: null,            // stroke color; default: the element's CSS --nib-ink, else its text color
   width: 3,             // stroke width in CSS px
-  auto: true,           // recognise automatically after the pen rests
-  delay: 450,           // ms of rest before recognising
+  auto: true,           // recognize automatically after the pen rests
+  delay: 450,           // ms of rest before recognizing
   settle: 0,            // ms of rest before read ink changes into its tidy / handwritten / typeset form (the answers do not wait)
   penOnly: false,       // ignore touch and mouse (stylus-only boards)
-  boxes: false,         // draw recognised symbol boxes over the ink
+  boxes: false,         // draw recognized symbol boxes over the ink
   smooth: 0,            // smooth shaky ink along its path before reading (sigma as a share of the writing size)
   view: 'ink',          // how read ink is shown: 'ink' as written, 'tidy', 'hand' (the writer's Replicator handwriting), 'typeset'
   motion: true,         // animate ink into its tidy / handwritten / typeset form (off when the reader asks for less motion)
@@ -17,12 +17,23 @@ const PAD_DEFAULTS = {
   fit: false,           // when the pad is resized and the ink no longer fits, shrink and move it in (undoable)
   times: true,          // × can be a times sign; false: every cross is the letter x (multiply with · or brackets)
   train: false,         // keep each piece of writing read (strokes, reading, corrections) in pad.training, for fine-tuning
+  // a canvas (the Board): an endless surface that pans and zooms, with pens, markers, highlighters, shapes, text and
+  // pictures (see "canvas" below); off, the pad is the plain writing box other tools embed
+  infinite: false,      // pan and zoom (wheel, ctrl+wheel or a trackpad pinch, two fingers, the hand tool, space + drag)
+  paper: null,          // {kind, tone}: the background drawn under everything (drawPaper), or null for none
+  fingers: 'write',     // with infinite: 'write' (a finger writes), 'pan' (a finger moves the board: the pen writes) or 'ignore'
+  pinch: true,          // with infinite: two fingers put down together pan and zoom (a second student's finger far away still writes)
+  pressure: true,       // a pen's line follows its pressure (when the pen reports one)
+  eraser: 'stroke',     // 'stroke': the eraser takes whole strokes; 'area': it rubs out only where it passes
+  snap: 0,              // shapes snap to a grid of this spacing (world units; 0: no snapping)
+  hold: true,           // draw a line, circle, rectangle or triangle and hold the pen still: it becomes that shape
+  read: true,           // Nib reads the pen and marker writing (false: a plain whiteboard)
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
 };
 
-// Writing in different places on a board: strokes near each other belong together — neighbours on a line (within
+// Writing in different places on a board: strokes near each other belong together — neighbors on a line (within
 // 1.5 writing heights across, 0.6 up or down) or stacked (fractions, steps of working: within 1.6 heights down and
 // overlapping across). Returns groups of stroke indices in reading order.
 function clustersOf(strokes) {
@@ -126,6 +137,87 @@ function joinParts(parts) {
   };
 }
 
+// ================================================================== canvas: colors, elements
+// Colors are named so they can read on any paper: '@red' is a deep red on cream or white paper and a lighter one on a
+// chalkboard or a dark board. A plain CSS color is used as it is. null is the paper's own ink (navy, or cream on dark).
+const PAD_COLORS = {
+  '@ink': [null, null], '@black': ['#16181d', '#f5f3ee'], '@red': ['#d1352b', '#ff7d6e'], '@blue': ['#1f5fbf', '#7fb0ff'],
+  '@green': ['#1d8a4b', '#6fd49c'], '@orange': ['#e0750f', '#ffb15c'], '@purple': ['#7a3db4', '#c79dff'],
+  '@gold': ['#a37c12', '#e8c35a'], '@pink': ['#d23f7e', '#ff90c0'], '@brown': ['#8a5a2b', '#d9a774'], '@gray': ['#6b7280', '#b6bcc8'],
+  // highlighters: the same on any paper (they are see-through)
+  '@hl-yellow': ['#ffe14d', '#ffe14d'], '@hl-green': ['#7ee08a', '#7ee08a'], '@hl-pink': ['#ff8ccf', '#ff8ccf'],
+  '@hl-blue': ['#7cc8ff', '#7cc8ff'], '@hl-orange': ['#ffb347', '#ffb347'],
+};
+function padColor(c, dark, ink) {
+  if (!c || c === '@ink') return ink;
+  const k = PAD_COLORS[c];
+  return k ? (k[dark ? 1 : 0] || ink) : c;
+}
+// a shape's fill: 'tint' (its own color, see-through), 'solid' (its own color), '@red:0.25' (a named color at that
+// opacity) or a CSS color
+function padFill(f, dark, col) {
+  if (!f || f === 'none') return null;
+  if (f === 'tint' || f === 'solid') return padAlpha(col, f === 'tint' ? (dark ? 0.28 : 0.18) : 1);
+  const m = /^(@[a-z-]+):([\d.]+)$/.exec(f);
+  if (m) return padAlpha(padColor(m[1], dark, col), +m[2]);
+  return padColor(f, dark, col);
+}
+// a #rgb / #rrggbb color at an opacity
+function padAlpha(c, a) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim());
+  if (!m || a >= 1) return c;
+  const h = m[1].length === 3 ? m[1].replace(/./g, ch => ch + ch) : m[1];
+  return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`;
+}
+// how light a CSS color is (0 black … 1 white); unknown colors count as light
+function padLum(color) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color || '').trim());
+  let r, g, b;
+  if (m) { const h = m[1].length === 3 ? m[1].replace(/./g, ch => ch + ch) : m[1]; r = parseInt(h.slice(0, 2), 16); g = parseInt(h.slice(2, 4), 16); b = parseInt(h.slice(4, 6), 16); }
+  else { const n = /rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(String(color || '')); if (!n) return 1; r = +n[1]; g = +n[2]; b = +n[3]; }
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+const PAD_ZMIN = 0.1, PAD_ZMAX = 8;
+function padSnap(p, spacing) { return spacing > 0 && typeof shapeSnap === 'function' ? shapeSnap(p, spacing) : p; }
+const PAD_FONT = '"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+// is world point p inside polygon poly ([[x, y], ...])?
+function padInPoly(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1] || 1e-12) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+// the parts of a stroke outside a circle (the area eraser): runs of points, cut where they cross it
+function padCut(s, c, r) {
+  const out = [], r2 = r * r, outside = q => (q[0] - c[0]) * (q[0] - c[0]) + (q[1] - c[1]) * (q[1] - c[1]) > r2;
+  let run = [];
+  const edge = (a, b) => {            // where segment a→b crosses the circle (a inside, b outside or the other way)
+    const dx = b[0] - a[0], dy = b[1] - a[1], fx = a[0] - c[0], fy = a[1] - c[1];
+    const A = dx * dx + dy * dy, B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - r2;
+    const disc = Math.max(0, B * B - 4 * A * C), sq = Math.sqrt(disc);
+    let t = A ? (-B - sq) / (2 * A) : 0;
+    if (t < 0 || t > 1) t = A ? (-B + sq) / (2 * A) : 0;
+    t = Math.max(0, Math.min(1, t));
+    const q = a.slice(); q[0] = a[0] + dx * t; q[1] = a[1] + dy * t;
+    if (a.length > 3 && b.length > 3) q[3] = a[3] + (b[3] - a[3]) * t;
+    return q;
+  };
+  for (let i = 0; i < s.length; i++) {
+    const q = s[i], o = outside(q), prev = s[i - 1];
+    if (o) {
+      if (prev && !outside(prev)) run.push(edge(prev, q));
+      run.push(q);
+    } else if (run.length) {
+      if (prev) run.push(edge(prev, q));
+      out.push(run); run = [];
+    }
+  }
+  if (run.length) out.push(run);
+  return out.filter(p => p.length > 1 || s.length === 1);
+}
+
 class Pad {
   constructor(el, options) {
     this.el = el;
@@ -157,6 +249,20 @@ class Pad {
     this.training = []; this._trainIdx = new Map(); this._trainBytes = new Map(); this._trainSkip = new Set();
     this._seen = new Map(); this._trainTimer = null; this._hashes = new WeakMap(); this._answered = new WeakMap();
     this.trainMeta = null;          // a plain object whose fields go into every training record made while it is set (a drill's prompt)
+    // the canvas (see "canvas" below)
+    this.cam = { x: 0, y: 0, z: 1 };                         // world point (x, y) is at the canvas's top-left; z: zoom
+    this.tool = { kind: 'pen', color: null, size: null };    // what draw mode writes with: 'pen' | 'marker' | 'highlighter'
+    this.shapeTool = { kind: 'rect', color: null, size: 3, fill: null, dash: false };
+    this.textTool = { color: null, size: 32 };
+    this.images = new Map();        // image id -> {src, img, ok}: the pictures on any page
+    this.selection = new Set();     // elements selected (select mode)
+    this.lasers = [];               // laser trails fading out
+    this._bb = new WeakMap(); this._paths = new WeakMap();   // per element: its bounds, its drawing (dropped when it changes)
+    this._bbz = new WeakMap();      // the zoom a number line's or a plane's bounds were worked out for
+    this.touches = new Map();       // touch pointerId -> {x, y, t} on screen: for two-finger gestures
+    this.gesture = null;            // a pan or pinch under way
+    this.spacePan = false;          // the space bar is down: a drag pans
+    this.editing = null;            // the text box being written in
     if (typeof window !== 'undefined') window.addEventListener('nib:hand', this._handChanged);
     this._down = this._down.bind(this); this._move = this._move.bind(this); this._up = this._up.bind(this);
     c.addEventListener('pointerdown', this._down);
@@ -165,7 +271,11 @@ class Pad {
     c.addEventListener('pointercancel', this._up);
     c.addEventListener('lostpointercapture', this._up);     // capture lost without a pointerup: finish the stroke
     c.addEventListener('contextmenu', e => e.preventDefault());
+    c.addEventListener('wheel', e => this._wheel(e), { passive: false });
+    c.addEventListener('dblclick', e => this._dbl(e));
     this._theme = () => this.redraw();
+    this._fonts = () => { if (this.canvas.isConnected) { this._bb = new WeakMap(); this._paths = new WeakMap(); this.redraw(); } };
+    try { if (document.fonts) { document.fonts.ready.then(this._fonts); document.fonts.addEventListener('loadingdone', this._fonts); } } catch (e) { /* no font events */ }
     try { this.mq = matchMedia('(prefers-color-scheme: dark)'); this.mq.addEventListener('change', this._theme); } catch (e) { this.mq = null; }
     this.mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(this._theme) : null;
     if (this.mo) this.mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
@@ -179,38 +289,51 @@ class Pad {
     Object.assign(this.o, o || {});
     if (!!this.o.train !== tb) { if (this.o.train) this._trainSee(); else { clearTimeout(this._trainTimer); this._trainTimer = null; this._seen.clear(); } }
     if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
-    // only options that change the reading read the ink again; a view, colour or pen width just redraws
+    // only options that change the reading read the ink again; a view, color or pen width just redraws
     const reread = this._readKey() !== rk;
     if (reread) { this.optsVersion++; this.parts.clear(); }
+    if (!this.o.infinite && (this.cam.x || this.cam.y || this.cam.z !== 1)) this.cam = { x: 0, y: 0, z: 1 };
     if (this.o.view !== before || this.o.hand !== hb || !!this.o.solve !== sb || !!this.o.reveal !== rb) this._replan(true); else this.redraw();
-    if (this.strokes.length && this.o.auto && (reread || (this.resultStrokes || []).length !== this.strokes.length)) this._schedule(0);
+    const ink = this.ink;
+    if (reread && !ink.length && this.result) { this._emit(null); return; }   // reading turned off, or nothing left to read
+    if (ink.length && this.o.auto && (reread || (this.resultStrokes || []).length !== ink.length)) this._schedule(0);
   }
   _readKey() {
-    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange']);
+    const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange',
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold']);
     return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
   }
 
   // ---------------------------------------------------------------- input
-  _pt(e) { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top, Math.round(e.timeStamp)]; }
+  // a pointer event's place on the board, in world units (and its time; a pen's pressure when it gives one)
+  _pt(e) {
+    const r = this.canvas.getBoundingClientRect(), z = this.cam.z;
+    const p = [this.cam.x + (e.clientX - r.left) / z, this.cam.y + (e.clientY - r.top) / z, Math.round(e.timeStamp)];
+    if (e.pointerType === 'pen' && typeof e.pressure === 'number' && e.pressure > 0) p.push(Math.round(Math.min(1, e.pressure) * 100) / 100);
+    return p;
+  }
+  _spt(e) { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }   // on screen
   // Several pointers at once (two students at the board): each makes its own stroke, in the mode it started in.
   // A pen wins over touch: touch is ignored while a pen is down and for a second after its last event, a wide
   // contact (a palm) never draws, and a touch stroke only just begun is dropped when a pen comes down.
   get active() { return this.ptrs.size ? this.ptrs.keys().next().value : null; }
-  get cur() { for (const P of this.ptrs.values()) if (P.cur) return P.cur; return null; }
+  get cur() { for (const P of this.ptrs.values()) if (P.cur && P.mode === 'draw') return P.cur; return null; }
   _contact(e) { const w = Math.max(+e.width || 0, +e.height || 0); return w > 1 && isFinite(w) ? w : 0; }   // 0: not known
   // what wrote a finished stroke (a stroke, or its index): {type: 'pen' | 'touch' | 'mouse' | null, width: contact px or null}
   strokeInfo(s) {
     if (typeof s === 'number') s = this.strokes[s];
     const i = s && this.info.get(s);
-    return { type: i ? i.type : null, width: i ? i.width : null };
+    return { type: i ? i.type || null : null, width: i ? i.width || null : null };
   }
   _wide(e) { return (+e.width || 0) >= 28 || (+e.height || 0) >= 28; }   // 0 or 1: the browser does not say
   _young(P, now) { return now - P.t0 < 350 || (P.cur ? P.cur.length : 0) < 6; }
-  _still(P) { if (!P.cur || P.mode !== 'draw') return false; const b = sbox(P.cur); return Math.max(b[2] - b[0], b[3] - b[1]) < 12; }
+  _still(P) { if (!P.cur || P.mode !== 'draw') return false; const b = sbox(P.cur); return Math.max(b[2] - b[0], b[3] - b[1]) < 12 / this.cam.z; }
+  _capture(e) { try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* ok */ } }
   _down(e) {
     const now = performance.now(), type = e.pointerType, touch = type === 'touch';
     // a pointer that has gone quiet for 1.5 s lost its pointerup somewhere: finish it and take the new one
     for (const P of [...this.ptrs.values()]) if (now - P.last > 1500 || P.id === e.pointerId) this._finish(P, null);
+    if (this.editing) this._commitText();                 // a tap on the board ends the text being written
     if (type === 'pen') {
       this.penUntil = now + 1000; this.penSeen = now;
       this._brushed();                                    // brief touches just before the pen were the hand
@@ -218,30 +341,43 @@ class Pad {
       for (const P of [...this.ptrs.values()]) if (P.type === 'touch' && (this._young(P, now) || this._still(P))) this._drop(P);
     }
     if (touch) {
-      if (this.o.penOnly) { this.why = 'ignored: pen only'; return; }
+      if (this.o.penOnly || this.o.fingers === 'ignore') { this.why = 'ignored: pen only'; return; }
       if (now < this.penUntil || [...this.ptrs.values()].some(P => P.type === 'pen')) { this.why = 'ignored: pen in use'; return; }
       if (this._wide(e) && this.mode !== 'erase') { this.why = 'ignored: palm'; return; }   // with Erase on, a hand rubs out
+      for (const [id, T] of this.touches) if (now - (T.m || T.t) > 1500) this.touches.delete(id);   // fingers whose pointerup was lost
+      const sp = this._spt(e); this.touches.set(e.pointerId, { x: sp[0], y: sp[1], t: now, m: now });
     }
+    // panning and zooming: the hand tool, space or the middle button with a mouse, fingers set to move the board, two fingers
+    if (this.o.infinite && this._gestureDown(e, now)) return;
     if (type === 'mouse' && e.button !== 0) { this.why = 'ignored: button'; return; }
     e.preventDefault();
     const eraser = type === 'pen' && ((e.buttons & 32) !== 0 || e.button === 5);    // the pen turned round
+    const m = this.mode;
     // mode 'fix': a tap is sent on as nib:tap (the Board's Fix picks the symbol under it); writing still writes
-    const P = { id: e.pointerId, type, mode: eraser || this.mode === 'erase' ? 'erase' : 'draw', eraser, fix: this.mode === 'fix' && !eraser, t0: now, last: now, cur: null, erased: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e) };
+    const mode = eraser || m === 'erase' ? 'erase' : ['select', 'shape', 'text', 'laser'].includes(m) ? m : 'draw';
+    const P = { id: e.pointerId, type, mode, eraser, fix: m === 'fix' && !eraser, t0: now, last: now, cur: null, erased: [], ops: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e),
+      tool: Object.assign({}, this.tool) };
     this.ptrs.set(e.pointerId, P);
     this.why = P.mode + (eraser ? ' (eraser end)' : '');
-    try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* ok */ }
+    this._capture(e);
     clearTimeout(this.timer); this.gen++;
     const p = this._pt(e);
     if (P.mode === 'erase') { P.base = this._eraseBase(p); this._eraseAt(P, p, e); return; }
+    if (P.mode === 'select') { this._selectDown(P, p, e); return; }
+    if (P.mode === 'shape') { P.a = padSnap(p, this.o.snap); P.prev = null; this._frame(); return; }
+    if (P.mode === 'text' || P.mode === 'laser') { P.cur = [p]; if (P.mode === 'laser') this._laserLoop(); return; }
     P.chip = this._chipAt(p);
-    P.cur = [p];
+    P.cur = [p]; P.stillAt = p;
+    this._holdTimer(P);
     if (this.plan && (P.chip || this.plan.items.some(it => it.answer))) { this.redraw(); return; }   // writing over an answer hides it
-    this._ink();
-    this.ctx.beginPath(); this.ctx.arc(p[0], p[1], this.o.width / 2, 0, Math.PI * 2); this.ctx.fill();
+    if (this._live(P)) this._seg(P); else this._frame();
   }
   _move(e) {
     const now = performance.now();
     if (e.pointerType === 'pen') { this.penUntil = now + 1000; this.penSeen = now; if (this.pending.length) this._brushed(); }
+    const T = this.touches.get(e.pointerId);
+    if (T) { const sp = this._spt(e); T.x = sp[0]; T.y = sp[1]; T.m = now; }
+    if (this.gesture && this._gestureMove(e)) return;
     const P = this.ptrs.get(e.pointerId);
     if (!P) return;
     e.preventDefault();
@@ -252,36 +388,218 @@ class Pad {
     for (const ev of (evs.length ? evs : [e])) {
       const p = this._pt(ev);
       if (P.mode === 'erase') { this._eraseAt(P, p, ev); continue; }
+      if (P.mode === 'select') { this._selectMove(P, p); continue; }
+      if (P.mode === 'shape') { P.b = p; continue; }
+      if (P.mode === 'text') continue;
       const q = P.cur[P.cur.length - 1];
-      if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) < 0.75) continue;
+      if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) < 0.75 / this.cam.z) continue;
       P.cur.push(p);
-      this._seg(P.cur);
+      if (P.mode === 'laser') continue;
+      if (P.snap) continue;                                // a shape already: the hand moving on changes nothing
+      // still for a moment at the end of a line, circle or box: it may become that shape
+      if (Math.hypot(p[0] - P.stillAt[0], p[1] - P.stillAt[1]) * this.cam.z > 3) { P.stillAt = p; this._holdTimer(P); }
+      if (this._live(P)) this._seg(P);
     }
+    if (P.mode === 'shape' && P.b && typeof shapeFromDrag === 'function') { P.prev = shapeFromDrag(this.shapeTool.kind, P.a, P.b, { snap: this.o.snap, angle: true, z: this.cam.z }); this._frame(); }
+    else if (P.mode === 'laser' || (P.mode === 'draw' && !this._live(P))) this._frame();
   }
   _up(e) {
     if (e.pointerType === 'pen') { this.penUntil = performance.now() + 1000; this.penSeen = performance.now(); }
+    this.touches.delete(e.pointerId);
+    if (this.gesture && this._gestureUp(e)) return;
     const P = this.ptrs.get(e.pointerId);
     if (P) this._finish(P, e);
   }
+  // ---------------------------------------------------------------- panning and zooming
+  // A drag that moves the board: the hand tool, a mouse's middle button or space + drag, or a finger when fingers move
+  // the board. Two fingers put down together (within 0.3 s and a hand's width of each other) pan and zoom; the first
+  // finger's stroke, if it had begun, is taken back. Fingers in a gesture never write, even after one lifts.
+  _gestureDown(e, now) {
+    const type = e.pointerType, touch = type === 'touch', sp = this._spt(e);
+    // a gesture whose fingers have been quiet for 1.5 s lost a pointerup somewhere, and a pen ends a gesture of fingers:
+    // neither may keep the board from listening
+    if (this.gesture && (now - (this.gesture.last || 0) > 1500 || (type === 'pen' && this.gesture.touch))) { this.gesture = null; this._cursor(); this._camMoved(true); }
+    const G = this.gesture;
+    if (G) {
+      G.last = now;
+      if (touch && G.touch && G.ids.length === 1) { G.ids.push(e.pointerId); this._gestureStart(G.ids, true); }
+      e.preventDefault(); this._capture(e);
+      return true;
+    }
+    const pan = (type === 'mouse' && (e.button === 1 || (e.button === 0 && (this.spacePan || this.mode === 'pan'))))
+      || (type !== 'mouse' && this.mode === 'pan') || (touch && this.o.fingers === 'pan');
+    if (pan) {
+      e.preventDefault(); this._capture(e);
+      this.gesture = { ids: [e.pointerId], touch, kind: 'pan', cam0: Object.assign({}, this.cam), s0: sp, cur: sp, last: now };
+      if (touch) this._gestureStart([e.pointerId], true);
+      this.why = 'pan';
+      this.canvas.style.cursor = 'grabbing';
+      return true;
+    }
+    if (touch && this.o.pinch && this.touches.size === 2) {
+      const [oid, o] = [...this.touches.entries()].find(([id]) => id !== e.pointerId) || [];
+      const other = oid !== undefined ? this.ptrs.get(oid) : null;
+      if (o && Math.hypot(o.x - sp[0], o.y - sp[1]) < 420 && now - o.t < 300) {
+        if (other) this._drop(other);                     // whatever the first finger began (a stroke, a lasso, a shape, a move) is taken back
+        e.preventDefault(); this._capture(e);
+        this.gesture = { ids: [oid, e.pointerId], touch: true, last: now };
+        this._gestureStart(this.gesture.ids, true);
+        this.why = 'pinch';
+        return true;
+      }
+    }
+    return false;
+  }
+  // (re)start from where the fingers are now: the camera, their middle and their distance
+  _gestureStart(ids, touch) {
+    const G = this.gesture;
+    const pts = ids.map(id => this.touches.get(id)).filter(Boolean);
+    if (!G || !pts.length) return;
+    const mid = [pts.reduce((a, p) => a + p.x, 0) / pts.length, pts.reduce((a, p) => a + p.y, 0) / pts.length];
+    G.kind = pts.length > 1 ? 'pinch' : 'pan';
+    G.cam0 = Object.assign({}, this.cam); G.mid0 = mid; G.s0 = mid; G.cur = mid;
+    G.d0 = pts.length > 1 ? Math.max(20, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)) : 0;
+  }
+  _gestureMove(e) {
+    const G = this.gesture;
+    if (!G || !G.ids.includes(e.pointerId)) return false;
+    e.preventDefault();
+    G.last = performance.now();
+    if (G.touch) {
+      const pts = G.ids.map(id => this.touches.get(id)).filter(Boolean);
+      if (!pts.length) return true;
+      const mid = [pts.reduce((a, p) => a + p.x, 0) / pts.length, pts.reduce((a, p) => a + p.y, 0) / pts.length];
+      const c0 = G.cam0;
+      let z = c0.z;
+      if (G.kind === 'pinch' && pts.length > 1) z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, c0.z * Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / G.d0));
+      // the world point that was under the fingers' middle stays under it
+      const wx = c0.x + G.mid0[0] / c0.z, wy = c0.y + G.mid0[1] / c0.z;
+      this.cam = { x: wx - mid[0] / z, y: wy - mid[1] / z, z };
+    } else {
+      const sp = this._spt(e);
+      this.cam = { x: G.cam0.x - (sp[0] - G.s0[0]) / G.cam0.z, y: G.cam0.y - (sp[1] - G.s0[1]) / G.cam0.z, z: G.cam0.z };
+    }
+    this._camMoved();
+    return true;
+  }
+  _gestureUp(e) {
+    const G = this.gesture;
+    if (!G || !G.ids.includes(e.pointerId)) return false;
+    try { if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId); } catch (_) { /* ok */ }
+    G.ids = G.ids.filter(id => id !== e.pointerId);
+    // one finger of two lifted: the other goes on panning (it never writes)
+    if (G.ids.length && G.touch) this._gestureStart(G.ids, true);
+    else { this.gesture = null; this._cursor(); this._camMoved(true); }
+    return true;
+  }
+  _wheel(e) {
+    if (!this.o.infinite) return;
+    e.preventDefault();
+    const s = this._spt(e);
+    // a trackpad pinch arrives as ctrl + wheel
+    if (e.ctrlKey || e.metaKey) { this.zoomAt(Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0025)), s[0], s[1]); return; }
+    const k = e.deltaMode === 1 ? 32 : e.deltaMode === 2 ? this.canvas.clientHeight : 1;
+    let dx = e.deltaX * k, dy = e.deltaY * k;
+    if (e.shiftKey && !dx) { dx = dy; dy = 0; }
+    this.panBy(-dx, -dy);
+  }
+  // the camera: world point (x, y) at the canvas's top-left, z screen px per world unit
+  setCamera(c) {
+    if (!c) return;
+    const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, +c.z || 1));
+    this.cam = { x: isFinite(+c.x) ? +c.x : 0, y: isFinite(+c.y) ? +c.y : 0, z };
+    this._camMoved(true);
+  }
+  getCamera() { return Object.assign({}, this.cam); }
+  panBy(dx, dy) { if (!this.o.infinite) return; this.cam = { x: this.cam.x - dx / this.cam.z, y: this.cam.y - dy / this.cam.z, z: this.cam.z }; this._camMoved(); }
+  // zoom by f about a point on screen (default: the middle), keeping what is under it where it is
+  zoomAt(f, sx, sy) {
+    if (!this.o.infinite) return;
+    const W = this.canvas.width / (this.dpr || 1), H = this.canvas.height / (this.dpr || 1);
+    if (sx === undefined) { sx = W / 2; sy = H / 2; }
+    const z0 = this.cam.z, z1 = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, z0 * f));
+    if (z1 === z0) return;
+    const wx = this.cam.x + sx / z0, wy = this.cam.y + sy / z0;
+    this.cam = { x: wx - sx / z1, y: wy - sy / z1, z: z1 };
+    this._camMoved();
+  }
+  zoomTo(z) { this.zoomAt(z / this.cam.z); }
+  // everything on the page in view, with a margin of m screen px (no closer than 100% unless it does not fit)
+  fitContent(m, most) {
+    const b = this.contentRect(0);
+    const W = this.canvas.width / (this.dpr || 1), H = this.canvas.height / (this.dpr || 1);
+    if (!b) { this.setCamera({ x: 0, y: 0, z: 1 }); return; }
+    m = m === undefined ? 48 : m;
+    const z = Math.max(PAD_ZMIN, Math.min(most || 1, (W - 2 * m) / Math.max(b[2] - b[0], 1), (H - 2 * m) / Math.max(b[3] - b[1], 1)));
+    this.setCamera({ x: (b[0] + b[2]) / 2 - W / 2 / z, y: (b[1] + b[3]) / 2 - H / 2 / z, z });
+  }
+  // The view the writer chose: a world rectangle and a zoom. A resize (a tablet turned, a window made smaller) keeps
+  // everything that was in sight of it in sight, from the same top-left corner, zoomed out only as far as it must be;
+  // made bigger again, the zoom the writer chose comes back. Panning or zooming makes the view on screen the chosen one.
+  _keepView() { if (this.canvas.width > 1) this._want = { r: this.viewRect, z: this.cam.z }; }
+  _fitView() {
+    const w = this._want, d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d;
+    if (!w || W < 2 || H < 2) return false;
+    // how far right and down the writing in the chosen view reaches (nothing there: the zoom stays)
+    let ex = w.r[0], ey = w.r[1];
+    for (const s of this.strokes) {
+      const b = this._bounds(s);
+      if (b[2] < w.r[0] || b[0] > w.r[2] || b[3] < w.r[1] || b[1] > w.r[3]) continue;
+      ex = Math.max(ex, Math.min(b[2], w.r[2])); ey = Math.max(ey, Math.min(b[3], w.r[3]));
+    }
+    const m = 8 / w.z, rw = Math.min(w.r[2] - w.r[0], ex - w.r[0] + m), rh = Math.min(w.r[3] - w.r[1], ey - w.r[1] + m);
+    const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, w.z, ex > w.r[0] ? W / rw : Infinity, ey > w.r[1] ? H / rh : Infinity));
+    if (z === this.cam.z && w.r[0] === this.cam.x && w.r[1] === this.cam.y) return false;
+    this.cam = { x: w.r[0], y: w.r[1], z };
+    return true;
+  }
+  _camQuiet(f) { this._quietCam = true; try { f(); } finally { this._quietCam = false; } }
+  get viewRect() { const d = this.dpr || 1, z = this.cam.z; return [this.cam.x, this.cam.y, this.cam.x + this.canvas.width / d / z, this.cam.y + this.canvas.height / d / z]; }
+  toScreen(p) { return [(p[0] - this.cam.x) * this.cam.z, (p[1] - this.cam.y) * this.cam.z]; }
+  toWorld(sx, sy) { return [this.cam.x + sx / this.cam.z, this.cam.y + sy / this.cam.z]; }
+  // the camera moved: draw at the next frame, move the text box with it, and tell the page (at most every 100 ms; at
+  // once when done)
+  _camMoved(done) {
+    if (!this._quietCam) this._keepView();
+    this._frame(); this._placeEditor();
+    clearTimeout(this._camTimer);
+    const fire = () => this.el.dispatchEvent(new CustomEvent('nib:camera', { detail: this.getCamera(), bubbles: true }));
+    if (done) fire(); else this._camTimer = setTimeout(fire, 100);
+  }
+  _cursor() {
+    const m = this.mode;
+    this.canvas.style.cursor = this.spacePan || m === 'pan' ? 'grab' : m === 'select' ? 'default' : m === 'text' ? 'text' : m === 'laser' ? 'none' : 'crosshair';
+  }
+  // ---------------------------------------------------------------- a pointer is lifted
   // a pointer's stroke is done (e: its pointerup / pointercancel, or null when its up was lost)
   _finish(P, e) {
     this.ptrs.delete(P.id);
+    clearTimeout(P.hold);
     try { if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(P.id)) this.canvas.releasePointerCapture(P.id); } catch (_) { /* ok */ }
     if (P.mode === 'erase') {
       P.at = null;
-      if (P.erased.length || P.hid.length) { this._push(Object.assign({ erase: P.erased }, P.hid.length ? { hide: P.hid } : {})); this._changed(); }
+      if (P.ops.length) { this._push(Object.assign({ ops: P.ops }, P.hid.length ? { hide: P.hid } : {})); this._changed(); }
+      else if (P.erased.length || P.hid.length) { this._push(Object.assign({ erase: P.erased }, P.hid.length ? { hide: P.hid } : {})); this._changed(); }
       else this.redraw();                                  // the eraser's ring goes
       return;
     }
+    if (P.mode === 'select') { this._selectUp(P, e); return; }
+    if (P.mode === 'shape') { this._shapeUp(P, e); return; }
+    if (P.mode === 'laser') { if (P.cur && P.cur.length) this.lasers.push({ pts: P.cur, end: performance.now() }); this._laserLoop(); return; }
+    if (P.mode === 'text') {
+      if (P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; return; }   // the heel of the hand
+      if (e && e.type === 'pointerup' && P.cur) this._textAt(P.cur[0]);
+      return;
+    }
     const s = P.cur;
-    if (e && e.type === 'pointercancel' && s && s.length < 3) { this.redraw(); return; }   // a cancelled tap
+    if (e && e.type === 'pointercancel' && s && s.length < 3) { this.redraw(); return; }   // a canceled tap
     // a tap on an answer's chip (up within 10 px and 400 ms of the down, inside the chip) shows that answer
     if (P.chip && e && e.type === 'pointerup' && s && s.length) {
       const q = this._pt(e);
-      if (Math.hypot(q[0] - s[0][0], q[1] - s[0][1]) <= 10 && performance.now() - P.t0 <= 400 && this._inChip(P.chip, q)) { this._reveal(P.chip.key); return; }
+      if (Math.hypot(q[0] - s[0][0], q[1] - s[0][1]) * this.cam.z <= 10 && performance.now() - P.t0 <= 400 && this._inChip(P.chip, q)) { this._reveal(P.chip.key); return; }
     }
     if (!s || !s.length) return;
-    const b = sbox(s.map(q => [q[0], q[1]])), span = Math.max(b[2] - b[0], b[3] - b[1]);
+    const b = sbox(s.map(q => [q[0], q[1]])), span = Math.max(b[2] - b[0], b[3] - b[1]) * this.cam.z;
     // Fix on: a tap (within 10 px, 400 ms) points at a symbol and writes nothing; anything longer is writing
     if (P.fix && span < 10 && performance.now() - P.t0 <= 400) {
       this.why = 'tap (fix)'; this.redraw();
@@ -291,18 +609,32 @@ class Pad {
     const now = performance.now(), penSession = now - this.penSeen < 30000;
     // a finger's tap while a pen is in use (within the last 30 s) is the heel of the hand, not a decimal point
     if (P.type === 'touch' && penSession && span < 6) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
-    this.info.set(s, { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null });
+    const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null };
+    const T = P.tool || {};
+    let el = s;
+    if (P.snap) {
+      // drawn and held: the shape it was, in the pen's color and width
+      el = P.snap.pts.map(q => [q[0], q[1]]);
+      if (T.kind === 'highlighter') Object.assign(info, { tool: 'highlighter', size: T.size || 22 });
+      else Object.assign(info, { tool: 'shape', shape: P.snap.shape, size: T.size || this.o.width * (T.kind === 'marker' ? 3 : 1) });
+      if (T.color) info.color = T.color;
+    } else {
+      if (T.kind && T.kind !== 'pen') info.tool = T.kind;
+      if (T.color) info.color = T.color;
+      if (T.size) info.size = T.size;
+    }
+    this.info.set(el, info);
     if (P.fix && this.mode === 'fix') this.mode = 'draw';   // written with Fix on: the writer is writing again
     // a brief touch (under 400 ms) while the pen is the writer's instrument may be the hand brushing the board on its
     // way down: it waits 1.5 s, shown as ink, and goes if the pen follows; a finger writing on its own waits nothing
     if (P.type === 'touch' && penSession && !P.fix && now - P.t0 < 400) {
       this.why = 'touch: waiting for the pen';
-      this.pending.push({ s, timer: setTimeout(() => this._commit(s), 1500) });
+      this.pending.push({ s: el, timer: setTimeout(() => this._commit(el), 1500) });
       this.redraw();
       return;
     }
-    this.strokes.push(s);
-    this._push({ add: s });
+    this.strokes.push(el);
+    this._push({ add: el });
     this._changed();
   }
   // a brief touch stroke the pen did not follow: ink after all
@@ -325,8 +657,15 @@ class Pad {
   // a stroke that should never have been (a palm under a pen): gone, and whatever it erased is back
   _drop(P) {
     this.ptrs.delete(P.id);
+    clearTimeout(P.hold);
     try { if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(P.id)) this.canvas.releasePointerCapture(P.id); } catch (_) { /* ok */ }
+    for (let k = P.ops.length - 1; k >= 0; k--) {            // the area eraser's cuts, undone
+      const o = P.ops[k];
+      if (o.ins !== undefined) { const i = this.strokes.indexOf(o.s); if (i >= 0) this.strokes.splice(i, 1); }
+      else this.strokes.splice(Math.min(o.rm, this.strokes.length), 0, o.s);
+    }
     for (const x of P.erased.slice().reverse()) this.strokes.splice(x.i, 0, x.s);
+    if (P.mode === 'select' && P.op && P.op.orig) { for (const [s, was] of P.op.orig) { s.length = 0; for (const q of was) s.push(q.slice()); this._touched(s); } this._planTo(P.op.items, x => x, y => y, 1); }
     for (const k of P.hid) this.revealed.add(k);
     if (P.hid.length) this._syncHidden();
     this.redraw();
@@ -334,13 +673,14 @@ class Pad {
   _push(h) { this.history.push(h); if (this.history.length > 500) this.history.splice(0, this.history.length - 500); this.future = []; }
   // the eraser's size: at least 14 px, a fifth of the writing near it (or of all of it), half a finger's contact
   _eraseBase(p) {
-    const m = 150, near = this.strokes.filter(s => { const b = sbox(s); return p[0] > b[0] - m && p[0] < b[2] + m && p[1] > b[1] - m && p[1] < b[3] + m; });
-    const pool = near.length ? near : this.strokes;
-    return Math.max(14, pool.length ? 0.2 * refSize(pool) : 0);
+    const m = 150 / this.cam.z, all = this.ink.length ? this.ink : this.strokes;
+    const near = all.filter(s => { const b = sbox(s); return p[0] > b[0] - m && p[0] < b[2] + m && p[1] > b[1] - m && p[1] < b[3] + m; });
+    const pool = near.length ? near : all;
+    return Math.max(14 / this.cam.z, pool.length ? 0.2 * refSize(pool) : 0);
   }
   _eraseAt(P, p, e) {
     const w = e ? Math.max(+e.width || 0, +e.height || 0) : 0;
-    const r = P.r = Math.max(P.base || 14, w > 1 ? w / 2 : 0);
+    const r = P.r = Math.max(P.base || 14 / this.cam.z, w > 1 ? w / 2 / this.cam.z : 0);
     P.at = p;
     let hit = false;
     // in a tidy, handwritten or typeset view the eraser takes away what it touches as shown
@@ -358,13 +698,32 @@ class Pad {
           continue;
         }
         if (!it.from.every(s => live.has(s)) || !itemNear(it, p, r)) continue;
-        for (const s of it.from) { const i = this.strokes.indexOf(s); if (i >= 0) { P.erased.push({ i, s }); this.strokes.splice(i, 1); live.delete(s); hit = true; } }
+        for (const s of it.from) {
+          const i = this.strokes.indexOf(s);
+          if (i < 0) continue;
+          if (this.o.eraser === 'area') P.ops.push({ rm: i, s }); else P.erased.push({ i, s });
+          this.strokes.splice(i, 1); live.delete(s); hit = true;
+        }
       }
     }
+    const area = this.o.eraser === 'area';
     for (let i = this.strokes.length - 1; i >= 0; i--) {
-      if (strokeNear(this.strokes[i], p, r)) { P.erased.push({ i, s: this.strokes[i] }); this.strokes.splice(i, 1); hit = true; }
+      const s = this.strokes[i];
+      if (!this._erasable(s, p, r)) continue;
+      const t = this._tool(s);
+      if (area && (t === 'pen' || t === 'marker' || t === 'highlighter')) {
+        // rub out only where the eraser passed: the stroke is cut into what is left of it
+        const bits = padCut(s, p, r + (t === 'pen' ? 0 : this._size(s) / 2));
+        const E = this.info.get(s);
+        P.ops.push({ rm: i, s }); this.strokes.splice(i, 1);
+        bits.forEach((b, k) => { if (E) this.info.set(b, Object.assign({}, E)); this.strokes.splice(i + k, 0, b); P.ops.push({ ins: i + k, s: b }); });
+        hit = true;
+        continue;
+      }
+      if (area) { P.ops.push({ rm: i, s }); this.strokes.splice(i, 1); hit = true; continue; }
+      P.erased.push({ i, s }); this.strokes.splice(i, 1); hit = true;
     }
-    if (hit) this.redraw(); else this._frame();            // the ring follows the eraser
+    if (hit) { this._dropDead(); this.redraw(); } else this._frame();            // the ring follows the eraser
   }
   _frame() {
     if (this._raf || typeof requestAnimationFrame === 'undefined') return;
@@ -384,7 +743,7 @@ class Pad {
     return best;
   }
   // inside the chip, or within a fingertip of it (a target of at least 44 px)
-  _inChip(c, p) { return Math.hypot(p[0] - c.cx, p[1] - c.cy) <= Math.max(c.r, 22); }
+  _inChip(c, p) { return Math.hypot(p[0] - c.cx, p[1] - c.cy) <= Math.max(c.r, 22 / this.cam.z); }
   _reveal(key) {
     this.revealed.add(key);
     const items = this.plan ? this.plan.items.filter(it => it.answer && it.revealKey === key) : [];
@@ -418,44 +777,194 @@ class Pad {
   }
   // new writing not read yet, and strokes being written (a tap on a chip is not writing)
   _fresh() {
-    const read = new Set(this.resultStrokes || []), out = this.strokes.filter(s => !read.has(s));
+    const read = new Set(this.resultStrokes || []), out = this.ink.filter(s => !read.has(s));
     for (const P of this.ptrs.values()) {
-      if (!P.cur) continue;
-      if (P.chip) { const b = sbox(P.cur); if (b[2] - b[0] <= 10 && b[3] - b[1] <= 10) continue; }
+      if (!P.cur || P.mode !== 'draw' || P.snap || (P.tool && P.tool.kind === 'highlighter')) continue;
+      if (P.chip) { const b = sbox(P.cur); if ((b[2] - b[0]) * this.cam.z <= 10 && (b[3] - b[1]) * this.cam.z <= 10) continue; }
       out.push(P.cur);
     }
     return out.map(s => sbox(s));
   }
 
   // ---------------------------------------------------------------- drawing
+  // the paper's ink (navy, or cream on a dark paper) and whether the paper is dark; kept for the strokes drawn between frames
   _ink() {
     const cs = getComputedStyle(this.el);
-    const ink = this.o.ink || cs.getPropertyValue('--nib-ink').trim() || cs.color || '#1b2a4a';
+    const themeDark = padLum(cs.getPropertyValue('--nib-paper').trim() || '#ffffff') < 0.45;
+    let ink = this.o.ink || cs.getPropertyValue('--nib-ink').trim() || cs.color || '#1b2a4a', dark = themeDark;
+    this._paperC = cs.getPropertyValue('--nib-paper').trim() || '#ffffff';
+    if (this.o.paper && typeof paperTone === 'function') {
+      try { const t = paperTone(this.o.paper.tone || 'theme', themeDark); dark = !!t.dark; if (!this.o.ink) ink = t.ink; this._paperC = t.paper; } catch (e) { /* the theme's */ }
+    }
+    this._inkC = ink; this._darkP = dark; this._themeDark = themeDark;
     const ctx = this.ctx;
     ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.lineWidth = this.o.width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   }
-  _seg(s) {
-    const n = s.length, ctx = this.ctx;
-    if (n < 2) return;
+  _tool(s) { const E = this.info.get(s); return (E && E.tool) || 'pen'; }
+  // the width a stroke is drawn with (world units)
+  _size(s) {
+    const E = this.info.get(s), t = (E && E.tool) || 'pen';
+    if (E && +E.size > 0) return +E.size;
+    return t === 'highlighter' ? 22 : t === 'marker' ? 3 * this.o.width : t === 'shape' ? 3 : t === 'text' ? 32 : this.o.width;
+  }
+  _toolWidth(T) { return +T.size > 0 ? +T.size : T.kind === 'highlighter' ? 22 : T.kind === 'marker' ? 3 * this.o.width : this.o.width; }
+  // a line's width at a point: the pen's pressure (0.5 is the line's own width) when it reports one
+  _pw(q, w) { return this.o.pressure && q.length > 3 ? w * (0.45 + 1.1 * Math.max(0.05, Math.min(1, q[3]))) : w; }
+  // an element's points or look changed: its bounds and drawing are made again
+  _touched(s) { this._bb.delete(s); this._paths.delete(s); }
+  // everything drawn of an element, in world units (for culling, selection, export)
+  _bounds(s) {
+    let b = this._bb.get(s);
+    const E = this.info.get(s), t = (E && E.tool) || 'pen';
+    // a number line's or a plane's labels never go under 12 screen px: zoomed out, they reach further than at 100%
+    const zl = t === 'shape' && E && (E.shape === 'numberline' || E.shape === 'plane') ? Math.min(1, this.cam.z) : 1;
+    if (b && (zl === 1 || this._bbz.get(s) === zl)) return b;
+    if (t === 'shape' && typeof shapeBounds === 'function') { try { b = shapeBounds(E, s, { z: zl }); } catch (e) { b = null; } }
+    else b = null;
+    if (zl !== 1) this._bbz.set(s, zl);
+    if (!b) {
+      b = sbox(s);
+      const m = t === 'text' || t === 'image' ? 0 : this._size(s) * (t === 'pen' && this.o.pressure ? 0.8 : 0.5) + 1;
+      b = [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+    }
+    this._bb.set(s, b);
+    return b;
+  }
+  // Does the eraser at p (radius r) take this element? It rubs out what was drawn: pen, marker and highlighter strokes,
+  // and shapes where it touches their outline (not inside a filled one). Text, pictures, number lines and coordinate
+  // planes are placed things that writing goes on: they stay (Select and Delete take them away).
+  _erasable(s, p, r) {
+    const E = this.info.get(s), t = (E && E.tool) || 'pen';
+    if (t === 'pen' || t === 'marker' || t === 'highlighter') return this._hit(s, p, r);
+    if (t !== 'shape' || !E || E.shape === 'numberline' || E.shape === 'plane') return false;
+    const b = this._bounds(s);
+    if (p[0] < b[0] - r || p[0] > b[2] + r || p[1] < b[1] - r || p[1] > b[3] + r) return false;
+    return typeof shapeHit === 'function' ? !!shapeHit(E.fill ? Object.assign({}, E, { fill: null }) : E, s, p, r, { z: this.cam.z }) : strokeNear(s, p, r);
+  }
+  // is world point p within r of what an element shows?
+  _hit(s, p, r) {
+    const b = this._bounds(s);
+    if (p[0] < b[0] - r || p[0] > b[2] + r || p[1] < b[1] - r || p[1] > b[3] + r) return false;
+    const E = this.info.get(s), t = (E && E.tool) || 'pen';
+    if (t === 'shape') return typeof shapeHit === 'function' ? !!shapeHit(E, s, p, r, { z: this.cam.z }) : strokeNear(s, p, r);
+    if (t === 'text' || t === 'image') return true;      // anywhere in its box
+    return strokeNear(s, p, r + (t === 'pen' ? 0 : this._size(s) / 2));
+  }
+  // the latest piece of the stroke being written, drawn at once (the rest of the board is not touched)
+  _live(P) { const k = P.tool && P.tool.kind; return P.mode === 'draw' && !P.snap && k !== 'highlighter'; }
+  _seg(P) {
+    const s = P.cur, n = s.length, ctx = this.ctx, T = P.tool || {};
+    if (!n) return;
+    const col = padColor(T.color, this._darkP, this._inkC || '#1b2a4a'), w = this._toolWidth(T);
+    ctx.save();
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const pen = !T.kind || T.kind === 'pen';
+    if (n === 1) { ctx.beginPath(); ctx.arc(s[0][0], s[0][1], (pen ? this._pw(s[0], w) : w) / 2, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
+    ctx.lineWidth = pen ? (this._pw(s[n - 2], w) + this._pw(s[n - 1], w)) / 2 : w;
     ctx.beginPath();
-    if (n === 2) { ctx.moveTo(s[0][0], s[0][1]); ctx.lineTo(s[1][0], s[1][1]); }
+    if (n === 2) { ctx.moveTo(s[0][0], s[0][1]); ctx.lineTo((s[0][0] + s[1][0]) / 2, (s[0][1] + s[1][1]) / 2); }
     else {
       const a = s[n - 3], b = s[n - 2], c = s[n - 1];
       ctx.moveTo((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
       ctx.quadraticCurveTo(b[0], b[1], (b[0] + c[0]) / 2, (b[1] + c[1]) / 2);
     }
     ctx.stroke();
+    ctx.restore();
   }
-  _stroke(s) {
-    const ctx = this.ctx;
-    if (s.length === 1) { ctx.beginPath(); ctx.arc(s[0][0], s[0][1], this.o.width / 2, 0, Math.PI * 2); ctx.fill(); return; }
-    ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1]);
-    for (let i = 1; i < s.length - 1; i++) ctx.quadraticCurveTo(s[i][0], s[i][1], (s[i][0] + s[i + 1][0]) / 2, (s[i][1] + s[i + 1][1]) / 2);
-    ctx.lineTo(s[s.length - 1][0], s[s.length - 1][1]);
-    ctx.stroke();
+  // a stroke as one smooth path (made once, then kept)
+  _path(s) {
+    let P = this._paths.get(s);
+    if (P && P.k === 'path') return P.path;
+    const path = new Path2D();
+    path.moveTo(s[0][0], s[0][1]);
+    for (let i = 1; i < s.length - 1; i++) path.quadraticCurveTo(s[i][0], s[i][1], (s[i][0] + s[i + 1][0]) / 2, (s[i][1] + s[i + 1][1]) / 2);
+    path.lineTo(s[s.length - 1][0], s[s.length - 1][1]);
+    this._paths.set(s, { k: 'path', path });
+    return path;
+  }
+  // a pen stroke whose width follows its pressure: pieces of the same width (to a quarter px) share one path
+  _varPaths(s, w) {
+    let P = this._paths.get(s);
+    if (P && P.k === 'var' && P.w === w) return P.groups;
+    const groups = [], n = s.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    let cur = null;
+    const piece = (from, ctrl, to, ww) => {
+      const q = Math.max(0.25, Math.round(ww * 4) / 4);
+      if (!cur || cur.w !== q) { cur = { w: q, path: new Path2D() }; groups.push(cur); }
+      cur.path.moveTo(from[0], from[1]);
+      if (ctrl) cur.path.quadraticCurveTo(ctrl[0], ctrl[1], to[0], to[1]); else cur.path.lineTo(to[0], to[1]);
+    };
+    piece(s[0], null, mid(s[0], s[1]), (this._pw(s[0], w) + this._pw(s[1], w)) / 2);
+    for (let i = 1; i < n - 1; i++) piece(mid(s[i - 1], s[i]), s[i], mid(s[i], s[i + 1]), this._pw(s[i], w));
+    piece(mid(s[n - 2], s[n - 1]), null, s[n - 1], (this._pw(s[n - 2], w) + this._pw(s[n - 1], w)) / 2);
+    this._paths.set(s, { k: 'var', w, groups });
+    return groups;
+  }
+  // draw one element (E: its look; drawn as a stroke of that look when it is a stroke)
+  _drawEl(s, E) {
+    E = E || this.info.get(s) || {};
+    const t = E.tool || 'pen', ctx = this.ctx;
+    const col = padColor(E.color, this._darkP, this._inkC || '#1b2a4a');
+    if (t === 'shape') {
+      const F = Object.assign({}, E, { color: col });
+      if (E.fill) F.fill = padFill(E.fill, this._darkP, col); else delete F.fill;
+      if (typeof shapeDraw === 'function') { try { shapeDraw(ctx, F, s, { ink: col, paper: this._paperC, z: this.cam.z, font: PAD_FONT }); } catch (e) { /* a shape it cannot draw */ } }
+      return;
+    }
+    if (t === 'text') { this._drawText(s, E, col); return; }
+    if (t === 'image') { this._drawImage(s, E); return; }
+    if (!s.length) return;
+    const w = +E.size > 0 ? +E.size : t === 'highlighter' ? 22 : t === 'marker' ? 3 * this.o.width : this.o.width;
+    ctx.save();
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = w;
+    if (t === 'highlighter') {
+      // see-through, and on light paper it darkens what is under it the way a real highlighter does
+      ctx.globalAlpha = this._darkP ? 0.36 : 0.55;
+      if (!this._darkP) ctx.globalCompositeOperation = 'multiply';
+    }
+    if (s.length === 1) { ctx.beginPath(); ctx.arc(s[0][0], s[0][1], (t === 'pen' ? this._pw(s[0], w) : w) / 2, 0, Math.PI * 2); ctx.fill(); }
+    else if (t === 'pen' && this.o.pressure && s[0].length > 3) for (const g of this._varPaths(s, w)) { ctx.lineWidth = g.w; ctx.stroke(g.path); }
+    else ctx.stroke(this._path(s));
+    ctx.restore();
+  }
+  // a text box: its lines at its size, scaled with its box when the box was made bigger or smaller
+  _textScale(s, E) {
+    const lines = String(E.text || '').split('\n').length || 1, natural = lines * 1.25 * (+E.size || 32);
+    const h = Math.abs(s[1][1] - s[0][1]);
+    return h > 0 && natural > 0 ? h / natural : 1;
+  }
+  _drawText(s, E, col) {
+    if (this.editing && this.editing.el === s) return;     // the text box shows it while it is being written
+    const ctx = this.ctx, k = this._textScale(s, E), size = (+E.size || 32) * k, lh = 1.25 * size;
+    const x = Math.min(s[0][0], s[1][0]), y = Math.min(s[0][1], s[1][1]);
+    ctx.save(); ctx.fillStyle = col; ctx.font = `500 ${size}px ${PAD_FONT}`; ctx.textBaseline = 'top';
+    String(E.text || '').split('\n').forEach((l, i) => ctx.fillText(l, x, y + i * lh + 0.12 * size));
+    ctx.restore();
+  }
+  // the box a text needs at its size, from its top-left corner
+  _fitText(s) {
+    const E = this.info.get(s), ctx = this.ctx, size = +E.size || 32, lines = String(E.text || '').split('\n');
+    ctx.save(); ctx.font = `500 ${size}px ${PAD_FONT}`;
+    const w = Math.max(size * 0.5, ...lines.map(l => ctx.measureText(l).width));
+    ctx.restore();
+    const x = Math.min(s[0][0], s[1][0]), y = Math.min(s[0][1], s[1][1]);
+    s.length = 0; s.push([x, y], [x + w, y + lines.length * 1.25 * size]);
+    this._touched(s);
+  }
+  _drawImage(s, E) {
+    const ctx = this.ctx, im = this.images.get(E.img);
+    const x = Math.min(s[0][0], s[1][0]), y = Math.min(s[0][1], s[1][1]), w = Math.abs(s[1][0] - s[0][0]), h = Math.abs(s[1][1] - s[0][1]);
+    if (im && im.ok) { ctx.drawImage(im.img, x, y, w, h); return; }
+    if (!im) this._needImage(E.img);
+    // not here yet (or lost): a quiet frame where it goes
+    ctx.save(); ctx.fillStyle = 'rgba(127,127,127,.12)'; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(127,127,127,.5)'; ctx.lineWidth = 1 / this.cam.z; ctx.setLineDash([6 / this.cam.z, 4 / this.cam.z]); ctx.strokeRect(x, y, w, h);
+    ctx.restore();
   }
   _answerInk() {
     const cs = getComputedStyle(this.el);
+    // on a paper darker or lighter than the board's theme, the theme's gold may not read: the paper's own gold then
+    if (this._darkP !== undefined && this._darkP !== this._themeDark) return PAD_COLORS['@gold'][this._darkP ? 1 : 0];
     return cs.getPropertyValue('--nib-answer').trim() || '#b08a1e';
   }
   // an answer is hidden while its "=" is gone, or while new writing (not read yet) reaches into it
@@ -466,27 +975,52 @@ class Pad {
     return !fresh.some(f => f[0] < b[2] + m && f[2] > b[0] - m && f[1] < b[3] + m && f[3] > b[1] - m);
   }
   redraw() {
-    const c = this.canvas, ctx = this.ctx, d = this.dpr || 1;
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height); ctx.setTransform(d, 0, 0, d, 0, 0);
+    const c = this.canvas, ctx = this.ctx, d = this.dpr || 1, z = this.cam.z;
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, c.width, c.height);
+    ctx.setTransform(d * z, 0, 0, d * z, -this.cam.x * d * z, -this.cam.y * d * z);
     this._paint(false);
   }
-  // everything on the pad, on this.ctx (already scaled); image: true leaves out what is only for the writer at the
-  // board (chips, the eraser's ring, boxes)
-  _paint(image) {
+  // Everything on the pad, on this.ctx (already in world units). image: true leaves out what is only for the writer at
+  // the board (chips, the eraser's ring, the selection, the laser); X: {rect, paper, answers: 'shown' | 'all' | 'none',
+  // only: a Set of elements} when exporting.
+  _paint(image, X) {
     const ctx = this.ctx;
     this._ink();
-    const ink = ctx.strokeStyle, live = new Set(this.strokes), shown = new Set();
-    const A = this.anim, e = A ? A.e : 1;
+    const ink = this._inkC, live = new Set(this.strokes), shown = new Set();
+    const A = this.anim, e = A ? A.e : 1, view = (X && X.rect) || this.viewRect, only = X && X.only;
+    const answers = (X && X.answers) || 'shown';
     let ans = null, fresh = null;
     const answerSetup = () => {
       if (ans) return;
       ans = this._answerInk();
       fresh = this._fresh();
     };
+    // the paper, under everything
+    if (this.o.paper && (!X || X.paper !== false) && typeof drawPaper === 'function') {
+      try { drawPaper(ctx, this.o.paper, view, this.cam.z, this._themeDark); } catch (err) { /* no paper then */ }
+    }
+    // which read ink its view draws (tidied, in the writer's hand, typeset), and which is changing back to ink
+    const items = this.plan && !only ? this.plan.items : [];
+    for (const it of items) if (!it.answer && it.from.every(s => live.has(s))) for (const s of it.from) shown.add(s);
+    const leaving = [];
+    if (A && e < 1 && !only) for (const g of A.leaving) {
+      if (g.answer || !g.from.every(s => live.has(s))) continue;
+      const rest = g.from.filter(s => !shown.has(s));
+      if (rest.length) { leaving.push({ g, rest }); for (const s of rest) shown.add(s); }
+    }
+    // pictures, then highlighters, then everything else in the order it was made (what is out of view is skipped)
+    const vis = s => { const b = this._bounds(s); return b[2] >= view[0] && b[0] <= view[2] && b[3] >= view[1] && b[1] <= view[3]; };
+    for (let pass = 0; pass < 3; pass++) for (const s of this.strokes) {
+      if (only && !only.has(s)) continue;
+      const t = this._tool(s), k = t === 'image' ? 0 : t === 'highlighter' ? 1 : 2;
+      if (k !== pass || shown.has(s) || !vis(s)) continue;
+      this._drawEl(s);
+    }
     // the read ink in its view; strokes still moving into it are drawn by the animation
-    if (this.plan) for (const it of this.plan.items) {
+    const colOf = it => padColor((this.info.get(it.from[0]) || {}).color, this._darkP, ink), widthOf = it => (it.from[0] ? this._size(it.from[0]) : this.o.width);
+    for (const it of items) {
       if (it.answer) {
-        if (it.hidden) continue;
+        if (answers === 'none' || (it.hidden && !(image && answers === 'all'))) continue;
         answerSetup();
         if (!this._answerShown(it, live, fresh)) continue;
         const was = A && A.from.get(it);
@@ -495,22 +1029,25 @@ class Pad {
         continue;
       }
       if (!it.from.every(s => live.has(s))) continue;
-      for (const s of it.from) shown.add(s);
       const was = A && A.from.get(it);
-      if (was && e < 1) morphDraw(ctx, was, it, e, ink, this.o.width);
-      else drawItems(ctx, [it], { ink, width: this.o.width });
+      if (was && e < 1) morphDraw(ctx, was, it, e, colOf(it), widthOf(it));
+      else drawItems(ctx, [it], { ink: colOf(it), width: widthOf(it) });
     }
     // views being left behind (back to ink, or symbols that no longer exist) fade out
-    if (A && e < 1) for (const g of A.leaving) {
-      if (g.answer) { if (g.hidden) continue; answerSetup(); if (this._answerShown(g, live, fresh)) drawItems(ctx, [g], { ink: ans, width: this.o.width, alpha: 1 - e }); continue; }
-      if (!g.from.every(s => live.has(s))) continue;
-      const raw = rawVisual(g.from.filter(s => !shown.has(s)));
-      if (raw.parts[0].paths.length) { morphDraw(ctx, g, raw, e, ink, this.o.width); for (const s of g.from) shown.add(s); }
+    if (A && e < 1 && !only) {
+      for (const g of A.leaving) {
+        if (!g.answer || g.hidden || answers === 'none') continue;
+        answerSetup(); if (this._answerShown(g, live, fresh)) drawItems(ctx, [g], { ink: ans, width: this.o.width, alpha: 1 - e });
+      }
+      for (const { g, rest } of leaving) {
+        const raw = rawVisual(rest);
+        if (raw.parts[0].paths.length) morphDraw(ctx, g, raw, e, colOf(g), widthOf(g));
+      }
     }
     // answers waiting for a tap: a gold chip with a "?" where each would start
     if (!image && this.plan && this.plan.chips && this.plan.chips.length) {
       answerSetup();
-      const paper = getComputedStyle(this.el).getPropertyValue('--nib-paper').trim() || '#ffffff';
+      const paper = this._paperC || getComputedStyle(this.el).getPropertyValue('--nib-paper').trim() || '#ffffff';
       ctx.save();
       for (const ch of this.plan.chips) {
         if (!this._answerShown(ch.item, live, fresh)) continue;
@@ -522,25 +1059,35 @@ class Pad {
       }
       ctx.restore();
     }
-    this._ink();
-    for (const s of this.strokes) if (!shown.has(s)) this._stroke(s);
-    for (const P of this.ptrs.values()) if (P.cur && !(image && P.chip)) this._stroke(P.cur);
-    if (!image) for (const q of this.pending) this._stroke(q.s);   // brief touches waiting to see whether the pen follows
-    if (!image) {
-      // the eraser: a faint ring where it is
-      for (const P of this.ptrs.values()) {
-        if (P.mode !== 'erase' || !P.at) continue;
-        ctx.save(); ctx.globalAlpha = 0.45; ctx.lineWidth = 1.5; ctx.strokeStyle = ink;
-        ctx.beginPath(); ctx.arc(P.at[0], P.at[1], P.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    if (image) return;
+    // what is being made right now: strokes (in their pen), shapes being dragged out, brief touches waiting for the pen
+    for (const P of this.ptrs.values()) {
+      if (P.mode === 'draw' && P.cur) {
+        const T = P.tool || {};
+        if (P.snap) { this._drawEl(P.snap.pts, Object.assign({ tool: T.kind === 'highlighter' ? 'highlighter' : 'shape', shape: P.snap.shape, size: this._toolWidth(T) }, T.color ? { color: T.color } : {})); continue; }
+        this._drawEl(P.cur, Object.assign({ tool: T.kind || 'pen', size: this._toolWidth(T) }, T.color ? { color: T.color } : {}));
+      } else if (P.mode === 'shape' && P.prev) {
+        const S = this.shapeTool;
+        const axes = P.prev.shape === 'numberline' || P.prev.shape === 'plane';
+        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill && !axes ? { fill: S.fill } : {}, S.dash && !axes ? { dash: true } : {}));
       }
-      if (this.o.boxes && this.result) this._boxes();
     }
+    for (const q of this.pending) this._drawEl(q.s);       // brief touches waiting to see whether the pen follows
+    // the eraser: a faint ring where it is
+    for (const P of this.ptrs.values()) {
+      if (P.mode !== 'erase' || !P.at) continue;
+      ctx.save(); ctx.globalAlpha = 0.45; ctx.lineWidth = 1.5 / this.cam.z; ctx.strokeStyle = ink;
+      ctx.beginPath(); ctx.arc(P.at[0], P.at[1], P.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    }
+    this._drawSel();
+    this._drawLasers();
+    if (this.o.boxes && this.result) this._boxes();
   }
   // The board as a picture: the ink as the view shows it (answers that are showing included), at `scale` times its
   // size in CSS px, on `background` with an optional dot grid ({color, spacing, offset, radius}). Returns a canvas.
   image(o) {
     o = o || {};
-    const k = o.scale || 2, d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d;
+    const k = o.scale || 2, d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d, z = this.cam.z;
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
     const ctx = c.getContext('2d');
@@ -551,9 +1098,47 @@ class Pad {
       ctx.fillStyle = g.color;
       for (let y = (g.offset || 0) % sp; y <= H; y += sp) for (let x = (g.offset || 0) % sp; x <= W; x += sp) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
     }
+    ctx.setTransform(k * z, 0, 0, k * z, -this.cam.x * k * z, -this.cam.y * k * z);
     const keep = { ctx: this.ctx, anim: this.anim };
     this.ctx = ctx; this.anim = null;
-    try { this._paint(true); } finally { this.ctx = keep.ctx; this.anim = keep.anim; }
+    try { this._paint(true, { paper: !(o.background || o.dots) }); } finally { this.ctx = keep.ctx; this.anim = keep.anim; }
+    return c;
+  }
+  // everything on the page, in world units (with m around it; o.hidden: answers still behind their chips too), or null
+  contentRect(m, o) {
+    let b = null;
+    for (const s of this.strokes) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); }
+    if (this.plan) for (const it of this.plan.items) if (it.answer && (!it.hidden || (o && o.hidden)) && it.box) b = b ? ubox(b, it.box) : it.box.slice();
+    if (!b) return null;
+    m = m || 0;
+    return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+  }
+  // A picture of part of the board: o.rect (world; default everything on it, with o.margin around), at o.scale canvas px
+  // per world unit (default 2; smaller when the picture would pass o.maxPixels or 16,000 px a side), on its paper (o.paper
+  // false: on o.background or clear; o.sheet: on this paper instead of the page's, {kind, tone}, or null for none), answers
+  // as shown, all of them (an answer key) or none, o.only: just these elements.
+  exportImage(o) {
+    o = o || {};
+    const sel = o.only ? new Set(o.only) : null;
+    let rect = o.rect;
+    if (!rect && sel) { let b = null; for (const s of sel) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); } const m = o.margin === undefined ? 16 : o.margin; rect = b && [b[0] - m, b[1] - m, b[2] + m, b[3] + m]; }
+    if (!rect) rect = this.contentRect(o.margin === undefined ? 40 : o.margin, { hidden: o.answers === 'all' }) || this.viewRect;
+    const W = Math.max(1, rect[2] - rect[0]), H = Math.max(1, rect[3] - rect[1]);
+    let k = o.scale || 2;
+    const most = o.maxPixels || 4e7;
+    if (W * k * H * k > most) k = Math.sqrt(most / (W * H));
+    k = Math.min(k, 16000 / W, 16000 / H);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
+    const ctx = c.getContext('2d');
+    if (o.background && (o.paper === false || !this.o.paper)) { ctx.fillStyle = o.background; ctx.fillRect(0, 0, c.width, c.height); }
+    ctx.setTransform(k, 0, 0, k, -rect[0] * k, -rect[1] * k);
+    const keep = { ctx: this.ctx, anim: this.anim, cam: this.cam, paper: this.o.paper };
+    // drawn as the board looks at 100% (paper lines, labels and the like at their size there), k times as many pixels
+    this.ctx = ctx; this.anim = null; this.cam = { x: rect[0], y: rect[1], z: o.look || 1 };
+    if (o.sheet !== undefined) this.o.paper = o.sheet;
+    try { this._paint(true, { rect, paper: o.paper !== false, answers: o.answers || 'shown', only: sel }); }
+    finally { this.ctx = keep.ctx; this.anim = keep.anim; this.cam = keep.cam; this.o.paper = keep.paper; this._ink(); }
     return c;
   }
   // Lays the latest reading out in the pad's view and starts the animation from what was on screen.
@@ -694,19 +1279,20 @@ class Pad {
     };
     requestAnimationFrame(tick);
   }
-  // An answer that would run off the right edge of the board: squeezed to fit after its "=", or, when that would make
-  // it smaller than 0.6 of the writing, written at full size under its line, ending at the edge (where there is room
-  // below; otherwise squeezed anyway, to no less than 0.35).
+  // An answer that would run off the right edge of the board (on an endless board: of the view, as the writer sees it
+  // when it is worked out): squeezed to fit after its "=", or, when that would make it smaller than 0.6 of the writing,
+  // written at full size under its line, ending at the edge (where there is room below; otherwise squeezed anyway, to
+  // no less than 0.35).
   _fitAnswers(items) {
-    const d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d, m = 10;
-    if (W < 4 * m) return;
+    const v = this.viewRect, m = 10 / this.cam.z, X1 = v[2], Y1 = v[3];
+    if (X1 - v[0] < 4 * m) return;
     const groups = new Map();
     for (const it of items) if (it.answer && it.group) { if (!groups.has(it.groupKey)) groups.set(it.groupKey, []); groups.get(it.groupKey).push(it); }
     for (const list of groups.values()) {
       const b = list[0].group, w = b[2] - b[0], h = b[3] - b[1];
-      if (b[2] <= W - m || w <= 0) continue;
-      let k = (W - m - b[0]) / w, dx = 0, dy = 0;
-      if (k < 0.6 && w <= W - 2 * m && b[3] + 1.4 * h <= H - m) { k = 1; dx = W - m - b[2]; dy = 1.35 * h; }
+      if (b[2] <= X1 - m || w <= 0 || b[0] >= X1 - m) continue;      // it ends in sight, or begins out of it
+      let k = (X1 - m - b[0]) / w, dx = 0, dy = 0;
+      if (k < 0.6 && w <= X1 - v[0] - 2 * m && b[3] + 1.4 * h <= Y1 - m) { k = 1; dx = X1 - m - b[2]; dy = 1.35 * h; }
       else k = Math.max(0.35, k);
       const ox = b[0], oy = b[3], X = x => ox + (x - ox) * k + dx, Y = y => oy + (y - oy) * k + dy;
       for (const it of list) {
@@ -738,10 +1324,14 @@ class Pad {
     const c = this.canvas, r = c.getBoundingClientRect(), d = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
     const changed = c.width !== w || c.height !== h;
+    // the view on screen until now is the one to keep when the writer has not moved the board yet
+    if (changed && this.o.infinite && this._sized && !this._want) this._want = { r: this.viewRect, z: this.cam.z };
     if (changed) { c.width = w; c.height = h; }
     this.dpr = d;
+    if (r.width >= 2 && r.height >= 2) this._sized = true;
+    if (changed && this.o.infinite) this._camQuiet(() => { if (this._fitView()) this._camMoved(true); });
     // a board turned or made smaller: the ink is brought back in (once, undoable)
-    if (changed && this.o.fit && this._fit(r.width, r.height)) return;
+    if (changed && this.o.fit && !this.o.infinite && this._fit(r.width, r.height)) return;
     // answers near an edge are fitted to the board's size: lay them out again for the new one
     if (changed && this.answers && this.answers.length && this.result) this._replan(false);
     this.redraw();
@@ -750,7 +1340,7 @@ class Pad {
   // at least 16 px inside, as one undoable step; corrections stay with their strokes (the strokes are the same
   // objects, moved), and what is on screen moves at once while the reading catches up.
   _fit(W, H) {
-    if (this.ptrs.size || !this.strokes.length || W < 120 || H < 120) return false;
+    if (this.o.infinite || this.ptrs.size || !this.strokes.length || W < 120 || H < 120) return false;
     const b = this.strokes.map(sbox).reduce(ubox), m = 16, tol = 8;
     if (b[0] >= -tol && b[1] >= -tol && b[2] <= W + tol && b[3] <= H + tol) return false;
     const bw = Math.max(b[2] - b[0], 1e-6), bh = Math.max(b[3] - b[1], 1e-6);
@@ -767,6 +1357,24 @@ class Pad {
     return true;
   }
   // the view moved with the ink: t = [ax, ay, bx, by, k] maps x to bx + (x - ax)·k (back: the other way)
+  // the view's items drawn from these elements (and the answers after their "="), kept as they are now, to move with them
+  _planOf(set) {
+    if (!this.plan) return [];
+    return this.plan.items.filter(it => (it.from.length && it.from.every(s => set.has(s))) || (it.answer && it.eqFrom && it.eqFrom.length && it.eqFrom.every(s => set.has(s))))
+      .map(it => ({ it, parts: it.parts, box: it.box.slice(), group: it.group ? it.group.slice() : null, em: it.em }));
+  }
+  // those items, mapped from where they were kept by x → X(x), y → Y(y) (k: how much sizes change)
+  _planTo(kept, X, Y, k) {
+    if (!kept || !kept.length || !this.plan) return;
+    for (const v of kept) {
+      const it = v.it;
+      it.parts = mapParts(v.parts, X, Y, k); it.box = [X(v.box[0]), Y(v.box[1]), X(v.box[2]), Y(v.box[3])];
+      if (v.group) it.group = [X(v.group[0]), Y(v.group[1]), X(v.group[2]), Y(v.group[3])];
+      if (v.em) it.em = v.em * k;
+    }
+    this.plan.chips = this._chips(this.plan.items);
+    this.anim = null;
+  }
   _movePlan(t, back) {
     if (!this.plan) return;
     const [ax, ay, bx, by, k0] = t, k = back ? 1 / k0 : k0;
@@ -781,12 +1389,504 @@ class Pad {
     this.anim = null;
   }
 
+  // ---------------------------------------------------------------- canvas tools
+  // ---- draw and hold: a line, circle, box or triangle held still at its end becomes that shape
+  _holdTimer(P) {
+    clearTimeout(P.hold);
+    if (!this.o.hold || P.mode !== 'draw' || P.fix || P.snap || P.chip || typeof shapeRecognize !== 'function') return;
+    P.hold = setTimeout(() => {
+      if (this.ptrs.get(P.id) !== P || P.snap || !P.cur || P.cur.length < 6) return;
+      const b = sbox(P.cur);
+      if (Math.max(b[2] - b[0], b[3] - b[1]) * this.cam.z < 24) return;     // too small to be meant as a shape
+      let r = null;
+      try { r = shapeRecognize(P.cur, { z: this.cam.z }); } catch (e) { r = null; }
+      if (!r || !r.pts || (P.tool.kind === 'highlighter' && r.shape !== 'line')) return;
+      P.snap = r; this.why = 'shape: ' + r.shape;
+      this.redraw();
+    }, 600);
+  }
+  // ---- shapes dragged out with the shape tool (a tap makes one of a standard size)
+  _shapeUp(P, e) {
+    let prev = P.prev;
+    // a finger's tap within 3 s of the pen is the heel of the hand (a finger placing a shape or text later is a finger)
+    if (!prev && P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
+    if (!prev && e && e.type === 'pointerup' && typeof shapeFromDrag === 'function') prev = shapeFromDrag(this.shapeTool.kind, P.a, P.a, { snap: this.o.snap, angle: true, z: this.cam.z });
+    if (!prev || !prev.pts || !prev.pts.length) { this.redraw(); return; }
+    const S = this.shapeTool, s = prev.pts.map(q => [q[0], q[1]]);
+    const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: null, tool: 'shape', shape: prev.shape, size: +S.size > 0 ? +S.size : 3 };
+    if (S.color) info.color = S.color;
+    // a number line or a plane is a placed thing to write on: it takes the color and width, not a fill or dashes
+    const axes = prev.shape === 'numberline' || prev.shape === 'plane';
+    if (S.fill && !axes) info.fill = S.fill;
+    if (S.dash && !axes) info.dash = true;
+    if (prev.opt) info.opt = Object.assign({}, prev.opt);
+    this.info.set(s, info);
+    this.strokes.push(s); this._push({ add: s });
+    this._changed();
+    this.el.dispatchEvent(new CustomEvent('nib:shape', { detail: { shape: prev.shape, element: s }, bubbles: true }));
+  }
+  // ---- the laser pointer: a bright trail that fades, never kept
+  _laserLoop() {
+    if (this._laserRaf || typeof requestAnimationFrame === 'undefined') return;
+    const tick = () => {
+      this._laserRaf = 0;
+      const now = performance.now();
+      this.lasers = this.lasers.filter(L => now - L.end < 700);
+      const on = [...this.ptrs.values()].some(P => P.mode === 'laser');
+      this.redraw();
+      if (on || this.lasers.length) this._laserRaf = requestAnimationFrame(tick);
+    };
+    this._laserRaf = requestAnimationFrame(tick);
+  }
+  _drawLasers() {
+    const trails = [];
+    for (const P of this.ptrs.values()) if (P.mode === 'laser' && P.cur) trails.push({ pts: P.cur, end: 0 });
+    trails.push(...this.lasers);
+    if (!trails.length) return;
+    const ctx = this.ctx, z = this.cam.z, now = performance.now();
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const L of trails) {
+      const fade = L.end ? Math.max(0, 1 - (now - L.end) / 700) : 1;
+      // the last 0.8 s of the trail, fainter towards its tail
+      const pts = L.pts.filter(q => now - q[2] < 800 || q === L.pts[L.pts.length - 1]);
+      for (let i = 1; i < pts.length; i++) {
+        const a = Math.max(0, 1 - (now - pts[i][2]) / 800) * fade;
+        if (a <= 0) continue;
+        ctx.strokeStyle = `rgba(255,59,48,${0.22 * a})`; ctx.lineWidth = 14 / z;
+        ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke();
+        ctx.strokeStyle = `rgba(255,59,48,${a})`; ctx.lineWidth = 4 / z;
+        ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke();
+      }
+      const tip = L.pts[L.pts.length - 1];
+      if (tip && fade > 0) {
+        ctx.fillStyle = `rgba(255,59,48,${0.3 * fade})`; ctx.beginPath(); ctx.arc(tip[0], tip[1], 11 / z, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,90,80,${fade})`; ctx.beginPath(); ctx.arc(tip[0], tip[1], 5 / z, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+  // ---- select: a lasso (pen, finger) or a box (mouse) picks elements; drag them, or a handle to make them bigger or smaller
+  _liveSel() { if (!this.selection.size) return []; const live = new Set(this.strokes); return [...this.selection].filter(s => live.has(s)); }
+  _setSel(list) {
+    const before = this.selection.size;
+    this.selection = new Set(list || []);
+    if (before || this.selection.size) this._selChanged();
+  }
+  _dropDead() { if (this.selection.size) { const n = this.selection.size, live = this._liveSel(); if (live.length !== n) { this.selection = new Set(live); this._selChanged(); } } }
+  _selChanged() {
+    const sel = this._liveSel(), b = sel.length ? this._selBox(sel) : null;
+    const box = b ? [...this.toScreen([b[0], b[1]]), ...this.toScreen([b[2], b[3]])] : null;
+    this.el.dispatchEvent(new CustomEvent('nib:select', { detail: { count: sel.length, box, kinds: [...new Set(sel.map(s => this._tool(s)))] }, bubbles: true }));
+  }
+  get selected() { return this._liveSel(); }
+  _selBox(sel) {
+    let b = null;
+    for (const s of sel) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); }
+    const m = 6 / this.cam.z;
+    return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+  }
+  // the 8 handles of a selection box, on screen
+  _handles(b) {
+    const [x0, y0] = this.toScreen([b[0], b[1]]), [x1, y1] = this.toScreen([b[2], b[3]]), xm = (x0 + x1) / 2, ym = (y0 + y1) / 2;
+    return { nw: [x0, y0], n: [xm, y0], ne: [x1, y0], e: [x1, ym], se: [x1, y1], s: [xm, y1], sw: [x0, y1], w: [x0, ym] };
+  }
+  _handleAt(b, sp, touch) {
+    const H = this._handles(b), r = touch ? 22 : 12;
+    let best = null, bd = Infinity;
+    for (const k in H) { const d = Math.hypot(H[k][0] - sp[0], H[k][1] - sp[1]); if (d <= r && d < bd) { best = k; bd = d; } }
+    return best;
+  }
+  // the topmost element at a point (objects: only shapes, text and pictures, which can be picked up and dragged at once)
+  elementAt(p, objects) {
+    const r = (objects ? 12 : 8) / this.cam.z;
+    for (let i = this.strokes.length - 1; i >= 0; i--) {
+      const s = this.strokes[i], t = this._tool(s);
+      if (objects && t !== 'shape' && t !== 'text' && t !== 'image') continue;
+      if (this._hit(s, p, r)) return s;
+    }
+    return null;
+  }
+  _selectDown(P, p, e) {
+    P.p0 = p;
+    const sel = this._liveSel(), sp = this.toScreen(p);
+    if (sel.length) {
+      const b = this._selBox(sel), h = this._handleAt(b, sp, P.type !== 'mouse');
+      if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
+      if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
+    }
+    let hit = this.elementAt(p, true);
+    if (hit && !this.selection.has(hit)) {
+      const t = this._tool(hit), E = this.info.get(hit) || {};
+      if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
+        const b = this._bounds(hit), m = 14 / this.cam.z;
+        if (p[0] - b[0] > m && b[2] - p[0] > m && p[1] - b[1] > m && b[3] - p[1] > m) hit = null;
+      }
+    }
+    if (hit) {
+      P.tapped = this.selection.size === 1 && this.selection.has(hit) ? hit : null;
+      this._setSel([hit]);
+      P.op = { kind: 'move', orig: [[hit, hit.map(q => q.slice())]] };
+      this.redraw();
+      return;
+    }
+    P.lasso = [p]; P.box = P.type === 'mouse';
+    if (this.selection.size) { this._setSel([]); this.redraw(); }
+  }
+  _selectMove(P, p) {
+    if (P.op) {
+      const O = P.op;
+      // a hand that hardly moved has not moved anything (a tap)
+      if (!O.moved && Math.hypot(p[0] - P.p0[0], p[1] - P.p0[1]) * this.cam.z < 3) return;
+      if (O.kind === 'move') {
+        const dx = p[0] - P.p0[0], dy = p[1] - P.p0[1];
+        for (const [s, was] of O.orig) { for (let i = 0; i < s.length; i++) { s[i][0] = was[i][0] + dx; s[i][1] = was[i][1] + dy; } this._touched(s); }
+        this._planTo(O.items, x => x + dx, y => y + dy, 1);
+      } else {
+        const b = O.b0, h = O.h, W = Math.max(b[2] - b[0], 1e-6), H = Math.max(b[3] - b[1], 1e-6);
+        const ax = h.includes('w') ? b[2] : b[0], ay = h.includes('n') ? b[3] : b[1];
+        let kx = h.includes('e') ? (p[0] - b[0]) / W : h.includes('w') ? (b[2] - p[0]) / W : 1;
+        let ky = h.includes('s') ? (p[1] - b[1]) / H : h.includes('n') ? (b[3] - p[1]) / H : 1;
+        kx = Math.max(0.05, kx); ky = Math.max(0.05, ky);
+        if (h.length === 2) kx = ky = Math.max(kx, ky);     // a corner keeps the proportions
+        for (const [s, was] of O.orig) {
+          const t = this._tool(s);
+          // text and pictures keep their shape from a side handle too
+          const kxx = (t === 'text' || t === 'image') && h.length === 1 ? (h === 'e' || h === 'w' ? kx : ky) : kx;
+          const kyy = (t === 'text' || t === 'image') && h.length === 1 ? kxx : ky;
+          for (let i = 0; i < s.length; i++) { s[i][0] = ax + (was[i][0] - ax) * kxx; s[i][1] = ay + (was[i][1] - ay) * kyy; }
+          this._touched(s);
+        }
+        this._planTo(O.items, x => ax + (x - ax) * kx, y => ay + (y - ay) * ky, Math.sqrt(kx * ky));
+      }
+      O.moved = true;
+      this._frame();
+      return;
+    }
+    if (P.lasso) { P.lasso.push(p); this._frame(); }
+  }
+  _selectUp(P, e) {
+    if (P.op) {
+      const O = P.op;
+      if (!O.moved) {
+        // a tap on a text that was already selected: write in it
+        if (P.tapped && this._tool(P.tapped) === 'text' && e && e.type === 'pointerup') { this._editText(P.tapped, false); return; }
+        // a tap inside a group: just what is under it (or nothing)
+        if (O.orig.length > 1 && e && e.type === 'pointerup') { const hit = this.elementAt(P.p0); this._setSel(hit ? [hit] : []); }
+        this.redraw(); this._selChanged(); return;
+      }
+      const h = { move: null, t: null }, rs = [];
+      // a text made bigger or smaller: its size follows its box, and the box fits its text again
+      for (const [s] of O.orig) {
+        const E = this.info.get(s);
+        if (!E || E.tool !== 'text') continue;
+        const k = this._textScale(s, E);
+        if (Math.abs(k - 1) < 1e-3) continue;
+        const now = Object.assign({}, E, { size: Math.max(4, Math.round(E.size * k * 10) / 10) });
+        this.info.set(s, now); rs.push([s, E, now]); this._fitText(s);
+      }
+      h.move = O.orig.map(([s, was]) => [s, was, s.map(q => q.slice())]);
+      if (rs.length) h.restyle = rs;
+      this._inkMoved(O.orig.map(([s]) => s), O.kind === 'scale');
+      this._push(h);
+      this._changed();
+      this._selChanged();
+      return;
+    }
+    if (!P.lasso) return;
+    const L = P.lasso, b = sbox(L);
+    P.lasso = null;
+    if (Math.max(b[2] - b[0], b[3] - b[1]) * this.cam.z < 8) { const hit = this.elementAt(P.p0); this._setSel(hit ? [hit] : []); }
+    else {
+      const poly = P.box ? [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]] : L;
+      this._setSel(this.strokes.filter(s => this._inLasso(s, poly)));
+    }
+    this.redraw();
+  }
+  // in the lasso: most of a stroke's points, the middle of a shape or text, or all of a picture, number line or plane
+  // (things writing goes on: a lasso round the writing on one leaves it where it is)
+  _inLasso(s, poly) {
+    const t = this._tool(s), E = this.info.get(s) || {};
+    if (t === 'image' || (t === 'shape' && (E.shape === 'plane' || E.shape === 'numberline'))) {
+      const b = this._bounds(s);
+      return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].every(q => padInPoly(q, poly));
+    }
+    if (t === 'shape' || t === 'text') { const b = this._bounds(s); return padInPoly([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], poly); }
+    let n = 0;
+    for (const q of s) if (padInPoly(q, poly)) n++;
+    return n >= Math.max(1, 0.6 * s.length);
+  }
+  _drawSel() {
+    const ctx = this.ctx, z = this.cam.z;
+    for (const P of this.ptrs.values()) {
+      if (P.mode !== 'select' || !P.lasso || P.lasso.length < 2) continue;
+      ctx.save(); ctx.strokeStyle = 'rgba(201,162,39,.95)'; ctx.fillStyle = 'rgba(201,162,39,.08)'; ctx.lineWidth = 1.5 / z; ctx.setLineDash([5 / z, 4 / z]);
+      ctx.beginPath();
+      if (P.box) { const b = sbox(P.lasso); ctx.rect(b[0], b[1], b[2] - b[0], b[3] - b[1]); }
+      else { ctx.moveTo(P.lasso[0][0], P.lasso[0][1]); for (const q of P.lasso) ctx.lineTo(q[0], q[1]); ctx.closePath(); }
+      ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+    const sel = this._liveSel();
+    if (!sel.length) return;
+    const b = this._selBox(sel);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(201,162,39,.95)'; ctx.lineWidth = 1.5 / z; ctx.setLineDash([6 / z, 4 / z]);
+    ctx.strokeRect(b[0], b[1], b[2] - b[0], b[3] - b[1]);
+    ctx.setLineDash([]);
+    // each element of a group, faintly
+    if (sel.length > 1) { ctx.strokeStyle = 'rgba(201,162,39,.35)'; ctx.lineWidth = 1 / z; for (const s of sel) { const q = this._bounds(s); ctx.strokeRect(q[0], q[1], q[2] - q[0], q[3] - q[1]); } }
+    const H = this._handles(b), hs = 5 / z;
+    ctx.fillStyle = this._paperC || '#ffffff'; ctx.strokeStyle = 'rgba(201,162,39,1)'; ctx.lineWidth = 1.5 / z;
+    for (const k in H) {
+      const w = this.toWorld(H[k][0], H[k][1]);
+      ctx.beginPath(); ctx.rect(w[0] - hs, w[1] - hs, 2 * hs, 2 * hs); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // ink that moved is read again where it is (made bigger or smaller: classified again too)
+  _inkMoved(list, scaled) {
+    if (!list.some(s => this._isInk(s))) return;
+    this.parts.clear();
+    if (scaled) { this.recs = new WeakMap(); this.rec = new Recognizer(); }
+  }
+  // what pointers do: 'draw' (this.tool), 'erase', 'fix', 'select', 'pan', 'shape' (this.shapeTool), 'text' (this.textTool), 'laser'
+  setMode(m) {
+    m = ['draw', 'erase', 'fix', 'select', 'pan', 'shape', 'text', 'laser'].includes(m) ? m : 'draw';
+    if (this.editing && m !== 'text' && m !== 'select') this._commitText();
+    if (m !== 'select' && this.selection.size) this._setSel([]);
+    this.mode = m;
+    this._cursor();
+    this.redraw();
+  }
+  select(list) { this._setSel((list || []).filter(s => this.strokes.includes(s))); this.redraw(); }
+  selectAll() { this._setSel(this.strokes.slice()); this.redraw(); }
+  clearSelection() { if (this.selection.size) { this._setSel([]); this.redraw(); } }
+  // take the selection away (one undoable step); returns how many went
+  deleteSelection() {
+    if (!this.selection.size) return 0;
+    const erase = [];
+    for (let i = this.strokes.length - 1; i >= 0; i--) if (this.selection.has(this.strokes[i])) { erase.push({ i, s: this.strokes[i] }); this.strokes.splice(i, 1); }
+    this._setSel([]);
+    if (!erase.length) return 0;
+    this._push({ erase }); this._changed();
+    return erase.length;
+  }
+  // the selection as data to paste later (on this page or another): {v, items: [{pts, info}], box}
+  copySelection() {
+    const sel = this._liveSel();
+    if (!sel.length) return null;
+    const items = sel.map(s => ({ pts: s.map(q => q.slice()), info: Object.assign({}, this.info.get(s) || {}) }));
+    const clip = { v: 1, items, box: this._selBox(sel) };
+    this._clip = clip;
+    return clip;
+  }
+  // put copied elements on the board (one undoable step), centered on world point at (default: offset from where they were
+  // copied, or the middle of the view when that is out of sight); they come selected
+  paste(clip, at) {
+    clip = clip || this._clip;
+    if (!clip || !Array.isArray(clip.items) || !clip.items.length) return [];
+    const b = clip.box || [0, 0, 0, 0], v = this.viewRect;
+    let dx, dy;
+    if (at) { dx = at[0] - (b[0] + b[2]) / 2; dy = at[1] - (b[1] + b[3]) / 2; }
+    else {
+      dx = dy = 24 / this.cam.z;
+      const cx = (b[0] + b[2]) / 2 + dx, cy = (b[1] + b[3]) / 2 + dy;
+      if (cx < v[0] || cx > v[2] || cy < v[1] || cy > v[3]) { dx = (v[0] + v[2]) / 2 - (b[0] + b[2]) / 2; dy = (v[1] + v[3]) / 2 - (b[1] + b[3]) / 2; }
+    }
+    const ops = [], made = [];
+    for (const it of clip.items) {
+      if (!Array.isArray(it.pts) || !it.pts.length) continue;
+      const s = it.pts.map(q => { const c = q.slice(); c[0] += dx; c[1] += dy; return c; });
+      const E = Object.assign({}, it.info || {});
+      if (E.tool === 'image' && E.img && !this.images.has(E.img)) this._needImage(E.img);
+      this.info.set(s, E);
+      ops.push({ ins: this.strokes.length, s }); this.strokes.push(s); made.push(s);
+    }
+    if (!made.length) return [];
+    this._push({ ops });
+    this._setSel(made);
+    this._changed();
+    return made;
+  }
+  duplicateSelection() { const c = this.copySelection(); return c ? this.paste(c) : []; }
+  // a new look for what is selected: {color, size, fill, dash} (what applies to each element; one undoable step)
+  restyleSelection(f) {
+    const sel = this._liveSel(), rs = [];
+    for (const s of sel) {
+      const E = this.info.get(s) || {}, t = E.tool || 'pen', now = Object.assign({}, E);
+      if ('color' in f && t !== 'image') { if (f.color) now.color = f.color; else delete now.color; }
+      if ('size' in f && +f.size > 0 && t !== 'image' && t !== 'text') now.size = +f.size;
+      if ('textSize' in f && +f.textSize > 0 && t === 'text') now.size = +f.textSize;
+      if ('fill' in f && t === 'shape') { if (f.fill) now.fill = f.fill; else delete now.fill; }
+      if ('dash' in f && t === 'shape') { if (f.dash) now.dash = true; else delete now.dash; }
+      if ('opt' in f && f.opt && t === 'shape' && (E.shape === 'numberline' || E.shape === 'plane')) now.opt = Object.assign({}, E.opt || {}, f.opt);
+      if (JSON.stringify(now) === JSON.stringify(E)) continue;
+      rs.push([s, this.info.get(s), now]);
+    }
+    if (!rs.length) return 0;
+    const h = { restyle: rs };
+    // a text with a new size: its box fits it again
+    const mv = [];
+    for (const [s, , now] of rs) { this.info.set(s, now); this._touched(s); if (now.tool === 'text') { const was = s.map(q => q.slice()); this._fitText(s); mv.push([s, was, s.map(q => q.slice())]); } }
+    if (mv.length) { h.move = mv; h.t = null; }
+    this._push(h); this._changed(); this._selChanged();
+    return rs.length;
+  }
+  // to the front or the back of everything (one undoable step)
+  orderSelection(front) {
+    const sel = this._liveSel();
+    if (!sel.length) return;
+    const keep = this.strokes.filter(s => this.selection.has(s)), ops = [];
+    for (let i = this.strokes.length - 1; i >= 0; i--) if (this.selection.has(this.strokes[i])) { ops.push({ rm: i, s: this.strokes[i] }); this.strokes.splice(i, 1); }
+    keep.forEach((s, k) => { const at = front ? this.strokes.length : k; this.strokes.splice(at, 0, s); ops.push({ ins: at, s }); });
+    this._push({ ops }); this._changed();
+  }
+  // move what is selected by (dx, dy) screen px (the arrow keys)
+  nudgeSelection(dx, dy) {
+    const sel = this._liveSel();
+    if (!sel.length) return;
+    const wx = dx / this.cam.z, wy = dy / this.cam.z, move = [], items = this._planOf(new Set(sel));
+    this._planTo(items, x => x + wx, y => y + wy, 1);
+    for (const s of sel) { const was = s.map(q => q.slice()); for (const q of s) { q[0] += wx; q[1] += wy; } this._touched(s); move.push([s, was, s.map(q => q.slice())]); }
+    this._inkMoved(sel, false);
+    this._push({ move, t: null }); this._changed(); this._selChanged();
+  }
+  // ---- text: a tap with the text tool starts a text box (or opens the one tapped); a tap elsewhere ends it
+  _textAt(p) {
+    const hit = this.elementAt(p, true);
+    if (hit && this._tool(hit) === 'text') { this._editText(hit, false); return; }
+    const T = this.textTool, size = +T.size > 0 ? +T.size : 32;
+    const s = [[p[0], p[1] - 0.6 * size], [p[0] + size, p[1] + 0.65 * size]];
+    const info = { type: null, width: null, tool: 'text', size, text: '' };
+    if (T.color) info.color = T.color;
+    this.info.set(s, info);
+    this._editText(s, true);
+  }
+  _dbl(e) {
+    if (this.mode !== 'select' && this.mode !== 'text') return;
+    const hit = this.elementAt(this._pt(e), true);
+    if (hit && this._tool(hit) === 'text') this._editText(hit, false);
+  }
+  _editText(s, isNew) {
+    this._commitText();
+    if (typeof document === 'undefined') return;
+    const E = this.info.get(s);
+    const ta = document.createElement('textarea');
+    ta.value = E.text || ''; ta.setAttribute('aria-label', 'Text'); ta.setAttribute('part', 'text'); ta.wrap = 'off'; ta.spellcheck = true;
+    ta.style.cssText = 'position:absolute;z-index:3;margin:0;box-sizing:content-box;padding:2px 6px;border:1.5px dashed rgba(201,162,39,.95);border-radius:6px;'
+      + 'background:transparent;resize:none;overflow:hidden;outline:none;white-space:pre;line-height:1.25;font-weight:500;min-width:2ch;';
+    this.el.appendChild(ta);
+    this.editing = { el: s, ta, isNew };
+    ta.addEventListener('input', () => this._placeEditor());
+    ta.addEventListener('keydown', ev => {
+      ev.stopPropagation();                                 // the Board's keys (E, S, 1 … 4) are letters here
+      if (ev.key === 'Escape' || (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey))) { ev.preventDefault(); this._commitText(); }
+    });
+    ta.addEventListener('blur', () => setTimeout(() => { if (this.editing && this.editing.ta === ta && document.activeElement !== ta) this._commitText(); }, 120));
+    this._placeEditor();
+    this.redraw();
+    try { ta.focus({ preventScroll: true }); } catch (err) { ta.focus(); }
+    this.el.dispatchEvent(new CustomEvent('nib:edit', { detail: { editing: true }, bubbles: true }));
+  }
+  _placeEditor() {
+    const ed = this.editing;
+    if (!ed) return;
+    const s = ed.el, E = this.info.get(s), z = this.cam.z, ta = ed.ta;
+    const k = ed.isNew ? 1 : this._textScale(s, E), size = (+E.size || 32) * k * z;
+    const x = Math.min(s[0][0], s[1][0]), y = Math.min(s[0][1], s[1][1]), sc = this.toScreen([x, y]);
+    ta.style.left = (sc[0] - 7.5) + 'px'; ta.style.top = (sc[1] - 3.5) + 'px';
+    ta.style.fontFamily = PAD_FONT; ta.style.fontSize = size + 'px';
+    ta.style.color = padColor(E.color, this._darkP, this._inkC || '#1b2a4a');
+    const lines = ta.value.split('\n'), ctx = this.ctx;
+    ctx.save(); ctx.font = `500 ${size}px ${PAD_FONT}`;
+    const w = Math.max(size * 0.6, ...lines.map(l => ctx.measureText(l).width));
+    ctx.restore();
+    ta.style.width = Math.ceil(w + size * 0.5) + 'px'; ta.style.height = Math.ceil(lines.length * 1.25 * size) + 'px';
+  }
+  // the text box is done: kept (a new one added, a changed one changed: one undoable step), or gone when it is empty
+  _commitText() {
+    const ed = this.editing;
+    if (!ed) return;
+    this.editing = null;
+    const { el: s, ta, isNew } = ed, E = this.info.get(s);
+    const text = ta.value.replace(/[\s ]+$/, '');
+    ta.remove();
+    if (isNew) {
+      if (text.trim()) {
+        this.info.set(s, Object.assign({}, E, { text })); this._fitText(s);
+        this.strokes.push(s); this._push({ add: s }); this._setSel([]); this._changed();
+      } else this.redraw();
+    } else {
+      const i = this.strokes.indexOf(s);
+      if (i < 0) this.redraw();
+      else if (!text.trim()) { this.strokes.splice(i, 1); this._push({ erase: [{ i, s }] }); this._dropDead(); this._changed(); }
+      else if (text !== E.text) {
+        const was = s.map(q => q.slice()), now = Object.assign({}, E, { text });
+        // keep its look (a box made bigger or smaller keeps its size)
+        now.size = Math.max(4, Math.round((+E.size || 32) * this._textScale(s, E) * 10) / 10);
+        this.info.set(s, now); this._fitText(s);
+        this._push({ restyle: [[s, E, now]], move: [[s, was, s.map(q => q.slice())]], t: null }); this._changed();
+      } else this.redraw();
+    }
+    this.el.dispatchEvent(new CustomEvent('nib:edit', { detail: { editing: false }, bubbles: true }));
+  }
+  // ---- pictures: kept by id (the page that holds the pad stores them; nib:needimage asks for one it does not have)
+  putImage(id, src) {
+    if (!id || !src || typeof Image === 'undefined') return null;
+    const have = this.images.get(id);
+    if (have && have.src === src) return have;
+    const rec = { src, img: new Image(), ok: false, bad: false };
+    rec.img.onload = () => { rec.ok = true; this._frame(); };
+    rec.img.onerror = () => { rec.bad = true; this._frame(); };
+    rec.img.src = src;
+    this.images.set(id, rec);
+    return rec;
+  }
+  _needImage(id) {
+    if (!id) return;
+    if (!this._asked) this._asked = new Set();
+    if (this._asked.has(id)) return;
+    this._asked.add(id);
+    this.el.dispatchEvent(new CustomEvent('nib:needimage', { detail: { id }, bubbles: true }));
+  }
+  // a picture (a data: URL) on the board: in the middle of the view (or at o.at), at most 70% of it; one undoable step;
+  // it comes selected; resolves to the element (nib:image {id, src} is sent so the page can keep the picture)
+  async addImage(src, o) {
+    o = o || {};
+    const id = o.id || ('img-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8));
+    const rec = this.putImage(id, src);
+    if (!rec) return null;
+    if (!rec.ok && !rec.bad) await new Promise(res => { rec.img.addEventListener('load', res, { once: true }); rec.img.addEventListener('error', res, { once: true }); });
+    if (rec.bad) { this.images.delete(id); return null; }
+    const v = this.viewRect, vw = v[2] - v[0], vh = v[3] - v[1];
+    const iw = rec.img.naturalWidth || 400, ih = rec.img.naturalHeight || 300, k = Math.min(1 / (o.dpr || 1), 0.7 * vw / iw, 0.7 * vh / ih);
+    const w = iw * k, h = ih * k, c = o.at || [(v[0] + v[2]) / 2, (v[1] + v[3]) / 2];
+    const s = [[c[0] - w / 2, c[1] - h / 2], [c[0] + w / 2, c[1] + h / 2]];
+    this.info.set(s, { type: null, width: null, tool: 'image', img: id });
+    this.strokes.push(s); this._push({ add: s });
+    this._setSel([s]);
+    this._changed();
+    this.el.dispatchEvent(new CustomEvent('nib:image', { detail: { id, src }, bubbles: true }));
+    return s;
+  }
+  // the ids of the pictures on the page now
+  imageIds() { const out = new Set(); for (const s of this.strokes) { const E = this.info.get(s); if (E && E.tool === 'image' && E.img) out.add(E.img); } return [...out]; }
+  // an element made in code: points (world) and its look ({tool, color, size, shape, ...}); one undoable step
+  addElement(pts, look) {
+    if (!Array.isArray(pts) || !pts.length) return null;
+    const s = pts.map(q => [+q[0], +q[1]]);
+    this.info.set(s, Object.assign({ type: null, width: null }, look || {}));
+    this.strokes.push(s); this._push({ add: s }); this._changed();
+    return s;
+  }
+  // an element's look (a copy), or null
+  lookOf(s) { const E = this.info.get(s); return E ? Object.assign({}, E) : null; }
   // ---------------------------------------------------------------- state
   _changed() {
+    this._dropDead();
     this.redraw();
     if (this.o.onChange) this.o.onChange(this);
     this.el.dispatchEvent(new CustomEvent('nib:change', { detail: this, bubbles: true }));
-    if (!this.strokes.length) { clearTimeout(this.timer); this.gen++; this._emit(null); return; }  // nothing left to read
+    if (!this.ink.length) { clearTimeout(this.timer); this.gen++; if (this.result || this.plan) this._emit(null); return; }  // nothing left to read
     if (this.o.auto) this._schedule(this.o.delay);
   }
   // Read the ink without freezing the page: classify the new stroke groups a few milliseconds at a time,
@@ -807,7 +1907,7 @@ class Pad {
   }
   _emit(res) {
     this.result = res;
-    this.resultStrokes = res ? this.strokes.slice() : [];
+    this.resultStrokes = res ? this.ink : [];
     this._replan(true);
     if (this.o.train) this._trainSee();
     if (this.o.boxes) this.redraw();
@@ -816,21 +1916,23 @@ class Pad {
   }
   recognize(start) {
     clearTimeout(this.timer); this.gen++;
-    if (!this.strokes.length) { this._emit(null); return null; }
+    const ink = this.ink;
+    if (!ink.length) { this._emit(null); return null; }
     let res;
     if (this.o.separate) res = this._readParts(this._ropts());
-    else res = this.rec.recognize(this.strokes, Object.assign(this._ropts(), { fix: this._fixFor(this.strokes) }));
+    else res = this.rec.recognize(ink, Object.assign(this._ropts(), { fix: this._fixFor(ink) }));
     if (typeof start === 'number') res.ms = Math.round(performance.now() - start); // the whole read, not just its last pass
     this._emit(res);
     return res;
   }
-  // the recogniser's options (the pad's own)
+  // the recognizer's options (the pad's own)
   _ropts() { const o = Object.assign({}, this.o); o.smooth = +o.smooth > 0 ? +o.smooth : 0; return o; }
   // the classifier work for the next read, one stroke group per step (newest ink first)
   *_warm(ro) {
-    if (!this.o.separate) { yield* this.rec.warmup(this.strokes, Object.assign({}, ro, { fix: this._fixFor(this.strokes) })); return; }
-    for (const g of clustersOf(this.strokes)) {
-      const st = g.map(i => this.strokes[i]);
+    const ink = this.ink;
+    if (!this.o.separate) { yield* this.rec.warmup(ink, Object.assign({}, ro, { fix: this._fixFor(ink) })); return; }
+    for (const g of clustersOf(ink)) {
+      const st = g.map(i => ink[i]);
       if (!this._partCached(st, ro)) yield* this._recFor(st[0]).warmup(st, Object.assign({}, ro, { fix: this._fixFor(st) }));
     }
   }
@@ -840,8 +1942,9 @@ class Pad {
   }
   // A board: each group of writing is read on its own (and kept while it does not change), then put together.
   _readParts(ro) {
+    const ink = this.ink;
     const read = groups => groups.map(g => {
-      const st = g.map(i => this.strokes[i]);
+      const st = g.map(i => ink[i]);
       const key = this._partKey(st, ro);
       let res = this.parts.get(key);
       if (!res) {
@@ -851,7 +1954,7 @@ class Pad {
       }
       return { idx: g, strokes: st, result: res };
     });
-    let parts = read(clustersOf(this.strokes));
+    let parts = read(clustersOf(ink));
     // a piece that ends in an operator, or begins with one, continues the writing beside it: "2 ·  22 +  2 =" written
     // with spaces (as a prompt shows it) is one expression, not three; read again as one (at most a few rounds)
     for (let round = 0; round < 8; round++) {
@@ -867,7 +1970,7 @@ class Pad {
   }
   _partCached(st, ro) { return this.parts.has(this._partKey(st, ro)); }
   _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
-  // re-label one recognised symbol (from result.symbols[i].candidates) and re-run
+  // re-label one recognized symbol (from result.symbols[i].candidates) and re-run
   // the reading's LaTeX with the answers written in after their "="
   solvedLatex() {
     const res = this.result;
@@ -888,7 +1991,7 @@ class Pad {
     // remember the shape so the same writer's next one reads right (stays in this browser)
     if (this.o.learn !== false && this.o.memory !== false) {
       try {
-        const ref = refSize(normStrokes(this.strokes).strokes), sm = this._ropts().smooth;
+        const ref = refSize(normStrokes(this.ink).strokes), sm = this._ropts().smooth;
         let g = normStrokes(ss).strokes;
         if (sm > 0) g = g.map(st => smoothPath(st, sm * ref));
         memLearn(classifyGroup(g, ref).hidden, label === '\\cdot' ? '.' : label);   // a dot is a dot; where it sits says which
@@ -915,10 +2018,22 @@ class Pad {
     }
     if (h.hide) for (const k of h.hide) { if (back) this.revealed.add(k); else this.revealed.delete(k); }
     if (h.reveal) for (const k of h.reveal) { if (back) this.revealed.delete(k); else this.revealed.add(k); }
+    if (h.ops) {                                          // elements taken out and put in (the area eraser, paste, order)
+      if (back) for (let k = h.ops.length - 1; k >= 0; k--) {
+        const o = h.ops[k];
+        if (o.ins !== undefined) { const i = this.strokes.indexOf(o.s); if (i >= 0) this.strokes.splice(i, 1); }
+        else this.strokes.splice(Math.min(o.rm, this.strokes.length), 0, o.s);
+      }
+      else for (const o of h.ops) {
+        if (o.ins !== undefined) this.strokes.splice(Math.min(o.ins, this.strokes.length), 0, o.s);
+        else { const i = this.strokes.indexOf(o.s); if (i >= 0) this.strokes.splice(i, 1); }
+      }
+    }
+    if (h.restyle) for (const [s, was, now] of h.restyle) { this.info.set(s, back ? was : now); this._touched(s); }
     if (h.move) {
-      for (const [s, was, now] of h.move) { const src = back ? was : now; s.length = 0; for (const p of src) s.push(p.slice()); }
+      for (const [s, was, now] of h.move) { const src = back ? was : now; s.length = 0; for (const p of src) s.push(p.slice()); this._touched(s); }
       this.parts.clear();                                 // the strokes keep their training-log names (this._hashes): moved writing is the same writing
-      this._movePlan(h.t, back);
+      if (h.t) this._movePlan(h.t, back);
     }
     if (h.hide || h.reveal || h.clear) this._syncHidden();
   }
@@ -934,6 +2049,9 @@ class Pad {
   }
   clear() {
     for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
+    if (this.editing) this._commitText();
+    this.lasers = [];
+    if (this.selection.size) this._setSel([]);
     if (!this.strokes.length) { this.redraw(); return; }
     this.trainFlush();
     const h = { erase: this.strokes.map((s, i) => ({ i, s })).reverse(), clear: true, fixes: this.fixes.slice(), revealed: [...this.revealed] };
@@ -941,8 +2059,12 @@ class Pad {
     this._push(h); this._changed();
   }
   get canUndo() { return this.history.length > 0; }
+  // the writing Nib reads: pen and marker strokes (not highlighters, shapes, text or pictures); none when read is off
+  _isInk(s) { const E = this.info.get(s), t = E && E.tool; return !t || t === 'pen' || t === 'marker'; }
+  get ink() { return this.o.read === false ? [] : this.strokes.filter(s => this._isInk(s)); }
   get canRedo() { return this.future.length > 0; }
-  getStrokes() { return this.strokes.map(s => s.map(p => p.slice())); }
+  // every element's points as [x, y, t] (a pen's pressure, kept as a fourth number inside, is left out)
+  getStrokes() { return this.strokes.map(s => s.map(p => p.slice(0, 3))); }
   // [[x, y, t?], ...] or {x, y, t?} points, or {points} strokes; a stroke with no usable point is null
   _cleanStrokes(strokes) {
     const pt = p => (Array.isArray(p) ? [+p[0], +p[1], +p[2] || 0] : p && typeof p === 'object' ? [+p.x, +p.y, +p.t || 0] : null);
@@ -953,10 +2075,10 @@ class Pad {
   setStrokes(strokes) {
     this._dropAll(); this.trainFlush();
     this.strokes = this._cleanStrokes(strokes).filter(Boolean);
-    this.history = []; this.future = []; this.fixes = []; this.revealed = new Set(); this._changed();
-    if (this.strokes.length && this.o.auto) this._schedule(0);   // no need to wait for a pen to rest
+    this.history = []; this.future = []; this.fixes = []; this.revealed = new Set(); this.selection = new Set(); this._changed();
+    if (this.ink.length && this.o.auto) this._schedule(0);   // no need to wait for a pen to rest
   }
-  _dropAll() { for (const P of [...this.ptrs.values()]) this._drop(P); for (const q of this.pending) clearTimeout(q.timer); this.pending = []; }
+  _dropAll() { for (const P of [...this.ptrs.values()]) this._drop(P); for (const q of this.pending) clearTimeout(q.timer); this.pending = []; if (this.editing) this._commitText(); this.gesture = null; }
   // Everything that makes up the pad's page, to keep: the strokes (x, y to 0.1 px), the corrections (as indices
   // into the strokes) and the answers shown by a tap (the strokes of their line, and the answer).
   getState() {
@@ -968,15 +2090,58 @@ class Pad {
       const cut = key.indexOf('|'), ids = key.slice(0, cut).split(',').filter(Boolean).map(x => bySid.get(x));
       if (ids.length && ids.every(i => i !== undefined)) revealed.push({ strokes: ids, answer: key.slice(cut + 1) });
     }
-    return { strokes, fixes, revealed, types: this.strokes.map(s => this.strokeInfo(s).type) };
+    const out = { strokes, fixes, revealed, types: this.strokes.map(s => this.strokeInfo(s).type) };
+    // each element's look when it is not a plain pen stroke, and a pen's pressure (0 … 100) when it gave one
+    const meta = this.strokes.map(s => {
+      const E = this.info.get(s);
+      if (!E) return null;
+      const m = {};
+      if (E.tool && E.tool !== 'pen') m.k = E.tool;
+      if (E.color) m.c = E.color;
+      if (+E.size > 0) m.s = Math.round(E.size * 100) / 100;
+      if (E.shape) m.sh = E.shape;
+      if (E.fill) m.f = E.fill;
+      if (E.dash) m.d = 1;
+      if (E.opt) m.o = E.opt;
+      if (typeof E.text === 'string') m.x = E.text;
+      if (E.img) m.im = E.img;
+      return Object.keys(m).length ? m : null;
+    });
+    if (meta.some(Boolean)) out.meta = meta;
+    const press = this.strokes.map(s => (s.length && s[0].length > 3 ? s.map(q => Math.round((q.length > 3 ? q[3] : 0.5) * 100)) : null));
+    if (press.some(Boolean)) out.press = press;
+    if (this.o.infinite) {
+      const w = this._want || { r: this.viewRect, z: this.cam.z }, r1 = n => Math.round(n * 10) / 10;
+      out.cam = { x: r1(w.r[0]), y: r1(w.r[1]), z: Math.round(w.z * 1000) / 1000, w: Math.round((w.r[2] - w.r[0]) * w.z), h: Math.round((w.r[3] - w.r[1]) * w.z) };
+    }
+    return out;
   }
   setState(st) {
     st = st || {};
     this._dropAll(); this.trainFlush();
     const all = this._cleanStrokes(st.strokes), at = i => (Number.isInteger(i) && all[i]) || null;
-    const types = Array.isArray(st.types) ? st.types : [];
-    all.forEach((s, i) => { if (s && ['pen', 'touch', 'mouse'].includes(types[i])) this.info.set(s, { type: types[i], width: null }); });
+    const types = Array.isArray(st.types) ? st.types : [], meta = Array.isArray(st.meta) ? st.meta : [], press = Array.isArray(st.press) ? st.press : [];
+    all.forEach((s, i) => {
+      if (!s) return;
+      const E = { type: ['pen', 'touch', 'mouse'].includes(types[i]) ? types[i] : null, width: null }, m = meta[i];
+      if (m && typeof m === 'object') {
+        if (typeof m.k === 'string') E.tool = m.k;
+        if (typeof m.c === 'string') E.color = m.c;
+        if (+m.s > 0) E.size = +m.s;
+        if (typeof m.sh === 'string') E.shape = m.sh;
+        if (typeof m.f === 'string') E.fill = m.f;
+        if (m.d) E.dash = true;
+        if (m.o && typeof m.o === 'object') E.opt = Object.assign({}, m.o);
+        if (typeof m.x === 'string') E.text = m.x;
+        if (m.im) E.img = String(m.im);
+      }
+      if (E.type || Object.keys(E).length > 2) this.info.set(s, E);
+      const pr = press[i];
+      if (Array.isArray(pr) && pr.length === s.length) s.forEach((q, j) => { q[3] = Math.max(0, Math.min(1, (+pr[j] || 0) / 100)); });
+    });
     this.strokes = all.filter(Boolean);
+    this.selection = new Set(); this.lasers = [];
+    if (this.o.infinite) this._putView(st.cam);
     this.fixes = (Array.isArray(st.fixes) ? st.fixes : []).map(f => f && Array.isArray(f.strokes) && typeof f.label === 'string' ? { strokes: f.strokes.map(at), label: f.label } : null)
       .filter(f => f && f.strokes.length && f.strokes.every(Boolean));
     this.revealed = new Set((Array.isArray(st.revealed) ? st.revealed : []).map(r => {
@@ -985,7 +2150,19 @@ class Pad {
     }).filter(Boolean));
     this.history = []; this.future = []; this.parts.clear();
     if (!this._fitHere()) this._changed();
-    if (this.strokes.length && this.o.auto) this._schedule(0);
+    if (this.ink.length && this.o.auto) this._schedule(0);
+    this._camQuiet(() => this._camMoved(true));
+  }
+  // a page's view put back ({x, y, z, w, h}: the top-left, the zoom, and the size of the screen it was chosen on), fitted
+  // to this screen as a resize would be
+  _putView(c) {
+    const d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d;
+    const ok = c && isFinite(+c.x) && isFinite(+c.y) && +c.z > 0;
+    const z = ok ? Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, +c.z)) : 1, x = ok ? +c.x : 0, y = ok ? +c.y : 0;
+    const w = ok && +c.w > 0 ? +c.w : W, h = ok && +c.h > 0 ? +c.h : H;
+    this.cam = { x, y, z };
+    this._want = { r: [x, y, x + w / z, y + h / z], z };
+    this._fitView();
   }
   // a page put back on a pad smaller than the one it was written on (fit on): brought in, as for a resize
   _fitHere() {
@@ -994,13 +2171,16 @@ class Pad {
     return this._fit(r.width, r.height);
   }
   // the page as it is right now, history and all (for a page that is put away and taken out again)
-  snapshot() { return { strokes: this.strokes.slice(), fixes: this.fixes.slice(), revealed: new Set(this.revealed), history: this.history.slice(), future: this.future.slice() }; }
+  snapshot() { return { strokes: this.strokes.slice(), fixes: this.fixes.slice(), revealed: new Set(this.revealed), history: this.history.slice(), future: this.future.slice(), cam: Object.assign({}, this.cam), want: this._want ? { r: this._want.r.slice(), z: this._want.z } : null }; }
   restore(snap) {
     this._dropAll(); this.trainFlush();
     this.strokes = snap.strokes.slice(); this.fixes = snap.fixes.slice(); this.revealed = new Set(snap.revealed);
     this.history = snap.history.slice(); this.future = snap.future.slice();
+    this.selection = new Set(); this.lasers = [];
+    if (this.o.infinite && snap.cam) { this.cam = Object.assign({}, snap.cam); this._want = snap.want ? { r: snap.want.r.slice(), z: snap.want.z } : null; this._fitView(); }
     if (!this._fitHere()) this._changed();
-    if (this.strokes.length && this.o.auto) this._schedule(0);
+    if (this.ink.length && this.o.auto) this._schedule(0);
+    this._camQuiet(() => this._camMoved(true));
   }
   // ---------------------------------------------------------------- the training log (train on)
   // Each piece of writing (a part of the board: one expression) that has been read and then left alone for 4 s, or
@@ -1161,12 +2341,15 @@ class Pad {
     for (const p of this._trainParts()) this._trainSkip.add(this._trainKey(p.strokes));
   }
   destroy() {
-    clearTimeout(this.timer); clearTimeout(this._trainTimer); this.gen++; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
+    clearTimeout(this.timer); clearTimeout(this._trainTimer); clearTimeout(this._camTimer); this.gen++; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
+    if (this.editing) { this.editing.ta.remove(); this.editing = null; }
     if (this._raf) cancelAnimationFrame(this._raf);
+    if (this._laserRaf) cancelAnimationFrame(this._laserRaf);
     if (typeof window !== 'undefined') window.removeEventListener('nib:hand', this._handChanged);
     if (this.ro) this.ro.disconnect();
     if (this.mo) this.mo.disconnect();
     if (this.mq) this.mq.removeEventListener('change', this._theme);
+    try { if (document.fonts) document.fonts.removeEventListener('loadingdone', this._fonts); } catch (e) { /* ok */ }
     this.canvas.remove();
   }
 }
@@ -1174,7 +2357,8 @@ class Pad {
 // <nib-pad symbols="school" delay="450" ink="#1b2a4a" stroke-width="3" boxes></nib-pad>
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
-    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'settle', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit', 'train']; }
+    static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'settle', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit', 'train',
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'read']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -1198,6 +2382,16 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         reveal: has('reveal') && a('reveal') !== 'false',
         fit: has('fit') && a('fit') !== 'false',
         train: has('train') && a('train') !== 'false',
+        infinite: has('infinite') && a('infinite') !== 'false',
+        // paper="grid" or paper="plane white": a background, and its tone
+        paper: (() => { const v = (a('paper') || '').trim().split(/\s+/); return v[0] && v[0] !== 'none' ? { kind: v[0], tone: v[1] || 'theme' } : null; })(),
+        fingers: ['pan', 'ignore'].includes(a('fingers')) ? a('fingers') : 'write',
+        pinch: a('pinch') !== 'false',
+        pressure: a('pressure') !== 'false',
+        eraser: a('eraser') === 'area' ? 'area' : 'stroke',
+        snap: has('snap') && +a('snap') > 0 ? +a('snap') : 0,
+        hold: a('hold') !== 'false',
+        read: a('read') !== 'false',
       };
     }
     connectedCallback() {
@@ -1255,8 +2449,23 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     trainDrop(keys) { return this.pad ? this.pad.trainDrop(keys) : 0; }
     strokeInfo(s) { return this.pad ? this.pad.strokeInfo(s) : { type: null, width: null }; }
     get mode() { return this.pad ? this.pad.mode : 'draw'; }
-    // 'draw' | 'erase' | 'fix' (a tap is sent on as nib:tap {x, y, pointerType} instead of writing a dot; writing still writes)
-    set mode(v) { if (this.pad) this.pad.mode = v === 'erase' || v === 'fix' ? v : 'draw'; }
+    // 'draw' | 'erase' | 'fix' (a tap is sent on as nib:tap {x, y, pointerType} instead of writing a dot; writing still
+    // writes) | 'select' | 'pan' | 'shape' | 'text' | 'laser' (see Pad.setMode)
+    set mode(v) { if (this.pad) this.pad.setMode(v); }
+    // the canvas: what draw mode writes with ({kind: 'pen' | 'marker' | 'highlighter', color, size}), the shape and text tools
+    get tool() { return this.pad ? Object.assign({}, this.pad.tool) : null; }
+    set tool(v) { if (this.pad && v) this.pad.tool = Object.assign({ kind: 'pen', color: null, size: null }, v); }
+    get shapeTool() { return this.pad ? Object.assign({}, this.pad.shapeTool) : null; }
+    set shapeTool(v) { if (this.pad && v) this.pad.shapeTool = Object.assign({}, this.pad.shapeTool, v); }
+    get textTool() { return this.pad ? Object.assign({}, this.pad.textTool) : null; }
+    set textTool(v) { if (this.pad && v) this.pad.textTool = Object.assign({}, this.pad.textTool, v); }
+    exportImage(o) { return this.pad ? this.pad.exportImage(o) : null; }
+    addImage(src, o) { return this.pad ? this.pad.addImage(src, o) : Promise.resolve(null); }
+    putImage(id, src) { return this.pad ? this.pad.putImage(id, src) : null; }
+    get camera() { return this.pad ? this.pad.getCamera() : { x: 0, y: 0, z: 1 }; }
+    set camera(c) { if (this.pad) this.pad.setCamera(c); }
+    zoomTo(z) { if (this.pad) this.pad.zoomTo(z); }
+    fitContent(m) { if (this.pad) this.pad.fitContent(m); }
     recognize() { return this.pad && this.pad.recognize(); }
     relabel(sym, label) { return this.pad && this.pad.relabel(sym, label); }
     undo() { if (this.pad) this.pad.undo(); }

@@ -80,7 +80,7 @@ const cneg = c => (isFl(c) ? { f: -c.f } : { n: -c.n, d: c.d });
 function cadd(a, b) {
   if (!isFl(a) && !isFl(b)) return Q(a.n * b.d + b.n * a.d, a.d * b.d);
   const x = cval(a), y = cval(b), s = x + y;
-  // two nearly equal numbers cancelling leave only rounding error: zero or not cannot be told (π − 3.14159265358979,
+  // two nearly equal numbers canceling leave only rounding error: zero or not cannot be told (π − 3.14159265358979,
   // and π − 3.141592653589793, which comes out as exactly 0); two approximations that cancel exactly (π − π) are 0
   if (Math.abs(s) <= 1e-10 * Math.max(Math.abs(x), Math.abs(y)) && (s !== 0 || isFl(a) !== isFl(b))) sfail('lost to rounding');
   return Fl(s);

@@ -68,5 +68,17 @@ const Nib = {
   _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
+// The canvas's parts, for a page that holds a board (the Board): named colors, papers, shapes, PDF and storage.
+Nib.canvas = {
+  colors: PAD_COLORS, color: padColor,
+  paperKinds: typeof PAPER_KINDS !== 'undefined' ? PAPER_KINDS : [], paperTones: typeof PAPER_TONES !== 'undefined' ? PAPER_TONES : [],
+  paperTone: typeof paperTone === 'function' ? paperTone : null, drawPaper: typeof drawPaper === 'function' ? drawPaper : null,
+  paperThumb: typeof paperThumb === 'function' ? paperThumb : null,
+  shapeKinds: typeof SHAPE_KINDS !== 'undefined' ? SHAPE_KINDS : [], numberLine: typeof SHAPE_NL !== 'undefined' ? SHAPE_NL : null,
+  plane: typeof SHAPE_PLANE !== 'undefined' ? SHAPE_PLANE : null, shapeFromDrag: typeof shapeFromDrag === 'function' ? shapeFromDrag : null,
+  pdf: typeof pdfMake === 'function' ? pdfMake : null, pdfFit: typeof pdfFit === 'function' ? pdfFit : null, pdfSizes: typeof PDF_SIZES !== 'undefined' ? PDF_SIZES : null,
+  pack: typeof storePack === 'function' ? storePack : null, unpack: typeof storeUnpack === 'function' ? storeUnpack : null,
+  images: typeof storeImagePut === 'function' ? { put: storeImagePut, get: storeImageGet, delete: storeImageDelete, ids: storeImageIds, durable: storeImagesDurable } : null,
+};
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;
 global.Nib = Nib;
