@@ -31,6 +31,50 @@ def group_gap(boxes):
     return g
 
 
+def row_samples(r, rng, gaps=None, src='real', junk=True):
+    """One row -> classifier samples: (label, [strokes], ref, src) per symbol of 1..MAXK strokes, then junk
+    negatives (contiguous stroke ranges spanning more than one symbol, spatially tight ones first)."""
+    samples = []
+    strokes = [np.asarray(s, np.float32) for s in r['strokes']]
+    if not strokes:
+        return samples
+    ref = ref_size(strokes)
+    boxes = [bbox(s) for s in strokes]
+    owner = {}
+    sym_ranges = set()
+    for si, s in enumerate(r['symbols']):
+        for k in s['strokes']:
+            owner[k] = si
+        st = s['strokes']
+        if 1 <= len(st) <= MAXK:
+            samples.append((s['label'], [strokes[k] for k in st], ref, src))
+            if len(st) > 1 and gaps is not None:
+                gaps.append(group_gap([boxes[k] for k in st]) / ref)
+        if st == list(range(st[0], st[0] + len(st))):
+            sym_ranges.add((st[0], st[-1]))
+    if not junk:
+        return samples
+    # junk: contiguous ranges spanning >1 symbol, spatially plausible
+    n = len(strokes)
+    cands = []
+    for i in range(n):
+        for j in range(i + 1, min(n, i + MAXK)):
+            if (i, j) in sym_ranges:
+                continue
+            owners = set(owner.get(k, -1) for k in range(i, j + 1))
+            if len(owners) < 2:
+                continue
+            if group_gap(boxes[i:j + 1]) / ref > 1.2:
+                continue
+            cands.append((i, j))
+    rng.shuffle(cands)
+    # hard negatives first: spatially tight combinations
+    cands.sort(key=lambda ij: group_gap(boxes[ij[0]:ij[1] + 1]) + 0.3 * rng.random() * ref)
+    for (i, j) in cands[:max(1, int(0.6 * len(r['symbols'])))]:
+        samples.append(('junk', strokes[i:j + 1], ref, 'junk'))
+    return samples
+
+
 def main():
     rng = random.Random(7)
     out = {}
@@ -39,41 +83,7 @@ def main():
         rows = [r for src in srcs for r in load(src)]
         samples = []
         for r in rows:
-            strokes = [np.asarray(s, np.float32) for s in r['strokes']]
-            if not strokes:
-                continue
-            ref = ref_size(strokes)
-            boxes = [bbox(s) for s in strokes]
-            owner = {}
-            sym_ranges = set()
-            for si, s in enumerate(r['symbols']):
-                for k in s['strokes']:
-                    owner[k] = si
-                st = s['strokes']
-                if 1 <= len(st) <= MAXK:
-                    samples.append((s['label'], [strokes[k] for k in st], ref, 'real'))
-                    if len(st) > 1:
-                        gaps.append(group_gap([boxes[k] for k in st]) / ref)
-                if st == list(range(st[0], st[0] + len(st))):
-                    sym_ranges.add((st[0], st[-1]))
-            # junk: contiguous ranges spanning >1 symbol, spatially plausible
-            n = len(strokes)
-            cands = []
-            for i in range(n):
-                for j in range(i + 1, min(n, i + MAXK)):
-                    if (i, j) in sym_ranges:
-                        continue
-                    owners = set(owner.get(k, -1) for k in range(i, j + 1))
-                    if len(owners) < 2:
-                        continue
-                    if group_gap(boxes[i:j + 1]) / ref > 1.2:
-                        continue
-                    cands.append((i, j))
-            rng.shuffle(cands)
-            # hard negatives first: spatially tight combinations
-            cands.sort(key=lambda ij: group_gap(boxes[ij[0]:ij[1] + 1]) + 0.3 * rng.random() * ref)
-            for (i, j) in cands[:max(1, int(0.6 * len(r['symbols'])))]:
-                samples.append(('junk', strokes[i:j + 1], ref, 'junk'))
+            samples += row_samples(r, rng, gaps)
         out[split] = samples
         print(split, len(samples))
     g = np.array(gaps)
