@@ -410,9 +410,13 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     // a picture from two days ago that no page uses, and today's two taken off the page
     const oldId = await P(src => { const id = 'img-' + (Date.now() - 2 * 864e5).toString(36) + '-old'; return Nib.canvas.images.put(id, src).then(() => id); }, png);
     await clear(); await wait(900);
-    await page.reload({ waitUntil: 'load' }); await wait(5000);
+    await page.reload({ waitUntil: 'load' });
     cdp = await page.target().createCDPSession();
-    const left = await P(() => Nib.canvas.images.ids());
+    // the clean-up runs 4 s after the board opens: wait for it (up to 15 s on a busy machine)
+    let left = [];
+    for (let t0 = Date.now(); Date.now() - t0 < 15000; await wait(400)) { left = await P(() => Nib.canvas.images.ids()); if (!left.includes(oldId)) break; }
+    await wait(800);
+    left = await P(() => Nib.canvas.images.ids());
     ok(!left.includes(oldId) && left.length === 2, `a picture no page uses is let go when the board opens; today's are kept a day, in case another tab of the Board has them (${left.length} left)`);
   }
 
