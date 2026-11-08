@@ -109,7 +109,12 @@ body { margin: 0; background: var(--board); color: var(--ink); font-family: var(
 .board.side .tool .t { display: none; }
 .board.side .pages { display: grid; grid-template-columns: 44px 44px; grid-template-areas: "p n" "l a"; justify-items: center; gap: 3px; }
 .board.side #prev { grid-area: p; } .board.side #next { grid-area: n; } .board.side .pageno { grid-area: l; min-width: 0; width: 44px; padding: 0; font-size: 12px; } .board.side #newpage { grid-area: a; }
-@media (max-height: 899px) { .board.side .mark { display: none; } }
+@media (max-height: 899px) {
+  .board.side .mark { display: none; }
+  /* a short screen (a landscape laptop or tablet): the side rail a little tighter, so it fits 800 px without scrolling */
+  .board.side .rail { row-gap: 2px; padding-top: calc(6px + env(safe-area-inset-top, 0px)); padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); }
+  .board.side .sep { margin: 2px 0; }
+}
 @media (min-height: 1440px) {
   .board.side .rail { grid-template-columns: 44px; }
   .board.side .seg { display: flex; flex-direction: column; }
