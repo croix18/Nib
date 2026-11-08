@@ -65,6 +65,8 @@ button { font-family: inherit; }
 .btn:hover:not(:disabled) { border-color: var(--gold); }
 .btn:disabled { opacity: .45; cursor: default; }
 .btn.primary { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+.btn[aria-pressed="true"] { background: var(--gold-wash); border-color: var(--gold); color: var(--gold-ink); }
+.rub canvas, canvas.rub { cursor: cell; }
 .btn.primary:hover:not(:disabled) { background: var(--ink); border-color: var(--gold); }
 .btn svg { width: 16px; height: 16px; flex: none; }
 .btn:focus-visible, .tab:focus-visible, .x:focus-visible, input:focus-visible, textarea:focus-visible, .switch:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
@@ -150,6 +152,7 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   <header class="top">
     <h1>Replicator<span class="dot">.</span></h1>
     <div class="actions">
+      <button type="button" class="btn" id="eraser" aria-pressed="false" title="Eraser: rub out a stroke in a box or on the lines (E; the pen's eraser end does it too)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>Eraser</button>
       <button type="button" class="btn" id="undo" title="Undo the last stroke (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Undo</button>
       <button type="button" class="btn" id="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M12 4v11"/><path d="m7 9 5-5 5 5"/></svg>Open handwriting</button>
       <button type="button" class="btn" id="save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/></svg>Save handwriting</button>
@@ -209,7 +212,7 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   </main>
 </div>
 
-<script>/*! Nib 1.6.1 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+<script>/*! Nib 1.6.2 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -5630,7 +5633,7 @@ function pdfMake(pages, meta) {
   if (title) info += ' /Title ' + pdfText(title);
   if (M.author) info += ' /Author ' + pdfText(M.author);
   if (M.subject) info += ' /Subject ' + pdfText(M.subject);
-  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.1) /CreationDate (' + pdfDate(date) + ') >>');
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.2) /CreationDate (' + pdfDate(date) + ') >>');
 
   for (let i = 0; i < pages.length; i++) {
     const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
@@ -8385,7 +8388,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.6.1',
+  version: '1.6.2',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -9108,10 +9111,11 @@ function alignSentence(lines, text, templates, o) {
     }
   }
   const letters = chars.map((ch, j) => ({ ch, strokes: [], line: -1, cost: Infinity, ok: false, idx: [] }));
+  const strays = [];
   for (let i = N, j = M; i > 0 || j > 0;) {
     const f = from[i * W + j];
     if (f === 0) j--;
-    else if (f === 1) i--;
+    else if (f === 1) { strays.push(i - 1); i--; }
     else if (f >= 2) {
       const k = f - 1, L = letters[j - 1];
       L.idx = Array.from({ length: k }, (_, q) => i - k + q);
@@ -9119,6 +9123,27 @@ function alignSentence(lines, text, templates, o) {
       i -= k; j--;
     } else break;
   }
+  // Does the writing line up with the text word for word? Each word of the text on its own run of strokes, apart from
+  // the next one (on the same line) by more than any gap inside either, and at most one word with no strokes at all. A wrong sentence cannot: its words are other lengths, so the matching has to put the text's
+  // word breaks inside written words. Then the letters that match their boxes are learned however few they are (a hand
+  // that writes differently on the lines than in the boxes still teaches the ones that match), and the whole sentence
+  // is judged on the letters only when it does not line up.
+  const wordOf = [], words = [];
+  chars.forEach((ch, j) => { if (j === 0 || spaceBefore[j]) words.push({ text: '', from: j, idx: [] }); const w = words[words.length - 1]; w.text += ch; wordOf.push(words.length - 1); });
+  letters.forEach((L, j) => { words[wordOf[j]].idx.push(...L.idx); });
+  const inGap = q => { let r = -Infinity, g = 0; for (const i of q.slice().sort((a, b) => a - b)) { if (r > -Infinity && main[i].li === main[q[0]].li) g = Math.max(g, main[i].b[0] - r); r = Math.max(r, main[i].b[2]); } return g; };
+  let crossings = 0, empty = 0;
+  words.forEach((w, k) => {
+    if (!w.idx.length) { empty++; return; }
+    const nx = words[k + 1];
+    if (!nx || !nx.idx.length) return;
+    const lastA = Math.max(...w.idx), firstB = Math.min(...nx.idx);
+    if (main[lastA].li !== main[firstB].li) return;                 // the next word starts the next line
+    const right = Math.max(...w.idx.map(i => main[i].b[2])), left = Math.min(...nx.idx.map(i => main[i].b[0]));
+    if (firstB < lastA || left - right <= Math.max(0.04, inGap(w.idx), inGap(nx.idx))) { crossings++; w.cross = true; }
+  });
+  const lined = words.length > 1 && crossings === 0 && empty <= 1;   // (a wrong sentence crossed at least once in 48 of 48 tries)
+  for (const i of strays) { const x = (main[i].b[0] + main[i].b[2]) / 2; const w = words.find(q => q.idx.length && x >= Math.min(...q.idx.map(k => main[k].b[0])) - 0.05 && x <= Math.max(...q.idx.map(k => main[k].b[2])) + 0.05); if (w) w.extra = (w.extra || 0) + 1; }
   // late strokes to the letter whose ink they sit over (or nearest across)
   for (const t of late) {
     let bestL = null, bd = Infinity;
@@ -9148,8 +9173,10 @@ function alignSentence(lines, text, templates, o) {
   // a sentence that does not match its text as a whole (the wrong sentence, words left out) teaches nothing: too
   // few letters written, too far from their drawings on the whole, or only a few of those with a drawing close
   const cost = n ? total / n : Infinity, drawn = letters.filter(L => tc[L.ch].length).length, good = letters.filter(L => L.ok).length;
-  if (n < 0.75 * M || cost > 1.3 * P.accept || good < P.most * drawn) for (const L of letters) L.ok = false;
-  return { letters, cost };
+  if (n < 0.75 * M || (!lined && (cost > 1.3 * P.accept || good < P.most * drawn))) for (const L of letters) L.ok = false;
+  // each word: whether it got a letter left out or a stroke too many (the word written is not the word asked for)
+  const wordsOut = words.map(w => ({ text: w.text, missing: letters.slice(w.from, w.from + w.text.length).filter(L => !L.strokes.length).length, extra: w.extra || 0, cross: !!w.cross }));
+  return { letters, cost, lined, words: wordsOut };
 }
 // The average drawing of one character from its samples (box space; the box drawing usually first): the samples
 // with the usual number of strokes, each stroke matched to the most typical sample's (order and direction), resampled
@@ -9346,33 +9373,74 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
   }
   // pen, finger or mouse; with a pen in use, touches are ignored (a resting palm)
   let sawPen = false;
+  // the Eraser (E): a stroke touched by the rub goes, in a box or on the sentence lines (Undo puts it back)
+  let erasing = false;
+  function setErasing(on) {
+    erasing = on; $('eraser').setAttribute('aria-pressed', String(on));
+    document.querySelector('.desk').classList.toggle('rub', on);
+  }
+  const ptSeg = (p, a, b) => {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+    const t = L2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+    return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+  };
+  const crossing = (a, b, c, d) => {
+    const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+  };
+  // the strokes (their indexes) that the rub from a to b passes within r of
+  function rubbed(strokes, a, b, r) {
+    const out = [];
+    strokes.forEach((s, i) => {
+      if (!Array.isArray(s) || !s.length) return;
+      let hit = s.length === 1 && ptSeg(s[0], a, b) <= r;
+      for (let k = 1; !hit && k < s.length; k++) hit = crossing(s[k - 1], s[k], a, b) || Math.min(ptSeg(a, s[k - 1], s[k]), ptSeg(b, s[k - 1], s[k]), ptSeg(s[k - 1], a, b), ptSeg(s[k], a, b)) <= r;
+      if (hit) out.push(i);
+    });
+    return out;
+  }
+  // rub: the Eraser is on, or the pen is turned round to its eraser end — the stroke rubs out instead of writing
   function pointer(canvas, at, begin, move, end) {
-    let id = null;
+    let id = null, rub = false;
     canvas.addEventListener('pointerdown', e => {
       if (id !== null) return;
       if (e.pointerType === 'pen') sawPen = true;
       if (sawPen && e.pointerType === 'touch') return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       e.preventDefault(); id = e.pointerId;
+      rub = erasing || (e.pointerType === 'pen' && ((e.buttons & 32) !== 0 || e.button === 5));
       try { canvas.setPointerCapture(id); } catch (err) { /* ok */ }
-      begin(at(e));
+      begin(at(e), rub);
     });
     canvas.addEventListener('pointermove', e => {
       if (e.pointerId !== id) return;
       e.preventDefault();
-      move((e.getCoalescedEvents ? e.getCoalescedEvents() : [e]).map(at));
+      move((e.getCoalescedEvents ? e.getCoalescedEvents() : [e]).map(at), rub);
     });
-    const up = e => { if (e.pointerId !== id) return; id = null; end(); };
+    const up = e => { if (e.pointerId !== id) return; id = null; end(rub); };
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up); canvas.addEventListener('lostpointercapture', up);
     canvas.addEventListener('contextmenu', e => e.preventDefault());
   }
   function attach(b) {
-    let cur = null;
+    let cur = null, gone = null, last = null;
     const at = e => { const r = b.canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
-    pointer(b.canvas, at, p => { cur = [p]; size(b); draw(b, cur); }, ps => {
+    const rubAt = p => {
+      const st = state.glyphs[b.ch] || [], hit = rubbed(st, last || p, p, 0.07);
+      last = p;
+      if (!hit.length) return;
+      for (const i of hit.sort((x, y) => y - x)) gone.push({ i, s: st.splice(i, 1)[0] });
+      draw(b);
+    };
+    pointer(b.canvas, at, (p, rub) => {
+      if (rub) { gone = []; last = null; rubAt(p); return; }
+      cur = [p]; size(b); draw(b, cur);
+    }, (ps, rub) => {
+      if (rub) { if (gone) for (const p of ps) rubAt(p); return; }
+      if (!cur) return;
       for (const p of ps) { const q = cur[cur.length - 1]; if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) > 0.002) cur.push(p); }
       draw(b, cur);
-    }, () => {
+    }, rub => {
+      if (rub) { if (gone && gone.length) { history.push({ ch: b.ch, erased: gone }); changed(b.ch); } gone = null; return; }
       if (!cur) return;
       const s = cur.map(p => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000]); cur = null;
       (state.glyphs[b.ch] = state.glyphs[b.ch] || []).push(s);
@@ -9388,12 +9456,17 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
   function undo() {
     if (state.section === 'sent') {
       if (reading) return;
-      if (strip.result) unlearn();
-      else if (strip.strokes.length) { strip.strokes.pop(); drawStrip(); sentButtons(); }
+      if (strip.result) { unlearn(); return; }
+      const h = strip.hist.pop();
+      if (h && h.erased) { for (const g of h.erased.slice().reverse()) strip.strokes.splice(Math.min(g.i, strip.strokes.length), 0, g.s); }
+      else if (h && h.add) { const i = strip.strokes.lastIndexOf(h.add); if (i >= 0) strip.strokes.splice(i, 1); }
+      else if (strip.strokes.length) strip.strokes.pop();
+      drawStrip(); sentButtons();
       return;
     }
     const h = history.pop(); if (!h) return;
     if (h.cleared) state.glyphs[h.ch] = h.cleared;
+    else if (h.erased) { const st = state.glyphs[h.ch] = state.glyphs[h.ch] || []; for (const g of h.erased.slice().reverse()) st.splice(Math.min(g.i, st.length), 0, g.s); }
     else { const st = state.glyphs[h.ch] || []; const i = st.lastIndexOf(h.stroke); if (i >= 0) st.splice(i, 1); }
     if (!boxes.has(h.ch)) { state.section = (R.SECTIONS.find(s => s.chars.includes(h.ch)) || R.SECTIONS[0]).id; renderGrid(); }
     changed(h.ch);
@@ -9406,7 +9479,7 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
     'Bright vixens jump; dozy fowl quack.', 'We promptly judged antique ivory buckles for the next prize.', 'Quick zephyrs blow, vexing daft Jim.',
     'A wizard\'s job is to vex chumps quickly in fog.', 'THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG.', 'Add 27 + 46 = 73, then 9 × 8 = 72 and 150 ÷ 3 = 50.',
     'Is 3/4 more than 0.7? Yes: 75% > 70%.', 'Six big jackals quietly watched over a frozen pond.', 'Grumpy wizards make toxic brew for the jovial queen.'];
-  const strip = { lines: 3, rowH: 80, w: 0, d: 1, strokes: [], result: null, learned: false, added: [], cur: null };
+  const strip = { lines: 3, rowH: 80, w: 0, d: 1, strokes: [], result: null, learned: false, added: [], cur: null, hist: [] };
   let reading = false;          // a sentence being matched to its text
   const sentence = () => SENTENCES[state.sentIdx % SENTENCES.length];
   function showSentences() {
@@ -9458,17 +9531,33 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
   {
     const c = $('strip').querySelector('canvas');
     const at = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / strip.rowH, (e.clientY - r.top - 4) / strip.rowH]; };
-    pointer(c, at, p => {
+    let gone = null, last = null;
+    const rubAt = p => {
+      const hit = rubbed(strip.strokes, last || p, p, 0.09);
+      last = p;
+      if (!hit.length) return;
+      for (const i of hit.sort((x, y) => y - x)) gone.push({ i, s: strip.strokes.splice(i, 1)[0] });
+      drawStrip(); sentButtons();
+    };
+    pointer(c, at, (p, rub) => {
       if (reading) return;
+      if (rub) {
+        // rubbing out what was just learned from: that Learn is taken back first, the writing left to fix
+        if (strip.result) unlearn();
+        gone = []; last = null; rubAt(p); return;
+      }
       if (strip.result) nextSentence(false);          // learned: the next stroke starts the next sentence
       strip.cur = [p]; drawStrip();
-    }, ps => {
+    }, (ps, rub) => {
+      if (rub) { if (gone) for (const p of ps) rubAt(p); return; }
       if (!strip.cur) return;
       for (const p of ps) { const q = strip.cur[strip.cur.length - 1]; if (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) > 0.004) strip.cur.push(p); }
       drawStrip();
-    }, () => {
+    }, rub => {
+      if (rub) { if (gone && gone.length) strip.hist.push({ erased: gone }); gone = null; drawStrip(); sentButtons(); return; }
       if (!strip.cur) return;
-      strip.strokes.push(strip.cur.map(p => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000])); strip.cur = null;
+      const s = strip.cur.map(p => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000]);
+      strip.strokes.push(s); strip.hist.push({ add: s }); strip.cur = null;
       drawStrip(); sentButtons();
     });
   }
@@ -9487,7 +9576,7 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
   function nextSentence(skip) {
     if (skip && !strip.learned) state.sentIdx++;
     if (skip || strip.learned) { $('sentText').value = sentence(); persist(); }
-    strip.strokes = []; strip.result = null; strip.learned = false; strip.cur = null;
+    strip.strokes = []; strip.result = null; strip.learned = false; strip.cur = null; strip.hist = [];
     sentNote(''); sizeStrip(); drawStrip(); sentButtons();
   }
   // the fewest points that keep a stroke's shape (to keep what is saved small)
@@ -9540,7 +9629,8 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
     if (n) {
       state.sentDone++; state.sentIdx++;
       sentNote(`Learned ${n} of ${total} letters${n < total ? ' (the gold ones; the rest did not match closely enough)' : ''}. Write the next sentence, or Undo to take this one back.`, 'ok');
-    } else sentNote('That did not line up with the sentence closely enough to learn from. Write it again exactly as it reads, with the letters apart; the lines clear as you start.', 'err');
+    } else if (res.lined) sentNote('Every word lined up, but no letter came close enough to the one in its box to learn from. If you write some letters differently on the lines than in their boxes, draw those boxes again the way you usually write them.', 'err');
+    else sentNote('That did not line up with the sentence word for word. Write it again exactly as it reads (every word as written above), with the letters apart; the lines clear as you start.', 'err');
     drawStrip(); sentButtons(); sentStats(); renderTabs(); persist(); if (n) schedule();
   }
   // the last Learn taken back: its letters forgotten, the writing left on the lines to fix and learn again
@@ -9561,7 +9651,12 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
     sentNote(''); drawStrip(); sentButtons(); sentStats(); renderTabs(); persist();
   }
   $('sentLearn').onclick = learn;
-  $('sentClear').onclick = () => { if (strip.result) { nextSentence(false); return; } strip.strokes = []; sentNote(''); drawStrip(); sentButtons(); };
+  $('sentClear').onclick = () => {
+    if (strip.result && strip.learned) { nextSentence(false); return; }   // learned: on to the next sentence
+    strip.result = null;                                                  // not learned: the same sentence again
+    if (strip.strokes.length) strip.hist.push({ erased: strip.strokes.map((s, i) => ({ i, s })) });   // Undo puts them back
+    strip.strokes = []; sentNote(''); drawStrip(); sentButtons();
+  };
   $('sentNew').onclick = () => nextSentence(true);
   $('sentText').addEventListener('input', () => { if (strip.result) { strip.strokes = []; strip.result = null; strip.learned = false; sentNote(''); } sizeStrip(); sentButtons(); });
   $('useSamples').addEventListener('input', e => { state.useSamples = e.target.checked; persist(); schedule(); });
@@ -9721,7 +9816,12 @@ if (typeof window !== 'undefined') window.Replicator = Replicator;
   });
   bind('name', 'name'); bind('weight', 'weight', true, true); bind('spacing', 'spacing', true); bind('smooth', 'smoothing', true); bind('tidy', 'tidy'); bind('even', 'even'); bind('big', 'big');
   $('undo').onclick = undo;
-  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); undo(); } });
+  $('eraser').onclick = () => setErasing(!erasing);
+  document.addEventListener('keydown', e => {
+    const typing = ['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement.tagName);
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); }
+    else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'e' && !typing) { e.preventDefault(); setErasing(!erasing); }
+  });
   try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { for (const b of boxes.values()) draw(b); drawStrip(); }); } catch (e) { /* old browser */ }
 
   syncControls(); renderTabs(); renderGrid();

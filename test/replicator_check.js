@@ -218,6 +218,25 @@ section('3. sentences: every stroke goes to the right letter');
     }
   }
   ok(away <= 1, `sentences written far less like the boxes are still learned from (${away} of ${tries} turned away, ${(100 * okL / allL).toFixed(0)}% of letters learned)`);
+  // 8 Nov 2026, Croix's tablet: a sentence that lined up letter for letter (each letter's name under its strokes) was
+  // turned away whole, because on the whole its letters were too unlike their boxes. A sentence that lines up word for
+  // word now teaches the letters that match, however few; only one that does not line up is judged as a whole.
+  let oldAway = 0, nowAway = 0, shaky = 0, lined = 0;
+  for (let w = 0; w < 6; w++) {
+    const hw = writer(w * 13 + 2), tw = {};
+    for (const [ch, st] of Object.entries(hw)) tw[ch] = [R.toLine(st)];
+    for (const text of SENTENCES) {
+      const t = text.replace(/[,;]/g, ''), r = R.alignSentence(writeSentence(hw, t, { amt: 4 }).lines, t, tw);
+      const k = r.letters.filter(L => L.ok).length;
+      shaky++; if (r.lined) lined++; if (!k) nowAway++;
+      if (r.cost > 1.3 * 0.085 || k < 0.35 * r.letters.length) oldAway++;
+    }
+  }
+  ok(nowAway <= 3 && oldAway > nowAway && oldAway >= 3 && lined >= 0.85 * shaky, `written much less like the boxes still (twice as shaky): ${nowAway} of ${shaky} turned away, where judging the whole sentence turned ${oldAway} away (${lined} lined up word for word)`);
+  const jumped = R.alignSentence(writeSentence(hand, 'The quick brown fox jumped over the lazy dog.').lines, t, templates);
+  ok(jumped.lined && jumped.letters.filter(L => L.ok).length >= 25 && !jumped.letters[20].ok && jumped.letters.slice(16, 20).every(L => L.ok),
+    `one word written differently ("jumped" for "jumps"): the rest is still learned, j-u-m-p too, the s not (${jumped.letters.filter(L => L.ok).length} letters)`);
+  ok(Array.isArray(jumped.words) && jumped.words.length === 9 && jumped.words[4].text === 'jumps', 'each word is reported, with what was missing or extra in it');
   ok(R.alignSentence([], t, templates).letters.length === 0 && R.alignSentence(missing.lines, '', templates).letters.length === 0, 'nothing written, or no text: nothing learned');
   const r4 = R.alignSentence(missing.lines, t, {});
   ok(r4.letters.every(L => !L.ok), 'without box drawings to compare with, nothing is learned');
