@@ -70,6 +70,8 @@ function makeHandFile() {
   const latex = () => page.evaluate(() => document.getElementById('pad').latex);
   const shown = () => page.evaluate(() => document.getElementById('pad').shown.map(s => ({ label: s.label, box: s.box, kinds: s.parts.map(p => p.t) })));
   const view = () => page.evaluate(() => document.getElementById('pad').view);
+  // the More menu's items (Copy LaTeX, My handwriting …) are a tap away
+  const more = async sel => { if (await page.$eval('#morepop', e => e.hidden)) { await page.click('#morebtn'); await wait(150); } await page.click(sel); };
   const settled = () => page.waitForFunction(() => { const p = document.getElementById('pad'); return p.pad && !p.pad.anim && p.pad.result && p.pad.strokes.length === p.pad.resultStrokes.length; }, { timeout: 30000 }).catch(() => {});
 
   console.log('separate expressions');
@@ -120,7 +122,7 @@ function makeHandFile() {
   ok((await shown()).length >= nsym && await view() === 'hand', 'and the board shows it');
   await page.screenshot({ path: path.join(out, 'board-test-hand.png') });
   const bad = path.join(out, 'not-a-hand.json'); fs.writeFileSync(bad, '{"nope": true}');
-  const [ch2] = await Promise.all([page.waitForFileChooser(), page.click('#hand')]);
+  const [ch2] = await Promise.all([page.waitForFileChooser(), more('#hand')]);
   await ch2.accept([bad]); await wait(600);
   ok(/not handwriting/.test(await page.$eval('#notetext', e => e.textContent)) && await page.evaluate(() => Nib.hand.size) > 20, 'a file that is not handwriting is refused and the loaded hand stays');
 
@@ -139,14 +141,15 @@ function makeHandFile() {
   await wait(1500); await settled();
   ok(await page.evaluate(() => document.getElementById('pad').strokes.length) === n0 && await latex() === L, 'Ctrl+Z brings it back');
   await page.evaluate(() => { window.__clip = null; navigator.clipboard.writeText = t => { window.__clip = t; return Promise.resolve(); }; });
-  await page.click('#copy'); await wait(300);
+  await more('#copy'); await wait(300);
   ok(await page.evaluate(() => window.__clip) === L && /copied/.test(await page.$eval('#notetext', e => e.textContent)), 'Copy LaTeX copies the whole board');
   await page.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('no')); window.__ec = document.execCommand; document.execCommand = () => false; });
-  await page.click('#copy'); await wait(300);
+  await more('#copy'); await wait(300);
   ok(await page.evaluate(() => { const t = document.getElementById('latexout'); return !document.getElementById('latexbox').hidden && t.value === document.getElementById('pad').latex && t.selectionEnd - t.selectionStart === t.value.length; }), 'without a clipboard the LaTeX is shown selected');
   ok(/Ctrl\+C/.test(await page.$eval('#notetext', e => e.textContent)), 'and, with a mouse, it says to press Ctrl+C');
   await page.click('#noteclose');
   {
+    await page.click('#morebtn'); await wait(150);
     const cb = await (await page.$('#copy')).boundingBox();
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cb.x + cb.width / 2, y: cb.y + cb.height / 2 }] });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -154,7 +157,7 @@ function makeHandFile() {
     ok(/Long-press the text to copy/.test(await page.$eval('#notetext', e => e.textContent)) && !(await page.$eval('#latexbox', e => e.hidden)), 'tapped with a finger, it says to long-press the text');
     await page.click('#noteclose');
     await page.evaluate(() => { window.__ecCalled = 0; document.execCommand = c => { window.__ecCalled++; return c === 'copy'; }; });
-    await page.click('#copy'); await wait(300);
+    await more('#copy'); await wait(300);
     ok(await page.evaluate(() => window.__ecCalled === 1) && /copied/.test(await page.$eval('#notetext', e => e.textContent)) && await page.$eval('#latexbox', e => e.hidden), 'where the old copy command works, it copies the selected text by itself');
     await page.evaluate(() => { document.execCommand = window.__ec; });
   }
@@ -278,12 +281,12 @@ function makeHandFile() {
     }
     await page.screenshot({ path: path.join(out, 'board-test-solve.png') });
     await page.evaluate(() => { window.__clip = null; navigator.clipboard.writeText = t => { window.__clip = t; return Promise.resolve(); }; });
-    await page.click('#copy'); await wait(300);
+    await more('#copy'); await wait(300);
     ok(await page.evaluate(() => window.__clip) === '12+30=42', 'Copy LaTeX includes the answer');
     await page.keyboard.press('s'); await wait(500);
     st = await pad();
     ok(await page.$eval('#solve', e => e.getAttribute('aria-pressed')) === 'false' && st.answers.length === 0 && (await gold()) < 10, 'key S hides the answers');
-    await page.click('#copy'); await wait(300);
+    await more('#copy'); await wait(300);
     ok(await page.evaluate(() => window.__clip) === '12+30=', 'and Copy LaTeX is just the writing again');
     await page.keyboard.press('s'); await wait(700);
     ok(await page.$eval('#solve', e => e.getAttribute('aria-pressed')) === 'true' && (await gold()) > 80, 'S again brings them back');
@@ -474,7 +477,8 @@ function makeHandFile() {
   if (prob) {
     await page.keyboard.press('2'); await wait(900);
     const it = await page.evaluate(() => { const P = document.getElementById('pad').pad; const i = P.plan.items.find(q => !q.answer && q.label === '3'); return i ? i.box : null; });
-    const inkIn = b => page.evaluate(b => { const c = document.querySelector('#pad canvas'), d = window.devicePixelRatio || 1; const D = c.getContext('2d').getImageData(Math.floor(b[0] * d), Math.floor(b[1] * d), Math.ceil((b[2] - b[0]) * d), Math.ceil((b[3] - b[1]) * d)).data; let n = 0; for (let i = 3; i < D.length; i += 4) if (D[i] > 100) n++; return n; }, b);
+    // the navy ink's pixels (the board's paper is drawn under it, so every pixel is opaque)
+    const inkIn = b => page.evaluate(b => { const c = document.querySelector('#pad canvas'), d = window.devicePixelRatio || 1; const D = c.getContext('2d').getImageData(Math.floor(b[0] * d), Math.floor(b[1] * d), Math.ceil((b[2] - b[0]) * d), Math.ceil((b[3] - b[1]) * d)).data; let n = 0; for (let i = 0; i < D.length; i += 4) if (D[i + 3] > 100 && D[i] < 120 && D[i + 1] < 120 && D[i + 2] < 160) n++; return n; }, b);
     if (it) {
       const cb = await (await page.$('#pad canvas')).boundingBox(), before = await inkIn(it);
       await page.keyboard.press('e');
@@ -531,7 +535,7 @@ function makeHandFile() {
 
   console.log('saving');
   {
-    const stored = () => page.evaluate(() => { const s = JSON.parse(localStorage.getItem('nib-board-v1')); return s.pages[s.page].strokes.length; });
+    const stored = () => page.evaluate(() => { const s = JSON.parse(localStorage.getItem('nib-board-v1')); const p = s.pages[s.page]; return (p.pk || p.strokes).length; });
     const tick = async (x, y) => { const cb = await (await page.$('#pad canvas')).boundingBox(); await page.mouse.move(cb.x + x, cb.y + y); await page.mouse.down(); await page.mouse.move(cb.x + x + 12, cb.y + y + 4, { steps: 3 }); await page.mouse.up(); };
     await wait(800);
     const n0 = await stored();
@@ -545,7 +549,7 @@ function makeHandFile() {
     await tick(120, 600);
     await page.waitForFunction(() => !document.getElementById('note').hidden && /saved/.test(document.getElementById('notetext').textContent), { timeout: 8000 }).catch(() => {});
     const t1 = await page.$eval('#notetext', e => e.textContent), v1 = !(await page.$eval('#note', e => e.hidden));
-    ok(v1 && /can't be saved in this browser\. Save an image to keep it\./.test(t1), 'when the browser will not store it, a note says so: ' + t1);
+    ok(v1 && /can't be saved in this browser\. Export, Save the board keeps it as a file\./.test(t1), 'when the browser will not store it, a note says so: ' + t1);
     await page.click('#noteclose');
     await tick(160, 600); await wait(600); await sameReadX(); await wait(900);
     ok(await page.$eval('#note', e => e.hidden), 'once only');
@@ -557,7 +561,7 @@ function makeHandFile() {
   console.log('save image');
   {
     await page.evaluate(() => { window.__dl = null; window.__aclick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__dl = { name: this.download, href: this.href }; else window.__aclick.call(this); }; });
-    await page.click('#saveimg'); await wait(800);
+    await page.click('#exportbtn'); await wait(200); await page.click('#saveimg'); await wait(800);
     const img = await page.evaluate(async () => {
       const d = window.__dl; if (!d) return null;
       const blob = await (await fetch(d.href)).blob(), bmp = await createImageBitmap(blob);
@@ -567,7 +571,7 @@ function makeHandFile() {
       const cv = document.querySelector('#pad canvas').getBoundingClientRect();
       return { name: d.name, type: blob.type, w: bmp.width, h: bmp.height, cw: cv.width, ch: cv.height, bg: px(10, 10), dot: px(56, 56), ink };
     });
-    ok(img && /^Nib-board-1-\d{4}-\d{2}-\d{2}\.png$/.test(img.name) && img.type === 'image/png', 'Save image downloads a PNG named Nib-board-<page>-<date>.png: ' + (img && img.name));
+    ok(img && /^Nib-board-1-\d{4}-\d{2}-\d{2}\.png$/.test(img.name) && img.type === 'image/png', 'Export, Picture of this page downloads a PNG named Nib-board-<page>-<date>.png: ' + (img && img.name));
     ok(img && img.w === Math.round(img.cw * 2) && img.h === Math.round(img.ch * 2), `at twice the board's size (${img && img.w} x ${img && img.h} for ${img && img.cw} x ${img && img.ch})`);
     ok(img && img.bg.join() === '251,248,239,255' && img.dot.join() !== img.bg.join() && img.ink > 500, `on the board's colour, with the dot grid and the ink (${img && img.bg.join()} / ${img && img.dot.join()}, ${img && img.ink} ink pixels)`);
     await page.evaluate(() => { HTMLAnchorElement.prototype.click = window.__aclick; });
@@ -966,9 +970,9 @@ function makeHandFile() {
         await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('nib-drill-v1')); d.pos = 55; d.active = true; localStorage.setItem('nib-drill-v1', JSON.stringify(d)); });
         await page.reload({ waitUntil: 'load' }); await wait(800);
         B = await bar();
-        ok(B.n === `56 / ${N}` && /Finger is set to Ignored/.test(B.read) && await page.evaluate(() => document.getElementById('pad').hasAttribute('pen-only')), `the setting is kept, and a finger prompt says so: "${B.read}"`);
+        ok(B.n === `56 / ${N}` && /finger is set to do nothing/.test(B.read) && await page.evaluate(() => document.getElementById('pad').hasAttribute('pen-only')), `the setting is kept, and a finger prompt says so: "${B.read}"`);
         await page.click('#gear'); await wait(150); await page.click('#settings .seg[data-set="finger"] button[data-v="writes"]'); await wait(150); await closeSettings();
-        ok(!(await page.evaluate(() => document.getElementById('pad').hasAttribute('pen-only'))) && !/Finger is set/.test((await bar()).read), 'Finger: Writes again');
+        ok(!(await page.evaluate(() => document.getElementById('pad').hasAttribute('pen-only'))) && !/finger is set/.test((await bar()).read), 'Finger: Writes again');
         await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('nib-drill-v1')); d.pos = 37; localStorage.setItem('nib-drill-v1', JSON.stringify(d)); });
         await page.reload({ waitUntil: 'load' }); await wait(800);
       }
@@ -999,20 +1003,23 @@ function makeHandFile() {
     ok(light.t === 'light' && light.bg === 'rgb(251, 248, 239)' && light.ans === '#8a6a10', `Theme Light: cream board, answers in the darker gold #8a6a10 (${JSON.stringify(light)})`);
     await setting('theme', 'system');
     ok(await page.evaluate(() => !document.documentElement.hasAttribute('data-theme')), 'Theme System: the computer decides');
-    await setting('pen', 'thick');
-    ok(await page.evaluate(() => document.getElementById('pad').pad.o.width === 5), 'Pen Thick: 5 px');
-    await setting('pen', 'thin');
-    ok(await page.evaluate(() => document.getElementById('pad').pad.o.width === 2.5), 'Pen Thin: 2.5 px');
+    await closeSettings();
+    const penSize = async v => { await page.click('[data-tool="pen"]'); await wait(100); if (await page.$eval('#stylepop', e => e.hidden)) { await page.click('[data-tool="pen"]'); await wait(150); } await page.click(`#sizes [data-v="${v}"]`); await wait(100); await page.keyboard.press('Escape'); await wait(100); };
+    await penSize(5);
+    ok(await page.evaluate(() => { const p = document.getElementById('pad'); return p.pad.o.width === 5 && p.tool.size === 5; }), 'the pen, tapped again: size 5 (its strokes, and answers, are 5 px)');
+    await penSize(2.5);
+    ok(await page.evaluate(() => { const p = document.getElementById('pad'); return p.pad.o.width === 2.5 && p.tool.size === 2.5; }), 'size 2.5');
     await setting('solve', 'off');
     ok(await page.$eval('#solve', e => e.getAttribute('aria-pressed')) === 'false' && await page.evaluate(() => !document.getElementById('pad').solve), 'Answers Off is the Solve button');
     await setting('solve', 'on');
-    await setting('rail', 'left'); await setting('theme', 'dark'); await setting('pen', 'thick'); await closeSettings();
+    await penSize(5);
+    await setting('rail', 'left'); await setting('theme', 'dark'); await closeSettings();
     await wait(800);
     await page.reload({ waitUntil: 'load' }); await wait(800);
     const kept = await page.evaluate(() => ({ rail: document.getElementById('board').dataset.rail, theme: document.documentElement.getAttribute('data-theme'), w: document.getElementById('pad').pad.o.width, solve: document.getElementById('pad').solve, reveal: document.getElementById('pad').reveal }));
     ok(kept.rail === 'left' && kept.theme === 'dark' && kept.w === 5 && kept.solve && kept.reveal, 'after a reload the settings are kept: ' + JSON.stringify(kept));
     await page.screenshot({ path: path.join(out, 'board-test-left-dark.png') });
-    await setting('theme', 'system'); await setting('pen', 'medium');
+    await setting('theme', 'system'); await closeSettings(); await penSize(3.5);
     // the rail on each edge at the panel's, a landscape tablet's and a portrait tablet's size: nothing off screen
     for (const [w, h] of [[1920, 1080], [1280, 800], [800, 1280]]) {
       await page.setViewport({ width: w, height: h }); await wait(250);
@@ -1051,31 +1058,31 @@ function makeHandFile() {
       // a correction on one stroke, to follow it
       await page.evaluate(() => { const P = document.getElementById('pad').pad; P.fixes = [{ strokes: [P.strokes[0]], label: '2' }]; P.parts.clear(); P.recognize(); });
       const box = () => page.evaluate(() => { const P = document.getElementById('pad').pad; const b = P.strokes.map(Nib._internals.sbox).reduce((a, c) => [Math.min(a[0], c[0]), Math.min(a[1], c[1]), Math.max(a[2], c[2]), Math.max(a[3], c[3])]); return b.map(v => Math.round(v * 10) / 10); });
-      const b0 = await box(), L0 = await latex();
+      const seen = () => page.evaluate(() => { const P = document.getElementById('pad').pad, d = P.dpr, W = P.canvas.width / d, H = P.canvas.height / d;
+        const b = P.strokes.map(Nib._internals.sbox).reduce((a, c) => [Math.min(a[0], c[0]), Math.min(a[1], c[1]), Math.max(a[2], c[2]), Math.max(a[3], c[3])]);
+        const a = P.toScreen([b[0], b[1]]), z = P.toScreen([b[2], b[3]]);
+        return { W, H, z: P.cam.z, x: P.cam.x, y: P.cam.y, inside: a[0] >= 0 && a[1] >= 0 && z[0] <= W && z[1] <= H, hist: P.history.length, fixOk: P.fixes.length === 1 && P.fixes[0].strokes[0] === P.strokes[0] }; });
+      const b0 = await box(), L0 = await latex(), s0 = await seen();
       await page.setViewport({ width: 360, height: 760 }); await wait(500);
-      const after = await page.evaluate(() => { const P = document.getElementById('pad').pad, d = P.dpr; return { W: P.canvas.width / d, H: P.canvas.height / d, last: P.history[P.history.length - 1], fixOk: P.fixes.length === 1 && P.strokes.includes(P.fixes[0].strokes[0]) && P.fixes[0].strokes[0] === P.strokes[0] }; });
-      const b1 = await box();
-      const k = (b1[2] - b1[0]) / (b0[2] - b0[0]), k2 = (b1[3] - b1[1]) / (b0[3] - b0[1]);
-      ok(b0[2] > after.W && b1[0] >= 15.9 && b1[2] <= after.W - 15.9 && b1[3] <= after.H - 15.9, `ink that no longer fits is brought in, 16 px from the edge (${b0.join(',')} -> ${b1.join(',')} on ${Math.round(after.W)} px)`);
-      ok(k <= 1 && Math.abs(k - k2) < 0.01 && after.last && after.last.move, `scaled the same both ways (${k.toFixed(3)}), as one step of history`);
-      ok(after.fixOk, 'the correction stays with its stroke');
+      const s1 = await seen();
+      ok(b0[2] > s1.W && s1.z < 1 && s1.inside && JSON.stringify(await box()) === JSON.stringify(b0), `writing that no longer fits stays in sight: the board zooms out to ${Math.round(s1.z * 100)}% and nothing moves (${b0.join(',')} on ${Math.round(s1.W)} px)`);
+      ok(s1.hist === s0.hist && s1.fixOk, 'nothing goes into the history, and the correction stays with its stroke');
       await wait(600); await sameReadX();
       ok(await latex() === L0, 'and it reads the same: ' + await latex());
-      await page.click('#undo'); await wait(300);
-      ok(JSON.stringify(await box()) === JSON.stringify(b0), 'Undo puts it back where it was');
-      await page.click('#redo'); await wait(300);
-      ok(JSON.stringify(await box()) === JSON.stringify(b1), 'Redo brings it in again');
+      ok(await page.$eval('#zpct', e => e.textContent) === Math.round(s1.z * 100) + '%', 'the zoom shows ' + await page.$eval('#zpct', e => e.textContent));
       await page.setViewport({ width: 1280, height: 760 }); await wait(500);
-      ok(JSON.stringify(await box()) === JSON.stringify(b1), 'a bigger board again does not scale the ink up');
-      // a page put away at full size and taken out on the smaller board is brought in too
-      await page.click('#undo'); await wait(300);
+      const s2 = await seen();
+      ok(s2.z === s0.z && s2.x === s0.x && s2.y === s0.y, `a bigger board again: back to ${Math.round(s2.z * 100)}% where it was`);
+      // a page put away at full size and taken out on the smaller board is fitted too
       await page.click('#newpage'); await wait(300);
       await page.setViewport({ width: 360, height: 760 }); await wait(400);
       await page.click('#prev'); await wait(400);
-      const b2 = await box(), W2 = await page.evaluate(() => { const P = document.getElementById('pad').pad; return P.canvas.width / P.dpr; });
-      ok(b2[2] <= W2 - 15.9 && b2[0] >= 15.9 && await page.evaluate(() => { const P = document.getElementById('pad').pad; return !!P.history[P.history.length - 1].move; }), `a page taken out on a smaller board is brought in as well (${b2.join(',')} on ${Math.round(W2)} px)`);
-      await page.setViewport({ width: 1280, height: 760 }); await wait(400);
+      const s3 = await seen();
+      ok(s3.z < 1 && s3.inside, `a page taken out on a smaller board shows all its writing too (${Math.round(s3.z * 100)}%)`);
+      // an empty page is not zoomed by a resize
       await page.click('#next'); await wait(300);
+      ok(await page.evaluate(() => document.getElementById('pad').pad.cam.z) === 1, 'an empty page stays at 100%');
+      await page.setViewport({ width: 1280, height: 760 }); await wait(400);
       await page.click('#gear'); await wait(100); await page.click('#delpage'); await wait(100); await page.click('#delyes'); await wait(500);
     } else console.log('    (no writer read 25-7= right; skipped)');
     await page.click('#gear'); await wait(100); await page.click('#delpage'); await wait(100); await page.click('#delyes'); await wait(500);

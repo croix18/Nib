@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nib canvas test page</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { font: 14px system-ui; background: #fbf8ef; }
+  nib-pad { position: absolute; inset: 0; --nib-ink: #1b2a4a; --nib-paper: #fbf8ef; --nib-answer: #8a6a10; }
+</style>
+</head>
+<body>
+<nib-pad id="c" infinite separate times="false" solve auto="false"></nib-pad>
+<script src="../dist/nib.js"></script>
+<script>
+  // pointer events straight to the canvas: kind 'pen' | 'touch' | 'mouse'
+  window.ptr = (type, kind, id, x, y, o = {}) => {
+    const cv = c.querySelector('canvas'), r = cv.getBoundingClientRect();
+    const e = new PointerEvent('pointer' + type, Object.assign({ pointerId: id, pointerType: kind, clientX: r.left + x, clientY: r.top + y, bubbles: true, cancelable: true,
+      isPrimary: true, button: type === 'down' ? 0 : -1, buttons: type === 'up' ? 0 : 1, width: 1, height: 1, pressure: 0.5 }, o));
+    cv.dispatchEvent(e); return e.defaultPrevented;
+  };
+  // o.pressure may be a function (k, i) of the segment and the step along it
+  window.line = (kind, id, pts, o = {}, n = 8) => {
+    const at = (k, i) => (typeof o.pressure === 'function' ? Object.assign({}, o, { pressure: o.pressure(k, i) }) : o);
+    ptr('down', kind, id, pts[0][0], pts[0][1], at(1, 0));
+    for (let k = 1; k < pts.length; k++) for (let i = 1; i <= n; i++) {
+      const a = pts[k - 1], b = pts[k];
+      ptr('move', kind, id, a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n, at(k, i));
+    }
+    const z = pts[pts.length - 1];
+    ptr('up', kind, id, z[0], z[1], at(pts.length - 1, n));
+  };
+  window.wheel = (x, y, dx, dy, o = {}) => {
+    const cv = c.querySelector('canvas'), r = cv.getBoundingClientRect();
+    cv.dispatchEvent(new WheelEvent('wheel', Object.assign({ clientX: r.left + x, clientY: r.top + y, deltaX: dx, deltaY: dy, deltaMode: 0, bubbles: true, cancelable: true }, o)));
+  };
+  // a picture as a data: URL (w × h, a red square on blue)
+  window.picture = (w, h) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.fillStyle = '#2050c0'; g.fillRect(0, 0, w, h); g.fillStyle = '#e02020'; g.fillRect(w / 4, h / 4, w / 2, h / 2); return cv.toDataURL('image/png'); };
+  // the colour of a canvas pixel at screen point (x, y)
+  window.px = (x, y) => { const cv = c.querySelector('canvas'), d = c.pad.dpr || 1; return Array.from(cv.getContext('2d').getImageData(Math.round(x * d), Math.round(y * d), 1, 1).data); };
+</script>
+</body>
+</html>

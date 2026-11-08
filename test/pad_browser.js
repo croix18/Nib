@@ -301,7 +301,8 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
     line(a, 'pen', 63, 20, 140, 120, 150, { width: 1, height: 1 });
     const P = a.pad, s = P.strokes;
     const r = { got: s.map(x => P.strokeInfo(x)), byIndex: P.strokeInfo(1), el: a.strokeInfo(0), unknown: P.strokeInfo([[0, 0, 0]]),
-      plain: s.every(x => Object.keys(x).length === x.length && x.every(p => Array.isArray(p) && p.length === 3)), json: JSON.stringify(a.strokes).slice(0, 2) };
+      plain: s.every(x => Object.keys(x).length === x.length && x.every(p => Array.isArray(p) && (p.length === 3 || (p.length === 4 && P.strokeInfo(x).type === 'pen' && p[3] >= 0 && p[3] <= 1)))),
+      outside: a.strokes.every(x => x.every(p => p.length === 3)), json: JSON.stringify(a.strokes).slice(0, 2) };
     const st = a.getState(); a.clear(); a.setState(st);
     r.types = st.types; r.kept = a.pad.strokes.map(x => a.pad.strokeInfo(x).type);
     a.strokes = [[[10, 10], [20, 20]]]; r.setter = a.pad.strokeInfo(0);
@@ -313,7 +314,8 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
   ok(I[1].type === 'touch' && I[1].width === 12 && I[2].type === 'touch' && I[2].width === null, `touch strokes, with their contact width when the browser gives one: ${JSON.stringify(I[1])}, ${JSON.stringify(I[2])}`);
   ok(I[3].type === 'pen' && JSON.stringify(info.byIndex) === JSON.stringify(I[1]) && JSON.stringify(info.el) === JSON.stringify(I[0]), 'a pen stroke; by index too, and on the element');
   ok(info.unknown.type === null && info.unknown.width === null && info.setter.type === null, 'a stroke the pad did not see written (or set as data) is {type: null, width: null}');
-  ok(info.plain && info.json === '[[', 'strokes stay plain arrays of [x, y, t] (nothing added to them)');
+  ok(info.plain && info.json === '[[', "strokes stay plain arrays of [x, y, t] (a pen's pressure as a fourth number; nothing else added to them)");
+  ok(info.outside, 'and the element hands them out as [x, y, t]');
   ok(JSON.stringify(info.types) === '["mouse","touch","touch","pen"]' && JSON.stringify(info.kept) === JSON.stringify(info.types), `getState keeps each stroke's pointer type and setState puts it back (${JSON.stringify(info.types)})`);
 
   console.log('history, state');

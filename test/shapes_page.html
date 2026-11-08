@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shapes contact sheet</title>
+<!-- The Board's shapes (src/shapes.js) drawn every way they can be: every kind plain, dashed, filled, thin and thick,
+     at zoom 0.5, 1 and 3, in navy, red and on dark paper, number lines and coordinate planes. Opened by
+     test/shapes_browser.js (which saves the sheet and times shapeDraw), or by hand. Fonts as the Board has them:
+     DM Sans 400 / 500 / 600 upright only (italic is synthesised, as on the Board). -->
+<style>
+@font-face { font-family: "DM Sans"; font-weight: 400; src: url(../demo/node_modules/@fontsource/dm-sans/files/dm-sans-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "DM Sans"; font-weight: 500; src: url(../demo/node_modules/@fontsource/dm-sans/files/dm-sans-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "DM Sans"; font-weight: 600; src: url(../demo/node_modules/@fontsource/dm-sans/files/dm-sans-latin-600-normal.woff2) format("woff2"); }
+html, body { margin: 0; background: #e9e4d6; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="sheet"></canvas>
+<script src="../src/core.js"></script>
+<script src="../src/neat.js"></script>
+<script src="../src/shapes.js"></script>
+<script>
+'use strict';
+const FONT = '"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const CREAM = { paper: '#fbf8ef', ink: '#1b2a4a' }, DARK = { paper: '#101a2e', ink: '#f1eadb' }, WHITE = { paper: '#ffffff', ink: '#1b2a4a' };
+const RED = ['#d1352b', '#ff7d6e'], GOLD_TINT = ['rgba(163,124,18,.18)', 'rgba(232,195,90,.28)'];
+const tint = (hex, a) => { const n = parseInt(hex.slice(1), 16); return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; };
+const SHEET_W = 1760, DPR = 2;
+// a shape of each kind, about 120 x 96 world units from (0, 0)
+const KINDS = [
+  ['line', 'line', [[4, 90], [120, 8]]], ['arrow', 'arrow', [[4, 88], [120, 10]]], ['arrow2', 'double arrow', [[4, 50], [120, 50]]],
+  ['rect', 'rectangle', [[6, 12], [118, 90]]], ['rect', 'square', [[22, 10], [102, 90]]], ['ellipse', 'ellipse', [[4, 14], [120, 88]]],
+  ['ellipse', 'circle', [[22, 10], [102, 90]]], ['triangle', 'triangle', [[8, 8], [116, 92]]], ['rtriangle', 'right triangle', [[14, 8], [114, 92]]],
+  ['poly', 'polygon', [[20, 18], [96, 6], [120, 58], [70, 94], [8, 70]]]];
+const STYLES = [['plain 3', { size: 3 }], ['dashed 3', { size: 3, dash: true }], ['filled 3', { size: 3, fill: 'tint' }], ['thin 2', { size: 2 }],
+  ['thick 8', { size: 8 }], ['dashed 2', { size: 2, dash: true }], ['dashed 8', { size: 8, dash: true }], ['filled dashed 4', { size: 4, dash: true, fill: 'tint' }]];
+
+let ctx, y = 0;
+function title(text, sub) {
+  y += 26;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = '#1b2a4a'; ctx.font = '600 19px ' + FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(text, 24, y + 18);
+  if (sub) { ctx.fillStyle = '#5d6678'; ctx.font = '400 13px ' + FONT; ctx.fillText(sub, 24, y + 38); y += 22; }
+  y += 36;
+}
+// a cell: paper at (x, y) w x h CSS px, world (wx, wy) at its top-left inset by pad, zoom z; caption under it
+function cell(x, w, h, paper, z, wx, wy, draw, caption, pad) {
+  pad = pad == null ? 14 : pad;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = paper.paper; ctx.fillRect(x, y, w, h);
+  ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.setTransform(DPR * z, 0, 0, DPR * z, DPR * (x + pad) - DPR * z * wx, DPR * (y + pad) - DPR * z * wy);
+  draw(ctx, z, paper);
+  ctx.restore();
+  if (caption) { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = '#5d6678'; ctx.font = '400 11px ' + FONT; ctx.textAlign = 'left'; ctx.fillText(caption, x + 2, y + h + 13); }
+}
+function el(shape, style, paper, color) {
+  const dark = paper === DARK, E = { tool: 'shape', shape, size: style.size || 3, color: color || null, dash: !!style.dash, fill: null };
+  const col = color || paper.ink;
+  if (style.fill === 'tint') E.fill = tint(col.startsWith('#') ? col : '#1b2a4a', dark ? 0.28 : 0.18);
+  else if (style.fill) E.fill = style.fill;
+  if (style.opt) E.opt = style.opt;
+  return E;
+}
+const put = (c, E, pts, z, paper) => shapeDraw(c, E, pts, { ink: paper.ink, paper: paper.paper, z, font: FONT });
+
+function kindsGrid(z, paper, color, styles, label) {
+  const cw = Math.max(64, Math.round(150 * Math.min(z, 1.15))), ch = Math.round(122 * Math.min(z, 1.15)), gap = 10;
+  for (const [sname, st] of styles) {
+    let x = 24;
+    for (const [shape, name, pts] of KINDS) {
+      cell(x, cw, ch, paper, z, 0, 0, (c, zz, p) => put(c, el(shape, st, p, color), pts, zz, p), x === 24 ? sname + (label ? ' · ' + label : '') : '', Math.round(12 * Math.min(z, 1)));
+      x += cw + gap;
+    }
+    y += ch + 22;
+  }
+}
+function kindNames() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = '#5d6678'; ctx.font = '500 12px ' + FONT; ctx.textAlign = 'left';
+  let x = 24; for (const [, name] of KINDS) { ctx.fillText(name, x + 2, y); x += 160; }
+  y += 8;
+}
+
+// cells sized from shapeBounds, so whatever is drawn outside them shows the bounds are wrong
+function numberLines(paper, z, list, width) {
+  for (const [cap, opt, len, size] of list) {
+    const E = el('numberline', { size: size || 3, opt: Object.assign({ min: -10, max: 10, step: 1, labels: true, frac: false }, opt) }, paper), pts = [[0, 0], [len, 0]];
+    const b = shapeBounds(E, pts, { z }), pad = 12, h = Math.round((b[3] - b[1]) * z + 2 * pad);
+    cell(24, Math.min(width, Math.round((b[2] - b[0]) * z + 2 * pad)), h, paper, z, b[0] - pad / z, b[1] - pad / z, (c, zz, p) => put(c, E, pts, zz, p), cap, 0);
+    y += h + 22;
+  }
+}
+function planes(paper, z, list) {
+  let x = 24, rowH = 0;
+  for (const [cap, opt, w, h, extra] of list) {
+    const E = el('plane', Object.assign({ size: 2.5, opt: Object.assign({ xmin: -10, xmax: 10, ymin: -10, ymax: 10, step: 1, labels: true, grid: true }, opt) }, extra || {}), paper, (extra && extra.color) || null);
+    const pts = [[0, 0], [w, h]], b = shapeBounds(E, pts, { z }), pad = 14, W = Math.round((b[2] - b[0]) * z + 2 * pad), H = Math.round((b[3] - b[1]) * z + 2 * pad);
+    if (x + W > SHEET_W - 20) { y += rowH + 26; x = 24; rowH = 0; }
+    cell(x, W, H, paper, z, b[0] - pad / z, b[1] - pad / z, (c, zz, p) => {
+      put(c, E, pts, zz, p);
+      if (extra && extra.bounds) { c.strokeStyle = 'rgba(214,40,160,.8)'; c.lineWidth = 1 / zz; c.setLineDash([]); c.strokeRect(b[0], b[1], b[2] - b[0], b[3] - b[1]); }
+    }, cap, 0);
+    x += W + 18; rowH = Math.max(rowH, H);
+  }
+  y += rowH + 26;
+}
+
+async function drawSheet(sections) {
+  await document.fonts.load('500 12px "DM Sans"'); await document.fonts.load('600 12px "DM Sans"'); await document.fonts.load('400 12px "DM Sans"');
+  const cv = document.getElementById('sheet');
+  // measure first (a dry run with a throwaway context), then draw
+  const H = 9000;
+  cv.width = SHEET_W * DPR; cv.height = H * DPR; cv.style.width = SHEET_W + 'px'; cv.style.height = H + 'px';
+  ctx = cv.getContext('2d'); y = 0;
+  ctx.fillStyle = '#e9e4d6'; ctx.fillRect(0, 0, cv.width, cv.height);
+  for (const s of sections) SECTIONS[s]();
+  // crop to what was drawn
+  const used = Math.ceil(y + 20), out = document.createElement('canvas');
+  out.width = SHEET_W * DPR; out.height = used * DPR;
+  out.getContext('2d').drawImage(cv, 0, 0);
+  return { width: SHEET_W, height: used, png: out.toDataURL('image/png') };
+}
+const SECTIONS = {
+  kinds() { title('Every kind, zoom 1', 'navy on the Board\'s cream; plain, dashed, filled, thin (2), thick (8)'); kindNames(); kindsGrid(1, CREAM, null, STYLES); },
+  red() { title('Red on white, zoom 1'); kindsGrid(1, WHITE, RED[0], STYLES.slice(0, 5)); },
+  dark() { title('Dark paper: cream ink, and red', 'the Board\'s dark theme'); kindsGrid(1, DARK, null, STYLES.slice(0, 5)); kindsGrid(1, DARK, RED[1], [STYLES[0], STYLES[2], STYLES[6]], 'red'); },
+  zoomHalf() { title('Zoom 0.5'); kindsGrid(0.5, CREAM, null, STYLES.slice(0, 5)); },
+  zoom3() {
+    title('Zoom 3: every kind', 'each style, cropped round its tip, corner or apex');
+    const focus = [[120, 8], [120, 10], [120, 50], [118, 12], [102, 10], [120, 51], [62, 10], [62, 8], [14, 92], [96, 6]];
+    for (const [sname, st] of STYLES.slice(0, 5)) {
+      let x = 24;
+      KINDS.forEach(([shape, name, pts], i) => {
+        const [fx, fy] = focus[i];
+        cell(x, 150, 122, CREAM, 3, fx - 25, fy - 20.3, (c, zz, p) => put(c, el(shape, st, p), pts, zz, p), i ? '' : sname, 0);
+        x += 160;
+      });
+      y += 144;
+    }
+    title('Zoom 3', 'corners, joins, arrowheads and dashes up close');
+    const items = [['arrow', { size: 2 }, [[4, 60], [104, 8]]], ['arrow2', { size: 8, dash: true }, [[4, 40], [150, 40]]], ['rect', { size: 3, dash: true }, [[6, 6], [110, 70]]],
+      ['ellipse', { size: 2, dash: true, fill: 'tint' }, [[6, 6], [110, 74]]], ['triangle', { size: 8 }, [[10, 10], [110, 76]]]];
+    let x = 24;
+    for (const [shape, st, pts] of items) { const w = shape === 'arrow2' ? 480 : 330; cell(x, w, 250, CREAM, 3, 0, 0, (c, zz, p) => put(c, el(shape, st, p), pts, zz, p), shape + ' ' + JSON.stringify(st), 12); x += w + 12; if (x > SHEET_W - 300) { y += 272; x = 24; } }
+    y += 272;
+  },
+  arrows() {
+    title('Arrows at every angle', 'size 2, 3, 5 and 8; arrowheads max(10, 4 size), never over a third of the line');
+    let x = 24;
+    for (const size of [2, 3, 5, 8]) {
+      cell(x, 400, 300, CREAM, 1, 0, 0, (c, z, p) => {
+        for (let k = 0; k < 24; k++) { const a = k / 24 * 2 * Math.PI, L = k % 3 === 0 ? 70 : 130; put(c, el('arrow', { size }, p), [[186 + Math.cos(a) * 18, 136 + Math.sin(a) * 18], [186 + Math.cos(a) * L, 136 + Math.sin(a) * L]], z, p); }
+      }, 'size ' + size, 0);
+      x += 412;
+    }
+    y += 322;
+    x = 24;
+    for (const len of [12, 24, 40, 70]) { cell(x, 190, 70, CREAM, 1, 0, 0, (c, z, p) => { put(c, el('arrow', { size: 3 }, p), [[20, 30], [20 + len, 30]], z, p); put(c, el('arrow2', { size: 3 }, p), [[100, 30], [100 + len, 30]], z, p); }, 'short: ' + len, 0); x += 202; }
+    y += 92;
+  },
+  numberlines() {
+    title('Number lines', 'labels from the tick spacing (12 screen px at least), thinned when crowded; fractions stacked, mixed numbers');
+    numberLines(CREAM, 1, [['-10..10, 900 long', {}, 900], ['-10..10, 480 (the default size)', {}, 480], ['-10..10, 260', {}, 260],
+      ['0..1 by 1/4, frac', { min: 0, max: 1, step: 0.25, frac: true }, 600], ['-2..2 by 1/2, frac', { min: -2, max: 2, step: 0.5, frac: true }, 900],
+      ['0..2 by 1/3, frac', { min: 0, max: 2, step: 1 / 3, frac: true }, 760], ['-3..3 by 1/4, frac (crowded)', { min: -3, max: 3, step: 0.25, frac: true }, 760],
+      ['0..1 by 0.1', { min: 0, max: 1, step: 0.1 }, 700], ['0..100 by 10', { min: 0, max: 100, step: 10 }, 700], ['-10..10, size 6', {}, 760, 6],
+      ['no labels', { labels: false }, 480]], 1700);
+  },
+  numberlinesZoom() {
+    title('Number lines at zoom 0.5 and 3, and on dark paper');
+    numberLines(CREAM, 0.5, [['zoom 0.5: -10..10, 900', {}, 900], ['zoom 0.5: 0..1 by 1/4, frac', { min: 0, max: 1, step: 0.25, frac: true }, 600]], 1700);
+    numberLines(CREAM, 3, [['zoom 3: -2..2 by 1/2, frac, 520', { min: -2, max: 2, step: 0.5, frac: true }, 520]], 1700);
+    numberLines(DARK, 1, [['dark: -10..10, 900', {}, 900], ['dark: 0..2 by 1/2, frac', { min: 0, max: 2, step: 0.5, frac: true }, 700]], 1700);
+  },
+  planes() {
+    title('Coordinate planes', 'grid at each step, heavier axes with arrowheads, labels every step (or every 2 / 5 when crowded)');
+    planes(CREAM, 1, [['-10..10, 400', {}, 400, 400], ['0..10, 360', { xmin: 0, xmax: 10, ymin: 0, ymax: 10 }, 360, 360], ['-5..5 step 1, 300', { xmin: -5, xmax: 5, ymin: -5, ymax: 5 }, 300, 300],
+      ['0..1 step 0.25, 300', { xmin: 0, xmax: 1, ymin: 0, ymax: 1, step: 0.25 }, 300, 300]]);
+    planes(CREAM, 1, [['-10..10, 260 (crowded)', {}, 260, 260], ['-10..10, 640', {}, 640, 640], ['-5..5, no grid', { xmin: -5, xmax: 5, ymin: -5, ymax: 5, grid: false }, 300, 300],
+      ['-3..7 x -2..4', { xmin: -3, xmax: 7, ymin: -2, ymax: 4 }, 400, 240]]);
+    planes(CREAM, 1, [['filled, bounds', { xmin: -5, xmax: 5, ymin: -5, ymax: 5 }, 300, 300, { fill: 'rgba(31,95,191,.10)', bounds: true }], ['0..10, bounds', { xmin: 0, xmax: 10, ymin: 0, ymax: 10 }, 300, 300, { bounds: true }],
+      ['size 6', { xmin: -5, xmax: 5, ymin: -5, ymax: 5 }, 300, 300, { size: 6 }], ['0..1 by 1/4, frac', { xmin: 0, xmax: 1, ymin: 0, ymax: 1, step: 0.25, frac: true }, 300, 300]]);
+  },
+  planesMore() {
+    title('Planes on dark paper, at zoom 0.5 and 3');
+    planes(DARK, 1, [['dark -10..10', {}, 400, 400], ['dark 0..10, red', { xmin: 0, xmax: 10, ymin: 0, ymax: 10 }, 360, 360, { color: RED[1] }], ['dark -5..5, filled', { xmin: -5, xmax: 5, ymin: -5, ymax: 5 }, 300, 300, { fill: 'rgba(232,195,90,.18)' }]]);
+    planes(CREAM, 0.5, [['zoom 0.5: -10..10, 400', {}, 400, 400], ['zoom 0.5: 0..10, 360', { xmin: 0, xmax: 10, ymin: 0, ymax: 10 }, 360, 360], ['zoom 0.5: -5..5, 300', { xmin: -5, xmax: 5, ymin: -5, ymax: 5 }, 300, 300]]);
+    planes(CREAM, 3, [['zoom 3: -5..5, 160', { xmin: -5, xmax: 5, ymin: -5, ymax: 5 }, 160, 160]]);
+  },
+};
+window.drawSheet = drawSheet;
+window.SECTION_NAMES = Object.keys(SECTIONS);
+window.addEventListener('load', () => { if (!/puppeteer/.test(location.hash)) drawSheet(Object.keys(SECTIONS)).then(r => { window.sheet = r; }); });
+</script>
+</body>
+</html>

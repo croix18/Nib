@@ -21,7 +21,8 @@ def font_faces():
 def main():
     tpl = open(os.path.join(HERE, 'template.html')).read()
     nib = open(os.path.join(ROOT, 'dist', 'nib.js')).read().replace('</script', '<\\/script')
-    base = tpl.replace('/*ENGINE*/', nib)
+    board = open(os.path.join(HERE, 'board.js')).read().replace('</script', '<\\/script')
+    base = tpl.replace('/*BOARD_SCRIPT*/', board).replace('/*ENGINE*/', nib)
     off = base.replace('/*FONT_FACES*/', font_faces()).replace('<!--FONT_LINK-->', '')
     off = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
