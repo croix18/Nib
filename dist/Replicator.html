@@ -212,7 +212,7 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   </main>
 </div>
 
-<script>/*! Nib 1.6.2 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+<script>/*! Nib 1.6.3 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -488,7 +488,32 @@ function fcProbs(feat, scal, onl) {
 function classifyGroup(group, ref) {
   const { img, scal } = rasterize(group, ref);
   const onl = model().L.o0 ? onlineBranch(onlineFeatures(group, ref)) : null;
-  return fcProbs(convFeatures(img), scal, onl);
+  return flagSeven(group, fcProbs(convFeatures(img), scal, onl));
+}
+// A 1 with a long, nearly flat top — a stroke into its top at least 0.6 as long as the 1 is tall, rising at less than
+// about 27°, and no foot — is how many Europeans write a 1 (the writing the network learned from), and a 7 to an
+// American reader: the 1's share goes to the 7. A writer's own corrections still win (the memory comes after this).
+// (Croix, 8 Nov 2026, of a test line written "12 + 30 =" with such a 1: "72+30 = 102", then "I would never make the
+// top that long on a one.")
+function flagSeven(group, z) {
+  const { idx } = model(), i1 = idx['1'], i7 = idx['7'];
+  if (group.length !== 1 || i1 === undefined || i7 === undefined || !(z[i1] >= z[i7]) || z[i1] + z[i7] < 0.5) return z;
+  const s = group[0], n = s.length;
+  let t = 0, y0 = Infinity, y1 = -Infinity;
+  for (let k = 0; k < n; k++) { const y = s[k][1]; if (y < s[t][1]) t = k; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const H = y1 - y0;
+  if (!(H > 0) || t === 0 || t === n - 1) return z;                 // written from the top down: no flag
+  let fx = Infinity, fy = -Infinity;
+  for (let k = 0; k <= t; k++) { if (s[k][0] < fx) fx = s[k][0]; if (s[k][1] > fy) fy = s[k][1]; }
+  const fw = s[t][0] - fx, fd = fy - s[t][1];
+  if (fw < 0.6 * H || fd > 0.5 * fw) return z;                       // a short or steep flag: a 1
+  // a foot along the bottom (a 1 with its base written in the same stroke) keeps it a 1
+  let b = t; while (b < n && s[b][1] < y0 + 0.85 * H) b++;
+  let lo = Infinity, hi = -Infinity;
+  for (let k = b; k < n; k++) { if (s[k][0] < lo) lo = s[k][0]; if (s[k][0] > hi) hi = s[k][0]; }
+  if (hi - lo > 0.25 * H) return z;
+  z[i7] += 0.9 * z[i1]; z[i1] *= 0.1;
+  return z;
 }
 
 // ------------------------------------------------------------------ personal memory
@@ -5633,7 +5658,7 @@ function pdfMake(pages, meta) {
   if (title) info += ' /Title ' + pdfText(title);
   if (M.author) info += ' /Author ' + pdfText(M.author);
   if (M.subject) info += ' /Subject ' + pdfText(M.subject);
-  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.2) /CreationDate (' + pdfDate(date) + ') >>');
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.3) /CreationDate (' + pdfDate(date) + ') >>');
 
   for (let i = 0; i < pages.length; i++) {
     const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
@@ -5879,7 +5904,7 @@ const PAD_DEFAULTS = {
   hand: null,           // handwriting for view 'hand' (the Replicator's saved data); default: whatever Nib.hand holds
   separate: false,      // a board: writing in different places is read as separate expressions
   solve: false,         // work out lines that end with "=" and write the answer after the "=" (in --nib-answer)
-  reveal: false,        // with solve: each answer waits behind a gold "?" chip until the chip is tapped
+  reveal: false,        // with solve: each answer is drawn blurred (its length shows, not what it says) until it is tapped
   fit: false,           // when the pad is resized and the ink no longer fits, shrink and move it in (undoable)
   times: true,          // × can be a times sign; false: every cross is the letter x (multiply with · or brackets)
   train: false,         // keep each piece of writing read (strokes, reading, corrections) in pad.training, for fine-tuning
@@ -5890,10 +5915,19 @@ const PAD_DEFAULTS = {
   fingers: 'write',     // with infinite: 'write' (a finger writes), 'pan' (a finger moves the board: the pen writes) or 'ignore'
   pinch: true,          // with infinite: two fingers put down together pan and zoom (a second student's finger far away still writes)
   pressure: true,       // a pen's line follows its pressure (when the pen reports one)
+  palm: true,           // the hand's rules: a touch 28 px or more across is a palm and never draws, touch waits for a
+                        // second after the pen, a brief touch just before the pen is the hand, a finger's tap beside the
+                        // pen the heel of it. false: none of them, every touch writes (a panel that reports fingers that
+                        // wide — an IR frame may — or a stylus as a pen; a tool that never rejected palms)
+  single: false,        // one pointer writes at a time: another put down while one is writing is ignored (a pen still
+                        // takes over from a touch)
   eraser: 'stroke',     // 'stroke': the eraser takes whole strokes; 'area': it rubs out only where it passes
   snap: 0,              // shapes snap to a grid of this spacing (world units; 0: no snapping)
   hold: true,           // draw a line, circle, rectangle or triangle and hold the pen still: it becomes that shape
   read: true,           // Nib reads the pen and marker writing (false: a plain whiteboard)
+  // embedding (another tool's drawing surface over or under the pad)
+  page: null,           // [W, H]: a fixed page of W × H world units, always shown whole and centred; nothing pans or zooms it
+  layer: null,          // 'answers': draw only the answers (the strokes are the host's own, given with syncStrokes)
   symbols: 'school', lines: true, degrees: true,
   onResult: null,       // (result, pad) => void
   onChange: null,       // (pad) => void, after every stroke / undo / clear
@@ -6044,6 +6078,18 @@ function padLum(color) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 const PAD_ZMIN = 0.1, PAD_ZMAX = 8;
+// Does this browser's canvas blur (ctx.filter)? Without it a hidden answer is smeared instead: never drawn sharp.
+let PAD_BLUR = null;
+let PAD_BLUR_EM = 0.12;      // how far out of focus a hidden answer is: its blur, as a share of the writing's em
+function padBlurOK() {
+  if (PAD_BLUR !== null) return PAD_BLUR;
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 9;
+    const g = c.getContext('2d'); g.filter = 'blur(2px)'; g.fillStyle = '#000'; g.fillRect(4, 4, 1, 1);
+    PAD_BLUR = g.getImageData(1, 4, 1, 1).data[3] > 0;
+  } catch (e) { PAD_BLUR = false; }
+  return PAD_BLUR;
+}
 function padSnap(p, spacing) { return spacing > 0 && typeof shapeSnap === 'function' ? shapeSnap(p, spacing) : p; }
 const PAD_FONT = '"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 // is world point p inside polygon poly ([[x, y], ...])?
@@ -6088,6 +6134,7 @@ class Pad {
   constructor(el, options) {
     this.el = el;
     this.o = Object.assign({}, PAD_DEFAULTS, options || {});
+    if (this.o.page) this.o.infinite = true;             // a page is a world under a camera the pad keeps itself
     this.strokes = [];
     this.history = []; this.future = [];
     this.fixes = [];
@@ -6146,14 +6193,18 @@ class Pad {
     try { this.mq = matchMedia('(prefers-color-scheme: dark)'); this.mq.addEventListener('change', this._theme); } catch (e) { this.mq = null; }
     this.mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(this._theme) : null;
     if (this.mo) this.mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
-    this.ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this._resize()) : null;
+    // no ResizeObserver, or one that refuses (a host page can break it): the window's resize does instead
+    try { this.ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this._resize()) : null; } catch (e) { this.ro = null; }
     if (this.ro) this.ro.observe(c); else window.addEventListener('resize', () => this._resize());
     this._resize();
   }
 
   setOptions(o) {
     const before = this.o.view, hb = this.o.hand, sb = !!this.o.solve, rb = !!this.o.reveal, rk = this._readKey(), tb = !!this.o.train;
+    const pageB = JSON.stringify(this.o.page);
     Object.assign(this.o, o || {});
+    if (this.o.page) this.o.infinite = true;
+    if (JSON.stringify(this.o.page) !== pageB && this.o.page && this._pageCam()) this._camMoved(true);
     if (!!this.o.train !== tb) { if (this.o.train) this._trainSee(); else { clearTimeout(this._trainTimer); this._trainTimer = null; this._seen.clear(); } }
     if (!['ink', 'tidy', 'hand', 'typeset'].includes(this.o.view)) this.o.view = 'ink';
     // only options that change the reading read the ink again; a view, color or pen width just redraws
@@ -6167,7 +6218,7 @@ class Pad {
   }
   _readKey() {
     const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange',
-      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold']);
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'page', 'layer', 'palm', 'single']);
     return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
   }
 
@@ -6192,16 +6243,21 @@ class Pad {
     const i = s && this.info.get(s);
     return { type: i ? i.type || null : null, width: i ? i.width || null : null };
   }
-  _wide(e) { return (+e.width || 0) >= 28 || (+e.height || 0) >= 28; }   // 0 or 1: the browser does not say
+  _wide(e) { return this.o.palm !== false && ((+e.width || 0) >= 28 || (+e.height || 0) >= 28); }   // 0 or 1: the browser does not say
   _young(P, now) { return now - P.t0 < 350 || (P.cur ? P.cur.length : 0) < 6; }
   _still(P) { if (!P.cur || P.mode !== 'draw') return false; const b = sbox(P.cur); return Math.max(b[2] - b[0], b[3] - b[1]) < 12 / this.cam.z; }
   _capture(e) { try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* ok */ } }
   _down(e) {
+    if (this.o.layer) return;                            // a layer takes no input (its host does)
     const now = performance.now(), type = e.pointerType, touch = type === 'touch';
     // a pointer that has gone quiet for 1.5 s lost its pointerup somewhere: finish it and take the new one
     for (const P of [...this.ptrs.values()]) if (now - P.last > 1500 || P.id === e.pointerId) this._finish(P, null);
+    // palm false: none of the pen-and-palm rules below — every touch writes, as on a board with no pen
+    const palm = this.o.palm !== false;
+    // one at a time (o.single): a second pointer while one writes is not writing — unless a pen comes to a touch
+    if (this.o.single && this.ptrs.size && !(palm && type === 'pen' && [...this.ptrs.values()].every(P => P.type === 'touch'))) { this.why = 'ignored: one at a time'; return; }
     if (this.editing) this._commitText();                 // a tap on the board ends the text being written
-    if (type === 'pen') {
+    if (type === 'pen' && palm) {
       this.penUntil = now + 1000; this.penSeen = now;
       this._brushed();                                    // brief touches just before the pen were the hand
       // the palm landed first: a touch only just begun, or one resting (hardly moved however long it has been down)
@@ -6209,7 +6265,7 @@ class Pad {
     }
     if (touch) {
       if (this.o.penOnly || this.o.fingers === 'ignore') { this.why = 'ignored: pen only'; return; }
-      if (now < this.penUntil || [...this.ptrs.values()].some(P => P.type === 'pen')) { this.why = 'ignored: pen in use'; return; }
+      if (palm && (now < this.penUntil || [...this.ptrs.values()].some(P => P.type === 'pen'))) { this.why = 'ignored: pen in use'; return; }
       if (this._wide(e) && this.mode !== 'erase') { this.why = 'ignored: palm'; return; }   // with Erase on, a hand rubs out
       for (const [id, T] of this.touches) if (now - (T.m || T.t) > 1500) this.touches.delete(id);   // fingers whose pointerup was lost
       const sp = this._spt(e); this.touches.set(e.pointerId, { x: sp[0], y: sp[1], t: now, m: now });
@@ -6291,6 +6347,7 @@ class Pad {
     // a gesture whose fingers have been quiet for 1.5 s lost a pointerup somewhere, and a pen ends a gesture of fingers:
     // neither may keep the board from listening
     if (this.gesture && (now - (this.gesture.last || 0) > 1500 || (type === 'pen' && this.gesture.touch))) { this.gesture = null; this._cursor(); this._camMoved(true); }
+    if (this.o.page) return false;                       // a page: fingers write, two of them too
     const G = this.gesture;
     if (G) {
       G.last = now;
@@ -6365,7 +6422,7 @@ class Pad {
     return true;
   }
   _wheel(e) {
-    if (!this.o.infinite) return;
+    if (!this.o.infinite || this.o.page) return;
     e.preventDefault();
     const s = this._spt(e);
     // a trackpad pinch arrives as ctrl + wheel
@@ -6377,16 +6434,16 @@ class Pad {
   }
   // the camera: world point (x, y) at the canvas's top-left, z screen px per world unit
   setCamera(c) {
-    if (!c) return;
+    if (!c || this.o.page) return;
     const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, +c.z || 1));
     this.cam = { x: isFinite(+c.x) ? +c.x : 0, y: isFinite(+c.y) ? +c.y : 0, z };
     this._camMoved(true);
   }
   getCamera() { return Object.assign({}, this.cam); }
-  panBy(dx, dy) { if (!this.o.infinite) return; this.cam = { x: this.cam.x - dx / this.cam.z, y: this.cam.y - dy / this.cam.z, z: this.cam.z }; this._camMoved(); }
+  panBy(dx, dy) { if (!this.o.infinite || this.o.page) return; this.cam = { x: this.cam.x - dx / this.cam.z, y: this.cam.y - dy / this.cam.z, z: this.cam.z }; this._camMoved(); }
   // zoom by f about a point on screen (default: the middle), keeping what is under it where it is
   zoomAt(f, sx, sy) {
-    if (!this.o.infinite) return;
+    if (!this.o.infinite || this.o.page) return;
     const W = this.canvas.width / (this.dpr || 1), H = this.canvas.height / (this.dpr || 1);
     if (sx === undefined) { sx = W / 2; sy = H / 2; }
     const z0 = this.cam.z, z1 = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, z0 * f));
@@ -6398,6 +6455,7 @@ class Pad {
   zoomTo(z) { this.zoomAt(z / this.cam.z); }
   // everything on the page in view, with a margin of m screen px (no closer than 100% unless it does not fit)
   fitContent(m, most) {
+    if (this.o.page) return;
     const b = this.contentRect(0);
     const W = this.canvas.width / (this.dpr || 1), H = this.canvas.height / (this.dpr || 1);
     if (!b) { this.setCamera({ x: 0, y: 0, z: 1 }); return; }
@@ -6426,6 +6484,21 @@ class Pad {
     return true;
   }
   _camQuiet(f) { this._quietCam = true; try { f(); } finally { this._quietCam = false; } }
+  // a fixed page (o.page = [W, H]): shown whole and centred, as big as the element allows — and with it any ink written
+  // beyond its edges (in a frame of another shape the margins are written on too), about the page's middle, so a
+  // smaller frame never cuts writing off. Only on a resize or a state put back: nothing moves while writing.
+  _pageCam() {
+    const P = this.o.page, d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d;
+    if (!P || W < 2 || H < 2) return false;
+    const cx = P[0] / 2, cy = P[1] / 2;
+    let hx = cx, hy = cy;
+    for (const s of this.strokes) { const b = this._bounds(s); hx = Math.max(hx, cx - b[0] + 6, b[2] - cx + 6); hy = Math.max(hy, cy - b[1] + 6, b[3] - cy + 6); }
+    const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, W / (2 * hx), H / (2 * hy)));
+    const cam = { x: cx - W / z / 2, y: cy - H / z / 2, z };
+    if (Math.abs(cam.x - this.cam.x) < 1e-9 && Math.abs(cam.y - this.cam.y) < 1e-9 && cam.z === this.cam.z) return false;
+    this.cam = cam;
+    return true;
+  }
   get viewRect() { const d = this.dpr || 1, z = this.cam.z; return [this.cam.x, this.cam.y, this.cam.x + this.canvas.width / d / z, this.cam.y + this.canvas.height / d / z]; }
   toScreen(p) { return [(p[0] - this.cam.x) * this.cam.z, (p[1] - this.cam.y) * this.cam.z]; }
   toWorld(sx, sy) { return [this.cam.x + sx / this.cam.z, this.cam.y + sy / this.cam.z]; }
@@ -6459,7 +6532,7 @@ class Pad {
     if (P.mode === 'shape') { this._shapeUp(P, e); return; }
     if (P.mode === 'laser') { if (P.cur && P.cur.length) this.lasers.push({ pts: P.cur, end: performance.now() }); this._laserLoop(); return; }
     if (P.mode === 'text') {
-      if (P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; return; }   // the heel of the hand
+      if (P.type === 'touch' && this.o.palm !== false && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; return; }   // the heel of the hand
       if (e && e.type === 'pointerup' && P.cur) this._textAt(P.cur[0]);
       return;
     }
@@ -6478,7 +6551,7 @@ class Pad {
       this.el.dispatchEvent(new CustomEvent('nib:tap', { detail: { x: s[0][0], y: s[0][1], pointerType: P.type }, bubbles: true }));
       return;
     }
-    const now = performance.now(), penSession = now - this.penSeen < 30000;
+    const now = performance.now(), penSession = this.o.palm !== false && now - this.penSeen < 30000;
     // a finger's tap while a pen is in use (within the last 30 s) is the heel of the hand, not a decimal point
     if (P.type === 'touch' && penSession && span < 6) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
     const info = { type: ['pen', 'touch', 'mouse'].includes(P.type) ? P.type : null, width: P.w > 1 ? Math.round(P.w * 10) / 10 : null };
@@ -6561,7 +6634,7 @@ class Pad {
       let fresh = null;
       for (const it of this.plan.items) {
         if (it.answer) {
-          // an answer shown by a tap goes back behind its chip
+          // an answer shown by a tap goes back out of focus, waiting for a tap
           if (!it.hidden && it.revealKey && this.revealed.has(it.revealKey) && itemNear(it, p, r)) {
             if (!fresh) fresh = this._fresh();
             if (!this._answerShown(it, live, fresh)) continue;
@@ -6601,7 +6674,9 @@ class Pad {
     if (this._raf || typeof requestAnimationFrame === 'undefined') return;
     this._raf = requestAnimationFrame(() => { this._raf = 0; this.redraw(); });
   }
-  // ---------------------------------------------------------------- answers behind chips
+  // ---------------------------------------------------------------- answers waiting for a tap
+  // A hidden answer is drawn blurred, where it goes: its "chip" (the name kept from the gold "?" dot of 1.6.2) is the tap
+  // target over it — the answer's box, at least a fingertip (44 px) each way. A tap there shows it.
   _chipAt(p) {
     const ch = this.plan && this.plan.chips;
     if (!ch || !ch.length) return null;
@@ -6614,38 +6689,58 @@ class Pad {
     }
     return best;
   }
-  // inside the chip, or within a fingertip of it (a target of at least 44 px)
-  _inChip(c, p) { return Math.hypot(p[0] - c.cx, p[1] - c.cy) <= Math.max(c.r, 22 / this.cam.z); }
+  _inChip(c, p) {
+    const b = c.box, z = this.cam.z, ex = Math.max(0, (44 / z - (b[2] - b[0])) / 2), ey = Math.max(0, (44 / z - (b[3] - b[1])) / 2), m = 6 / z;
+    return p[0] >= b[0] - ex - m && p[0] <= b[2] + ex + m && p[1] >= b[1] - ey - m && p[1] <= b[3] + ey + m;
+  }
   _reveal(key) {
     this.revealed.add(key);
-    const items = this.plan ? this.plan.items.filter(it => it.answer && it.revealKey === key) : [];
-    const chip = this.plan && this.plan.chips ? this.plan.chips.find(c => c.key === key) : null;
     this._syncHidden();
     this._push({ reveal: [key] });
+    // it comes into focus: the blur eases away (at once when the reader asks for less motion)
     const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (items.length && this.o.motion && !reduce) {
-      const box = chip ? [chip.cx - chip.r, chip.cy - chip.r, chip.cx + chip.r, chip.cy + chip.r] : null;
-      this._animate(new Map(items.map(it => [it, { parts: [], box: box || it.box }])), []);
-    }
+    if (this.o.motion && !reduce) this._focusing = { key, t0: performance.now(), ms: 320 };
     this._changed();
+    if (this._focusing) this._frame();
   }
-  // which answers wait behind a chip (solve and reveal on, not tapped yet), and their chips
+  // which answers wait for a tap (solve and reveal on, not tapped yet), and their tap targets
   _syncHidden() {
     if (!this.plan) return;
     const on = !!(this.o.solve && this.o.reveal);
     for (const it of this.plan.items) if (it.answer) it.hidden = on && !this.revealed.has(it.revealKey);
     this.plan.chips = this._chips(this.plan.items);
   }
-  // one chip per hidden answer: a gold dot the height of the writing's x-height, where the answer would start
+  // one target per hidden answer: the box of everything it writes (cx, cy its middle, r half its diagonal)
   _chips(items) {
-    const out = [], seen = new Set();
+    const by = new Map();
     for (const it of items) {
-      if (!it.answer || !it.hidden || !it.group || seen.has(it.revealKey)) continue;
-      seen.add(it.revealKey);
-      const g = it.group, r = Math.max(7, 0.24 * (it.em || (g[3] - g[1]) / 0.7));
-      out.push({ key: it.revealKey, item: it, r, cx: g[0] + r, cy: Math.min(g[3] - r, Math.max(g[1] + r, (g[1] + g[3]) / 2)) });
+      if (!it.answer || !it.hidden || !it.group) continue;
+      const c = by.get(it.revealKey);
+      if (c) c.box = ubox(c.box, it.box || it.group);
+      else by.set(it.revealKey, { key: it.revealKey, item: it, box: (it.box || it.group).slice() });
     }
-    return out;
+    return [...by.values()].map(c => Object.assign(c, { cx: (c.box[0] + c.box[2]) / 2, cy: (c.box[1] + c.box[3]) / 2, r: Math.hypot(c.box[2] - c.box[0], c.box[3] - c.box[1]) / 2 }));
+  }
+  // An answer drawn out of focus: its length shows, not what it says. ctx.filter where the canvas has it (the blur
+  // scaled to the page: an eighth of the writing's em, the strokes drawn three times as heavy so the blur keeps their
+  // shape, on screen or in a picture of the board), else a smear of copies.
+  _drawBlurred(ctx, it, ink, k) {
+    const g = it.group || it.box, em = it.em || (g ? (g[3] - g[1]) / 0.7 : 20), r = PAD_BLUR_EM * em * (k === undefined ? 1 : k);
+    if (r <= 0.02 * em) { drawItems(ctx, [it], { ink, width: this.o.width }); return; }
+    const t = ctx.getTransform ? ctx.getTransform() : { a: 1 }, dev = Math.max(0.5, r * Math.hypot(t.a, t.b || 0));
+    ctx.save();
+    if (padBlurOK()) {
+      ctx.filter = `blur(${dev.toFixed(1)}px)`;
+      drawItems(ctx, [it], { ink, width: this.o.width * 3.0, alpha: 0.95 });
+    } else {
+      for (let i = 0; i < 12; i++) {
+        const a = i / 12 * Math.PI * 2, d = r * (i % 2 ? 1 : 0.55);
+        ctx.save(); ctx.translate(Math.cos(a) * d, Math.sin(a) * d);
+        drawItems(ctx, [it], { ink, width: this.o.width * 2.2, alpha: 0.16 });
+        ctx.restore();
+      }
+    }
+    ctx.restore();
   }
   // new writing not read yet, and strokes being written (a tap on a chip is not writing)
   _fresh() {
@@ -6867,8 +6962,9 @@ class Pad {
       ans = this._answerInk();
       fresh = this._fresh();
     };
+    const layer = this.o.layer === 'answers';            // only the answers (the strokes are the host's)
     // the paper, under everything
-    if (this.o.paper && (!X || X.paper !== false) && typeof drawPaper === 'function') {
+    if (this.o.paper && !layer && (!X || X.paper !== false) && typeof drawPaper === 'function') {
       try { drawPaper(ctx, this.o.paper, view, this.cam.z, this._themeDark); } catch (err) { /* no paper then */ }
     }
     // which read ink its view draws (tidied, in the writer's hand, typeset), and which is changing back to ink
@@ -6882,7 +6978,7 @@ class Pad {
     }
     // pictures, then highlighters, then everything else in the order it was made (what is out of view is skipped)
     const vis = s => { const b = this._bounds(s); return b[2] >= view[0] && b[0] <= view[2] && b[3] >= view[1] && b[1] <= view[3]; };
-    for (let pass = 0; pass < 3; pass++) for (const s of this.strokes) {
+    for (let pass = 0; pass < 3 && !layer; pass++) for (const s of this.strokes) {
       if (only && !only.has(s)) continue;
       const t = this._tool(s), k = t === 'image' ? 0 : t === 'highlighter' ? 1 : 2;
       if (k !== pass || shown.has(s) || !vis(s)) continue;
@@ -6890,17 +6986,23 @@ class Pad {
     }
     // the read ink in its view; strokes still moving into it are drawn by the animation
     const colOf = it => padColor((this.info.get(it.from[0]) || {}).color, this._darkP, ink), widthOf = it => (it.from[0] ? this._size(it.from[0]) : this.o.width);
+    const F = this._focusing, fk = F ? Math.max(0, 1 - (performance.now() - F.t0) / F.ms) : 0;
     for (const it of items) {
       if (it.answer) {
-        if (answers === 'none' || (it.hidden && !(image && answers === 'all'))) continue;
+        if (answers === 'none') continue;
         answerSetup();
         if (!this._answerShown(it, live, fresh)) continue;
+        // waiting for a tap: out of focus at the board; a picture of the board leaves it out (no one can tap a picture,
+        // and a blur is no lock), and an answer key (answers 'all') draws it sharp
+        if (it.hidden && !(image && answers === 'all')) { if (!image) this._drawBlurred(ctx, it, ans); continue; }
+        // just tapped: the blur eases away
+        if (F && fk > 0 && !image && it.revealKey === F.key) { this._drawBlurred(ctx, it, ans, fk * fk); continue; }
         const was = A && A.from.get(it);
         if (was && e < 1) morphDraw(ctx, was, it, e, ans, this.o.width);
         else drawItems(ctx, [it], { ink: ans, width: this.o.width });
         continue;
       }
-      if (!it.from.every(s => live.has(s))) continue;
+      if (layer || !it.from.every(s => live.has(s))) continue;
       const was = A && A.from.get(it);
       if (was && e < 1) morphDraw(ctx, was, it, e, colOf(it), widthOf(it));
       else drawItems(ctx, [it], { ink: colOf(it), width: widthOf(it) });
@@ -6916,22 +7018,8 @@ class Pad {
         if (raw.parts[0].paths.length) morphDraw(ctx, g, raw, e, colOf(g), widthOf(g));
       }
     }
-    // answers waiting for a tap: a gold chip with a "?" where each would start
-    if (!image && this.plan && this.plan.chips && this.plan.chips.length) {
-      answerSetup();
-      const paper = this._paperC || getComputedStyle(this.el).getPropertyValue('--nib-paper').trim() || '#ffffff';
-      ctx.save();
-      for (const ch of this.plan.chips) {
-        if (!this._answerShown(ch.item, live, fresh)) continue;
-        ctx.globalAlpha = 1; ctx.fillStyle = ans;
-        ctx.beginPath(); ctx.arc(ch.cx, ch.cy, ch.r, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = paper; ctx.font = `700 ${Math.round(ch.r * 1.35)}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('?', ch.cx, ch.cy + ch.r * 0.06);
-      }
-      ctx.restore();
-    }
-    if (image) return;
+    if (F && !image) { if (fk > 0) this._frame(); else this._focusing = null; }     // the next frame of an answer coming into focus
+    if (image || layer) return;
     // what is being made right now: strokes (in their pen), shapes being dragged out, brief touches waiting for the pen
     for (const P of this.ptrs.values()) {
       if (P.mode === 'draw' && P.cur) {
@@ -6976,7 +7064,7 @@ class Pad {
     try { this._paint(true, { paper: !(o.background || o.dots) }); } finally { this.ctx = keep.ctx; this.anim = keep.anim; }
     return c;
   }
-  // everything on the page, in world units (with m around it; o.hidden: answers still behind their chips too), or null
+  // everything on the page, in world units (with m around it; o.hidden: answers still waiting for a tap too), or null
   contentRect(m, o) {
     let b = null;
     for (const s of this.strokes) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); }
@@ -7203,7 +7291,7 @@ class Pad {
     if (changed) { c.width = w; c.height = h; }
     this.dpr = d;
     if (r.width >= 2 && r.height >= 2) this._sized = true;
-    if (changed && this.o.infinite) this._camQuiet(() => { if (this._fitView()) this._camMoved(true); });
+    if (changed && this.o.infinite) this._camQuiet(() => { if (this.o.page ? this._pageCam() : this._fitView()) this._camMoved(true); });
     // a board turned or made smaller: the ink is brought back in (once, undoable)
     if (changed && this.o.fit && !this.o.infinite && this._fit(r.width, r.height)) return;
     // answers near an edge are fitted to the board's size: lay them out again for the new one
@@ -7288,7 +7376,7 @@ class Pad {
   _shapeUp(P, e) {
     let prev = P.prev;
     // a finger's tap within 3 s of the pen is the heel of the hand (a finger placing a shape or text later is a finger)
-    if (!prev && P.type === 'touch' && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
+    if (!prev && P.type === 'touch' && this.o.palm !== false && performance.now() - this.penSeen < 3000) { this.why = 'ignored: tap beside the pen'; this.redraw(); return; }
     if (!prev && e && e.type === 'pointerup' && typeof shapeFromDrag === 'function') prev = shapeFromDrag(this.shapeTool.kind, P.a, P.a, { snap: this.o.snap, angle: true, z: this.cam.z });
     if (!prev || !prev.pts || !prev.pts.length) { this.redraw(); return; }
     const S = this.shapeTool, s = prev.pts.map(q => [q[0], q[1]]);
@@ -7358,11 +7446,15 @@ class Pad {
     this.el.dispatchEvent(new CustomEvent('nib:select', { detail: { count: sel.length, box, kinds: [...new Set(sel.map(s => this._tool(s)))] }, bubbles: true }));
   }
   get selected() { return this._liveSel(); }
+  // The selection's frame: 18 screen px off what it holds and never under 96 px a side, so its handles sit clear of the
+  // writing and a short stroke still has room inside to drag — Deckhand 7.60.1's lasso frame, made for Croix's panel
+  // ("I have trouble grabbing a corner to move, increase or decrease a selected item").
   _selBox(sel) {
     let b = null;
     for (const s of sel) { const q = this._bounds(s); b = b ? ubox(b, q) : q.slice(); }
-    const m = 6 / this.cam.z;
-    return [b[0] - m, b[1] - m, b[2] + m, b[3] + m];
+    const z = this.cam.z, m = 18 / z, mn = 96 / z;
+    const w = Math.max(b[2] - b[0] + 2 * m, mn), h = Math.max(b[3] - b[1] + 2 * m, mn), cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2;
+    return [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2];
   }
   // the 8 handles of a selection box, on screen
   _handles(b) {
@@ -7370,7 +7462,7 @@ class Pad {
     return { nw: [x0, y0], n: [xm, y0], ne: [x1, y0], e: [x1, ym], se: [x1, y1], s: [xm, y1], sw: [x0, y1], w: [x0, ym] };
   }
   _handleAt(b, sp, touch) {
-    const H = this._handles(b), r = touch ? 22 : 12;
+    const H = this._handles(b), r = touch ? 22 : 14;          // a fingertip's grab (44 px) on a panel
     let best = null, bd = Infinity;
     for (const k in H) { const d = Math.hypot(H[k][0] - sp[0], H[k][1] - sp[1]); if (d <= r && d < bd) { best = k; bd = d; } }
     return best;
@@ -7391,7 +7483,9 @@ class Pad {
     if (sel.length) {
       const b = this._selBox(sel), h = this._handleAt(b, sp, P.type !== 'mouse');
       if (h) { P.op = { kind: 'scale', h, b0: b, orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
-      if (p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
+      // inside the frame, or a near miss just outside it (16 px), moves it
+      const nm = 16 / this.cam.z;
+      if (p[0] >= b[0] - nm && p[0] <= b[2] + nm && p[1] >= b[1] - nm && p[1] <= b[3] + nm) { P.op = { kind: 'move', orig: sel.map(s => [s, s.map(q => q.slice())]), items: this._planOf(new Set(sel)) }; return; }
     }
     // the lasso tool: a loop drawn round what to select, starting anywhere (on writing too); a tap still picks one thing
     let hit = this.lassoOnly ? null : this.elementAt(p, true);
@@ -7514,7 +7608,7 @@ class Pad {
     ctx.setLineDash([]);
     // each element of a group, faintly
     if (sel.length > 1) { ctx.strokeStyle = 'rgba(201,162,39,.35)'; ctx.lineWidth = 1 / z; for (const s of sel) { const q = this._bounds(s); ctx.strokeRect(q[0], q[1], q[2] - q[0], q[3] - q[1]); } }
-    const H = this._handles(b), hs = 5 / z;
+    const H = this._handles(b), hs = 11 / z;                  // 22 px handles, finger-sized
     ctx.fillStyle = this._paperC || '#ffffff'; ctx.strokeStyle = 'rgba(201,162,39,1)'; ctx.lineWidth = 1.5 / z;
     for (const k in H) {
       const w = this.toWorld(H[k][0], H[k][1]);
@@ -7880,6 +7974,9 @@ class Pad {
       } catch (e) { /* ok */ }
     }
     const res = this.recognize();
+    // the page changed (a host keeping it keeps the fix)
+    if (this.o.onChange) this.o.onChange(this);
+    this.el.dispatchEvent(new CustomEvent('nib:change', { detail: this, bubbles: true }));
     // a correction is the most useful thing to keep: the piece it is in is kept (again) at once, with it
     if (this.o.train) for (const p of this._trainParts()) if (p.strokes.some(s => ss.includes(s))) { const k = this._trainKey(p.strokes); this._trainSkip.delete(k); this._trainRecord(p, k); }
     return res;
@@ -7960,6 +8057,86 @@ class Pad {
     this.history = []; this.future = []; this.fixes = []; this.revealed = new Set(); this.selection = new Set(); this._changed();
     if (this.ink.length && this.o.auto) this._schedule(0);   // no need to wait for a pen to rest
   }
+  // A host's own strokes (arrays of [x, y] points, world units), to read: kept in step without starting over —
+  // a stroke the host gives again as the same array is the same stroke (its corrections, and an answer shown by a tap
+  // on its line, stay), one no longer given goes. No history (the host has its own). `moved`: [[array, was], …] for
+  // strokes the host moved or resized as new arrays — each is still the stroke it was, at its new place (so an answer
+  // shown on a line that was dragged somewhere stays shown). Returns whether anything changed.
+  syncStrokes(list, moved) {
+    if (!this._hostMap) { this._hostMap = new WeakMap(); this._hostSrc = new WeakMap(); }
+    const shifted = [];
+    let scaled = false;
+    // a stroke's points come from one host array at a time: given another array of it (a move, or the host's Undo of
+    // one giving back the array it had), its points are that array's again — in place, so the stroke stays itself
+    const take = (st, h) => {
+      const pts = this._cleanStrokes([h])[0];
+      this._hostSrc.set(st, h);
+      if (!pts) return;
+      if (pts.length === st.length && pts.every((p, i) => p[0] === st[i][0] && p[1] === st[i][1])) return;   // only recolored
+      const a = sbox(st), b = sbox(pts);
+      if (Math.abs((a[2] - a[0]) - (b[2] - b[0])) > 0.5 || Math.abs((a[3] - a[1]) - (b[3] - b[1])) > 0.5) scaled = true;
+      st.length = 0; for (const p of pts) st.push(p);
+      this._touched(st); shifted.push(st);
+    };
+    for (const [nu, was] of moved || []) {
+      const st = Array.isArray(nu) && this._hostMap.get(was);
+      if (!st || this._hostMap.has(nu)) continue;
+      this._hostMap.set(nu, st); take(st, nu);
+    }
+    const next = [];
+    for (const h of list || []) {
+      if (!Array.isArray(h) || !h.length) continue;
+      let st = this._hostMap.get(h);
+      if (!st) { st = this._cleanStrokes([h])[0]; if (!st) continue; this._hostMap.set(h, st); this._hostSrc.set(st, h); }
+      else if (this._hostSrc.get(st) !== h) take(st, h);
+      next.push(st);
+    }
+    // read again where it is now (made bigger or smaller: classified again too, as the pad's own moves are)
+    if (shifted.length) this._inkMoved(shifted, scaled);
+    if (!shifted.length && next.length === this.strokes.length && next.every((st, i) => st === this.strokes[i])) return false;
+    for (const P of [...this.ptrs.values()]) this._drop(P);
+    this.strokes = next;
+    this.selection = new Set();
+    this._changed();
+    return true;
+  }
+  // The answer under a point on screen (clientX, clientY): {key, hidden, box (client px)}, or null. A hidden one is
+  // found anywhere on its tap target (at least a fingertip); a shown one on its own box.
+  answerAt(cx, cy) {
+    if (!this.plan) return null;
+    const r = this.canvas.getBoundingClientRect(), p = this.toWorld(cx - r.left, cy - r.top);
+    const out = (key, box, hidden) => { const a = this.toScreen([box[0], box[1]]), b = this.toScreen([box[2], box[3]]); return { key, hidden, box: [a[0] + r.left, a[1] + r.top, b[0] + r.left, b[1] + r.top] }; };
+    const c = this._chipAt(p);
+    if (c) return out(c.key, c.box, true);
+    const live = new Set(this.strokes), fresh = this._fresh(), m = 6 / this.cam.z;
+    for (const it of this.plan.items) {
+      if (!it.answer || it.hidden || !this._answerShown(it, live, fresh)) continue;
+      const b = it.box || it.group;
+      if (p[0] >= b[0] - m && p[0] <= b[2] + m && p[1] >= b[1] - m && p[1] <= b[3] + m) return out(it.revealKey, b, false);
+    }
+    return null;
+  }
+  // show an answer waiting for a tap (as a tap on it would), or hide a shown one again
+  showAnswer(key) { if (key && !this.revealed.has(key)) this._reveal(key); }
+  hideAnswer(key) { if (key && this.revealed.delete(key)) { this._syncHidden(); this._changed(); } }
+  // the symbol read under a world point (as the view draws it): the smallest one the point is inside, else the nearest
+  // within a fingertip — {sym, box} or null (a Fix tool's tap: then relabel(sym, label))
+  symbolAt(x, y) {
+    const res = this.result;
+    if (!res || !res.symbols || !res.symbols.length) return null;
+    let inside = null, near = null;
+    const reach = 12 / this.cam.z;
+    for (const sym of res.symbols) {
+      const objs = sym.strokes.map(i => this.resultStrokes[i]);
+      const it = this.plan && this.plan.items.find(q => q.from.length === objs.length && q.from.every(o => objs.includes(o)));
+      const b = it ? it.box : [sym.box.x, sym.box.y, sym.box.x + sym.box.w, sym.box.y + sym.box.h];
+      const d = Math.hypot(Math.max(b[0] - x, 0, x - b[2]), Math.max(b[1] - y, 0, y - b[3]));
+      const area = Math.max(b[2] - b[0], 4) * Math.max(b[3] - b[1], 4);
+      if (d === 0) { if (!inside || area < inside.area) inside = { sym, box: b, area }; }
+      else if (d <= reach && (!near || d < near.d)) near = { sym, box: b, d };
+    }
+    return inside || near;
+  }
   _dropAll() { for (const P of [...this.ptrs.values()]) this._drop(P); for (const q of this.pending) clearTimeout(q.timer); this.pending = []; if (this.editing) this._commitText(); this.gesture = null; }
   // Everything that makes up the pad's page, to keep: the strokes (x, y to 0.1 px), the corrections (as indices
   // into the strokes) and the answers shown by a tap (the strokes of their line, and the answer).
@@ -7992,13 +8169,14 @@ class Pad {
     if (meta.some(Boolean)) out.meta = meta;
     const press = this.strokes.map(s => (s.length && s[0].length > 3 ? s.map(q => Math.round((q.length > 3 ? q[3] : 0.5) * 100)) : null));
     if (press.some(Boolean)) out.press = press;
-    if (this.o.infinite) {
+    if (this.o.infinite && !this.o.page) {
       const w = this._want || { r: this.viewRect, z: this.cam.z }, r1 = n => Math.round(n * 10) / 10;
       out.cam = { x: r1(w.r[0]), y: r1(w.r[1]), z: Math.round(w.z * 1000) / 1000, w: Math.round((w.r[2] - w.r[0]) * w.z), h: Math.round((w.r[3] - w.r[1]) * w.z) };
     }
     return out;
   }
-  setState(st) {
+  // o.steps: the strokes put back can be undone one by one, last first (as if just written), rather than not at all
+  setState(st, o) {
     st = st || {};
     this._dropAll(); this.trainFlush();
     const all = this._cleanStrokes(st.strokes), at = i => (Number.isInteger(i) && all[i]) || null;
@@ -8023,14 +8201,15 @@ class Pad {
     });
     this.strokes = all.filter(Boolean);
     this.selection = new Set(); this.lasers = [];
-    if (this.o.infinite) this._putView(st.cam);
+    if (this.o.infinite && !this.o.page) this._putView(st.cam);
     this.fixes = (Array.isArray(st.fixes) ? st.fixes : []).map(f => f && Array.isArray(f.strokes) && typeof f.label === 'string' ? { strokes: f.strokes.map(at), label: f.label } : null)
       .filter(f => f && f.strokes.length && f.strokes.every(Boolean));
     this.revealed = new Set((Array.isArray(st.revealed) ? st.revealed : []).map(r => {
       const ss = r && Array.isArray(r.strokes) ? r.strokes.map(at) : [];
       return ss.length && ss.every(Boolean) ? ss.map(s => this._sid(s)).sort((x, y) => x - y).join(',') + '|' + (r.answer || '') : null;
     }).filter(Boolean));
-    this.history = []; this.future = []; this.parts.clear();
+    this.history = o && o.steps ? this.strokes.slice(-500).map(s => ({ add: s })) : []; this.future = []; this.parts.clear();
+    if (this.o.page) this._pageCam();                     // a page with writing in its margins shows it
     if (!this._fitHere()) this._changed();
     if (this.ink.length && this.o.auto) this._schedule(0);
     this._camQuiet(() => this._camMoved(true));
@@ -8240,7 +8419,7 @@ class Pad {
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
     static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'settle', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit', 'train',
-      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'read']; }
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'read', 'page', 'draw', 'palm', 'single']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -8274,6 +8453,11 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         snap: has('snap') && +a('snap') > 0 ? +a('snap') : 0,
         hold: a('hold') !== 'false',
         read: a('read') !== 'false',
+        // page="1280 960": a fixed page, shown whole (nothing pans or zooms it); draw="answers": only the answers
+        page: (() => { const v = (a('page') || '').trim().split(/[\s,x]+/).map(Number); return v.length === 2 && v[0] > 0 && v[1] > 0 ? v : null; })(),
+        layer: a('draw') === 'answers' ? 'answers' : null,
+        palm: a('palm') !== 'false',
+        single: has('single') && a('single') !== 'false',
       };
     }
     connectedCallback() {
@@ -8291,6 +8475,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     // in case the same element is put back later)
     disconnectedCallback() {
       clearTimeout(this._gone);
+      if (this.hasAttribute('keep')) return;               // keep: the host takes it out to put it back (all of it lives on)
       this._gone = setTimeout(() => {
         if (this.isConnected || !this.pad) return;
         this._saved = this.pad.getStrokes(); this.pad.destroy(); this.pad = null;
@@ -8305,7 +8490,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     get view() { return this.pad ? this.pad.o.view : (this.getAttribute('view') || 'ink'); }
     set view(v) { this.setAttribute('view', ['tidy', 'hand', 'typeset'].includes(v) ? v : 'ink'); }
     // what the view shows: [{label, box, parts}] in the pad's coordinates (parts as drawn: ink paths, text, rules);
-    // answers are marked answer, and hidden while they wait behind their chip
+    // answers are marked answer, and hidden while they wait for a tap
     get shown() { return this.pad && this.pad.plan ? this.pad.plan.items.map(it => Object.assign({ label: it.label, box: it.box.slice(), parts: it.parts }, it.answer ? { answer: true } : {}, it.hidden ? { hidden: true } : {})) : []; }
     // with solve on: [{line, latex, text, kind, exact, value}] for each line that ends with "=", and the LaTeX with them in
     get solve() { return this.pad ? !!this.pad.o.solve : this.hasAttribute('solve') && this.getAttribute('solve') !== 'false'; }
@@ -8317,7 +8502,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     image(o) { return this.pad ? this.pad.image(o) : null; }
     // the page to keep ({strokes, fixes, revealed}) and to put back
     getState() { return this.pad ? this.pad.getState() : { strokes: this._saved || [], fixes: [], revealed: [] }; }
-    setState(st) { if (this.pad) this.pad.setState(st); else this._saved = st && st.strokes; }
+    setState(st, o) { if (this.pad) this.pad.setState(st, o); else this._saved = st && st.strokes; }
     get reveal() { return this.pad ? !!this.pad.o.reveal : this.hasAttribute('reveal') && this.getAttribute('reveal') !== 'false'; }
     set reveal(v) { if (v) this.setAttribute('reveal', ''); else this.removeAttribute('reveal'); }
     // the training log (with the train attribute): [{key, t, w, h, view, strokes, types, latex, symbols, fixed, answered, confidence}]
@@ -8388,7 +8573,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.6.2',
+  version: '1.6.3',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -8425,7 +8610,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 // The canvas's parts, for a page that holds a board (the Board): named colors, papers, shapes, PDF and storage.

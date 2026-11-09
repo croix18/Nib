@@ -395,6 +395,26 @@ function makeHandFile() {
       n++;
     } return n;
   }, ex || null);
+  // the answers' pixels on the board, inside their box: how much of it is tinted gold, and the sharpest step in that tint
+  // between neighboring pixels (writing in focus goes from the paper to the gold within a pixel or two; out of focus it
+  // eases in, and the paper's dots under it step far less than ink)
+  const answerLook = () => page.evaluate(() => {
+    const P = document.getElementById('pad').pad, c = document.querySelector('#pad canvas'), k = c.width / c.getBoundingClientRect().width;
+    const A = P.plan ? P.plan.items.filter(i => i.answer) : [];
+    if (!A.length) return null;
+    const b = A.map(i => i.box || i.group).reduce((u, q) => [Math.min(u[0], q[0]), Math.min(u[1], q[1]), Math.max(u[2], q[2]), Math.max(u[3], q[3])]);
+    const a = P.toScreen([b[0], b[1]]), z = P.toScreen([b[2], b[3]]);
+    const x0 = Math.max(0, Math.floor(a[0] * k)), y0 = Math.max(0, Math.floor(a[1] * k)), x1 = Math.min(c.width, Math.ceil(z[0] * k)), y1 = Math.min(c.height, Math.ceil(z[1] * k));
+    const w = x1 - x0, h = y1 - y0, d = c.getContext('2d').getImageData(x0, y0, w, h).data, t = i => d[i] - d[i + 2];
+    let tint = 0, step = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (t(i) > 40) tint++;
+      if (x) step = Math.max(step, Math.abs(t(i) - t(i - 4)));
+      if (y) step = Math.max(step, Math.abs(t(i) - t(i - 4 * w)));
+    }
+    return { tint: Math.round(100 * tint / Math.max(1, w * h)), step, box: b };
+  });
   const nStrokesX = () => page.evaluate(() => document.getElementById('pad').strokes.length);
   const tapX = async (x, y) => {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
@@ -419,32 +439,41 @@ function makeHandFile() {
       return { answers: p.answers.map(a => a.latex), hidden: A.length > 0 && A.every(i => i.hidden), chips: (P.plan.chips || []).map(c => ({ cx: c.cx, cy: c.cy, r: c.r })), em: A.length ? A[0].em : 0,
         group: A.length ? A[0].group : null, eqRight: eq ? eq.box.x + eq.box.w : 0 };
     });
-    ok(st.answers.join() === '42' && st.hidden && st.chips.length === 1, `with reveal on, 12 + 30 = is worked out (${st.answers.join()}) but waits behind one chip`);
+    ok(st.answers.join() === '42' && st.hidden && st.chips.length === 1, `with reveal on, 12 + 30 = is worked out (${st.answers.join()}) but waits for a tap`);
     const ch = st.chips[0] || { cx: 0, cy: 0, r: 0 };
-    ok(Math.abs(2 * ch.r - Math.max(14, 0.48 * st.em)) < 1 && Math.abs(ch.cx - ch.r - st.group[0]) < 1 && ch.cx > st.eqRight, `the chip is the writing's x-height (${(2 * ch.r).toFixed(1)} px for an em of ${st.em.toFixed(1)}) and sits where the answer starts, after the "="`);
-    const g0 = await goldX(), g0out = await goldX([ch.cx, ch.cy, ch.r]);
-    ok(g0 > 30 && g0out < 10, `only the gold chip shows (${g0} gold pixels in it, ${g0out} outside it)`);
-    await page.screenshot({ path: path.join(out, 'board-test-chip.png') });
+    const look0 = await answerLook();
+    ok(look0 && look0.tint >= 12 && look0.step <= 30, `it is drawn out of focus where it goes: ${look0 && look0.tint}% of its box tinted gold, the sharpest step in it ${look0 && look0.step} (writing in focus steps 45 or more)`);
+    ok(st.group && ch.cx > st.eqRight && look0 && Math.abs(ch.cx - (look0.box[0] + look0.box[2]) / 2) < 1 && Math.abs(ch.cy - (look0.box[1] + look0.box[3]) / 2) < 1, 'after the "=", its tap target over it');
+    const g0out = await goldX([ch.cx, ch.cy, Math.max(ch.r, 22) + 0.4 * st.em]);
+    ok(g0out < 10, `nothing else of it shows: no gold away from it (${g0out} pixels)`);
+    // the target: at least a fingertip each way, centred on it
+    const hit = await page.evaluate((cx, cy) => {
+      const P = document.getElementById('pad').pad, r = P.canvas.getBoundingClientRect(), A = (x, y) => P.answerAt(r.left + x, r.top + y);
+      const w = P.plan.chips[0].box, s = P.toScreen([cx, cy]), hh = Math.max(22, (w[3] - w[1]) * P.cam.z / 2);
+      return { o: A(s[0], s[1]), near: A(s[0], s[1] + hh - 2), far: A(s[0], s[1] + hh + 12) };
+    }, ch.cx, ch.cy);
+    ok(hit.o && hit.o.hidden && hit.near && hit.near.hidden && !hit.far, `answerAt finds it on its target, a fingertip each way, and not beyond (${JSON.stringify(hit.o)})`);
+    await page.screenshot({ path: path.join(out, 'board-test-blurred.png') });
     const cb = await (await page.$('#pad canvas')).boundingBox(), n0 = await nStrokesX();
-    // a drag that starts on the chip is writing, not a tap
+    // a drag that starts on it is writing, not a tap
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cb.x + ch.cx, y: cb.y + ch.cy }] });
     for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: cb.x + ch.cx + 8 * i, y: cb.y + ch.cy + 30 + 2 * i }] });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    ok(await nStrokesX() === n0 + 1, 'a drag that starts on the chip writes a stroke');
+    ok(await nStrokesX() === n0 + 1, 'a drag that starts on the blurred answer writes a stroke');
     await page.click('#undo'); await wait(600); await sameReadX();
     await tapX(cb.x + ch.cx, cb.y + ch.cy);
-    await wait(80);
-    const mid = await page.evaluate(() => !!document.getElementById('pad').pad.anim);
+    await wait(60);
+    const mid = await page.evaluate(() => { const P = document.getElementById('pad').pad; return !!P._focusing; }), lookMid = await answerLook();
     await wait(500);
-    const r1 = await page.evaluate(() => { const P = document.getElementById('pad').pad; return { shown: P.plan.items.filter(i => i.answer).every(i => !i.hidden), chips: P.plan.chips.length, last: Object.keys(P.history[P.history.length - 1]) }; });
-    const g1 = await goldX([ch.cx, ch.cy, ch.r]);
-    ok(r1.shown && r1.chips === 0 && g1 > 80 && await nStrokesX() === n0, `a tap on the chip shows the answer (${g1} gold pixels outside where the chip was) and writes nothing (${JSON.stringify(r1)}, ${await nStrokesX()} strokes for ${n0})`);
-    ok(mid, 'it comes in with the morph animation');
+    const r1 = await page.evaluate(() => { const P = document.getElementById('pad').pad; return { shown: P.plan.items.filter(i => i.answer).every(i => !i.hidden), chips: P.plan.chips.length, focusing: !!P._focusing, last: Object.keys(P.history[P.history.length - 1]) }; });
+    const look1 = await answerLook();
+    ok(r1.shown && r1.chips === 0 && !r1.focusing && look1 && look1.step >= 45 && look1.tint >= 8 && await nStrokesX() === n0, `a tap on it shows the answer, in focus (the sharpest step ${look1 && look1.step}, ${look1 && look1.tint}% of its box gold), and writes nothing (${JSON.stringify(r1)}, ${await nStrokesX()} strokes for ${n0})`);
+    ok(mid && lookMid && lookMid.step < look1.step, `it comes into focus: the blur eases away (sharpest step ${lookMid && lookMid.step} part way)`);
     await page.screenshot({ path: path.join(out, 'board-test-revealed.png') });
     await wait(800);
     await page.reload({ waitUntil: 'load' }); await wait(500); await sameReadX(); await wait(500);
     ok(await page.evaluate(() => { const P = document.getElementById('pad').pad; return P.plan && P.plan.items.some(i => i.answer) && P.plan.items.filter(i => i.answer).every(i => !i.hidden); }), 'a shown answer is still shown after a reload');
-    // the eraser over a shown answer puts it back behind its chip (one undoable step)
+    // the eraser over a shown answer puts it back out of focus (one undoable step)
     const ab = await page.evaluate(() => { const P = document.getElementById('pad').pad; const A = P.plan.items.filter(i => i.answer); return A[0].box; });
     const cb2 = await (await page.$('#pad canvas')).boundingBox(), nE = await nStrokesX();
     await page.keyboard.press('e');
@@ -452,7 +481,7 @@ function makeHandFile() {
     await page.mouse.move(cb2.x + (ab[0] + ab[2]) / 2 + 2, cb2.y + (ab[1] + ab[3]) / 2, { steps: 2 }); await page.mouse.up();
     await page.keyboard.press('e'); await wait(200);
     const er = await page.evaluate(() => { const P = document.getElementById('pad').pad; return { hidden: P.plan.items.filter(i => i.answer).every(i => i.hidden), chips: P.plan.chips.length, last: P.history[P.history.length - 1] }; });
-    ok(er.hidden && er.chips === 1 && await nStrokesX() === nE && er.last.hide && er.last.hide.length === 1, 'erasing a shown answer hides it again (its chip comes back), and erases no ink');
+    ok(er.hidden && er.chips === 1 && await nStrokesX() === nE && er.last.hide && er.last.hide.length === 1 && (await answerLook()).step <= 30, 'erasing a shown answer hides it again (out of focus, waiting for a tap), and erases no ink');
     await page.click('#undo'); await wait(600); await sameReadX();
     ok(await page.evaluate(() => { const P = document.getElementById('pad').pad; return P.plan.items.filter(i => i.answer).every(i => !i.hidden); }), 'Undo shows it again');
     // erase the "+" (the line changes, so no answer), then undo: the same line comes back, still shown
@@ -467,7 +496,7 @@ function makeHandFile() {
     // the same problem written again is a new line: its answer waits for a tap
     await page.click('#clear'); await wait(300);
     await write(prob, [0.3, 0.3, 0.3, 0.12]); await wait(600); await sameReadX();
-    ok(await page.evaluate(() => { const P = document.getElementById('pad').pad; return P.plan.chips.length === 1 && P.plan.items.filter(i => i.answer).every(i => i.hidden); }), 'the line rewritten: its answer is behind a chip again');
+    ok(await page.evaluate(() => { const P = document.getElementById('pad').pad; return P.plan.chips.length === 1 && P.plan.items.filter(i => i.answer).every(i => i.hidden); }), 'the line rewritten: its answer waits for a tap again');
     await setting('reveal', 'off'); await closeSettings(); await wait(300);
     ok(await page.evaluate(() => { const P = document.getElementById('pad').pad; return !(P.plan.chips || []).length && P.plan.items.filter(i => i.answer).every(i => !i.hidden); }) && (await goldX()) > 80, 'reveal off: the answer is written straight in, as before');
     await setting('reveal', 'on'); await closeSettings(); await wait(300);

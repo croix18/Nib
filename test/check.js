@@ -157,6 +157,33 @@ Nib.memory.learn(rows[1].strokes.slice(0, 1), 'x'); Nib.memory.learn([], 'y'); N
 ok(Nib.memory.size === 1, 'learning ignores empty ink');
 Nib.memory.clear();
 
+// ------------------------------------------------------------------ 6b. a 1 with a long flat top is a 7
+// (8 Nov 2026: a CROHME writer's 1 in a composed "12 + 30 =" — Croix: "72+30 = 102", "I would never make the top that
+// long on a one")
+section('6b. a 1 with a long, flat top reads as a 7');
+{
+  const I = Nib._internals, M = I.model(), i1 = M.idx['1'], i7 = M.idx['7'];
+  const probs = (p1, p7) => { const z = new Float64Array(M.cls.length); z[i1] = p1; z[i7] = p7; z[M.junk] = 1 - p1 - p7; return z; };
+  const after = (st, p1 = 0.7, p7 = 0.25) => { const z = I.flagSeven(st, probs(p1, p7)); return [z[i1], z[i7]]; };
+  const top = [[0, 14], [10, 9], [20, 5], [33, 0]], stem = [[34, 12], [34, 25], [34, 38], [34, 50]];
+  let r = after([top.concat(stem)]);
+  ok(r[1] > r[0] && Math.abs(r[0] + r[1] - 0.95) < 1e-9, `a top two-thirds of the height, rising 23°: the 1's share goes to the 7 (${r.map(v => v.toFixed(3))})`);
+  r = after([[[24, 8], [28, 4], [32, 0]].concat(stem)]);
+  ok(r[0] === 0.7, 'a short flag stays a 1');
+  r = after([[[4, 30], [12, 20], [20, 10], [33, 0]].concat(stem)]);
+  ok(r[0] === 0.7, 'a long flag rising steeply (a lead-in from below) stays a 1');
+  r = after([top.concat(stem, [[44, 50], [54, 50]])]);
+  ok(r[0] === 0.7, 'a 1 with its foot written in the same stroke stays a 1');
+  r = after([[[33, 0]].concat(stem)]);
+  ok(r[0] === 0.7, 'a plain upright, written from the top down, stays a 1');
+  r = after([top, stem]);
+  ok(r[0] === 0.7, 'two strokes (a flag and a stem apart) are left to the network');
+  r = after([top.concat(stem)], 0.2, 0.1);
+  ok(r[0] === 0.2, 'nothing changes unless the network is choosing between a 1 and a 7');
+  const g = [[51.9, 68.1], [58.5, 64.1], [62.5, 61.5], [66.5, 60.2], [71.8, 57.5], [75.7, 56.2], [79.9, 54.8], [82.5, 53.6], [84.9, 53.6], [87.5, 54.3], [87.6, 54], [90.3, 61.5], [90.3, 65.4], [90.3, 70.7], [90.3, 76], [88.9, 81.3], [88.9, 86.6], [87.6, 90.6], [87.6, 95.8], [86.3, 99.8], [86.3, 103.8]];
+  ok(Nib.recognize([g], { times: false }).latex === '7', 'the composed line\'s 1 (a CROHME writer\'s, the network: 1 at 74%) reads as the 7 an American reader sees');
+}
+
 // ------------------------------------------------------------------ 7. accuracy floor
 section(`7. accuracy on the composed school set (${FULL ? 'all ' + rows.length : sample.length + ' expressions'})`);
 function lev(a, b) { let prev = Array.from({ length: b.length + 1 }, (_, j) => j); for (let i = 1; i <= a.length; i++) { const cur = [i]; for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; } return prev[b.length]; }

@@ -266,7 +266,32 @@ function fcProbs(feat, scal, onl) {
 function classifyGroup(group, ref) {
   const { img, scal } = rasterize(group, ref);
   const onl = model().L.o0 ? onlineBranch(onlineFeatures(group, ref)) : null;
-  return fcProbs(convFeatures(img), scal, onl);
+  return flagSeven(group, fcProbs(convFeatures(img), scal, onl));
+}
+// A 1 with a long, nearly flat top — a stroke into its top at least 0.6 as long as the 1 is tall, rising at less than
+// about 27°, and no foot — is how many Europeans write a 1 (the writing the network learned from), and a 7 to an
+// American reader: the 1's share goes to the 7. A writer's own corrections still win (the memory comes after this).
+// (Croix, 8 Nov 2026, of a test line written "12 + 30 =" with such a 1: "72+30 = 102", then "I would never make the
+// top that long on a one.")
+function flagSeven(group, z) {
+  const { idx } = model(), i1 = idx['1'], i7 = idx['7'];
+  if (group.length !== 1 || i1 === undefined || i7 === undefined || !(z[i1] >= z[i7]) || z[i1] + z[i7] < 0.5) return z;
+  const s = group[0], n = s.length;
+  let t = 0, y0 = Infinity, y1 = -Infinity;
+  for (let k = 0; k < n; k++) { const y = s[k][1]; if (y < s[t][1]) t = k; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const H = y1 - y0;
+  if (!(H > 0) || t === 0 || t === n - 1) return z;                 // written from the top down: no flag
+  let fx = Infinity, fy = -Infinity;
+  for (let k = 0; k <= t; k++) { if (s[k][0] < fx) fx = s[k][0]; if (s[k][1] > fy) fy = s[k][1]; }
+  const fw = s[t][0] - fx, fd = fy - s[t][1];
+  if (fw < 0.6 * H || fd > 0.5 * fw) return z;                       // a short or steep flag: a 1
+  // a foot along the bottom (a 1 with its base written in the same stroke) keeps it a 1
+  let b = t; while (b < n && s[b][1] < y0 + 0.85 * H) b++;
+  let lo = Infinity, hi = -Infinity;
+  for (let k = b; k < n; k++) { if (s[k][0] < lo) lo = s[k][0]; if (s[k][0] > hi) hi = s[k][0]; }
+  if (hi - lo > 0.25 * H) return z;
+  z[i7] += 0.9 * z[i1]; z[i1] *= 0.1;
+  return z;
 }
 
 // ------------------------------------------------------------------ personal memory

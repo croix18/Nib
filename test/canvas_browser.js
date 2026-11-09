@@ -381,7 +381,7 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) <= e;
       setTimeout(() => { ptr('up', 'pen', 61, 400, 200); const E = P.lookOf(P.strokes[0]); res({ tool: E.tool, n: P.strokes[0].length }); P.tool = { kind: 'pen', color: null, size: null }; }, 800);
     }));
     ok(hl.tool === 'highlighter' && hl.n === 2, `a highlighter held still becomes a straight one, still a highlighter (${JSON.stringify(hl)})`);
-    // an answer key takes in the answers still behind their chips
+    // an answer key takes in the answers still waiting for a tap
     await reset();
     const key = await page.evaluate(() => { const P = c.pad; return { a: P.contentRect(0), b: P.contentRect(0, { hidden: true }) }; });
     ok(key.a === null && key.b === null, 'an empty page has no content either way');

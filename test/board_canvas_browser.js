@@ -478,7 +478,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     ok(d && /^Nib-board-1-\d{4}-\d{2}-\d{2}\.pdf$/.test(d.name) && d.type === 'application/pdf' && d.text.startsWith('%PDF-1.4'), 'Export, This page, PDF: a PDF named Nib-board-1-<date>.pdf: ' + (d && d.name));
     ok(d && /\/MediaBox \[0 0 792 612\]/.test(d.text) && /\/Count 1 /.test(d.text) && /\/Title \(Nib Board \d{4}-\d{2}-\d{2}\)/.test(d.text), 'one Letter page, turned to suit the writing (landscape), titled');
     let pics = await pdfPictures();
-    ok(pics.length === 1 && pics[0].w === pics[0].W && pics[0].w >= 1900 && pics[0].dark > 300 && pics[0].gold === 0, `its picture: ${pics[0] && pics[0].w} × ${pics[0] && pics[0].h} px (about 200 dpi), the writing in it, no answer shown (they wait behind their chips)`);
+    ok(pics.length === 1 && pics[0].w === pics[0].W && pics[0].w >= 1900 && pics[0].dark > 300 && pics[0].gold === 0, `its picture: ${pics[0] && pics[0].w} × ${pics[0] && pics[0].h} px (about 200 dpi), the writing in it, no answer shown (they wait for a tap, and a picture leaves them out)`);
     await exp({ ans: 'all' });
     pics = await pdfPictures();
     ok(pics[0] && pics[0].gold > 150, `Answers: All (a key) writes every answer in (${pics[0] && pics[0].gold} gold pixels)`);
@@ -608,7 +608,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     if (!(await hidden('openask'))) { await page.click('#openadd'); await wait(400); }
     const got = await P(() => { const P = document.getElementById('pad').pad; return { n: P.strokes.length, look: P.lookOf(P.strokes[0]), paper: document.getElementById('pad').getAttribute('paper') }; });
     ok(got.n === 1 && got.look && got.look.size === 4 && !got.look.color && got.paper === 'grid white', 'a board file dropped on the board opens (after asking); a "color" in it that is not one is left out: ' + JSON.stringify(got.look));
-    // an answer key on a page the writing's size takes in the answers behind their chips
+    // an answer key on a page the writing's size takes in the answers still waiting for a tap
     await page.click('#pageno'); await wait(300); await page.click('#pagegrid .pg:nth-child(1)'); await wait(500);
     const fitW = async ans => {
       if (await hidden('exportpop')) { await page.click('#exportbtn'); await wait(120); }
@@ -619,7 +619,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
       return m ? +m[1] : 0;
     };
     const wNone = await fitW('none'), wAll = await fitW('all');
-    ok(wAll > wNone + 20, `an answer key the writing's size is wide enough for the answers still behind their chips (${wNone} → ${wAll} pt)`);
+    ok(wAll > wNone + 20, `an answer key the writing's size is wide enough for the answers still waiting for a tap (${wNone} → ${wAll} pt)`);
     await page.keyboard.press('Escape');
     // published, a file the viewer's app will not take is said, never "Saved"
     const ctx3 = await browser.createBrowserContext();

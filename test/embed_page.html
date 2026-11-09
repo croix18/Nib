@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nib embedding test page</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { font: 14px system-ui; background: #fbf8ef; }
+  /* a tool's sketch pad: a fixed page, shown whole in whatever room it is given */
+  #frame { position: absolute; left: 40px; top: 30px; width: 800px; height: 500px; background: #fff; }
+  #frame nib-pad { position: absolute; inset: 0; --nib-ink: #1b2a4a; --nib-paper: #ffffff; --nib-answer: #8a6a10; }
+  /* a tool's own pen over its slides (its canvas), with Nib's answers over it: a layer that takes no input */
+  #host { position: fixed; inset: 0; pointer-events: none; }
+  #over { position: fixed; inset: 0; pointer-events: none; }
+  #over nib-pad { position: absolute; inset: 0; --nib-ink: #1b2a4a; --nib-paper: #fbf8ef; --nib-answer: #8a6a10; }
+</style>
+</head>
+<body>
+<div id="frame"><nib-pad id="pg" page="1280 960" separate solve reveal times="false"></nib-pad></div>
+<canvas id="host"></canvas>
+<div id="over"><nib-pad id="ans" draw="answers" separate solve reveal times="false"></nib-pad></div>
+<script src="../dist/nib.js"></script>
+<script>
+  // pointer events straight to a pad's canvas, at (x, y) CSS px from its top left: kind 'pen' | 'touch' | 'mouse'
+  window.ptr = (el, type, kind, id, x, y, o = {}) => {
+    const cv = el.querySelector('canvas'), r = cv.getBoundingClientRect();
+    const e = new PointerEvent('pointer' + type, Object.assign({ pointerId: id, pointerType: kind, clientX: r.left + x, clientY: r.top + y, bubbles: true, cancelable: true,
+      isPrimary: true, button: type === 'down' ? 0 : -1, buttons: type === 'up' ? 0 : 1, width: 1, height: 1, pressure: 0.5 }, o));
+    cv.dispatchEvent(e); return e.defaultPrevented;
+  };
+  // strokes given in the pad's world units, written with pointer events where the pad's camera shows them
+  window.writeWorld = (el, strokes, kind = 'pen', id = 1) => {
+    const P = el.pad;
+    for (const s of strokes) {
+      const q = s.map(p => P.toScreen(p));
+      ptr(el, 'down', kind, id, q[0][0], q[0][1]);
+      for (let i = 1; i < q.length; i++) ptr(el, 'move', kind, id, q[i][0], q[i][1]);
+      ptr(el, 'up', kind, id, q[q.length - 1][0], q[q.length - 1][1]);
+    }
+  };
+  // the host's own ink, drawn on its canvas (what the answers layer sits over)
+  window.drawHost = list => {
+    const c = document.getElementById('host'), d = devicePixelRatio || 1;
+    c.width = innerWidth * d; c.height = innerHeight * d;
+    const g = c.getContext('2d'); g.setTransform(d, 0, 0, d, 0, 0); g.clearRect(0, 0, innerWidth, innerHeight);
+    g.strokeStyle = '#1b2a4a'; g.lineWidth = 3; g.lineCap = g.lineJoin = 'round';
+    for (const s of list) { g.beginPath(); s.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]))); g.stroke(); }
+  };
+</script>
+</body>
+</html>

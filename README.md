@@ -17,11 +17,11 @@ Measured on handwriting from writers it never saw in training (the CROHME 2019 t
 
 | Test | Expressions | Read exactly right |
 | --- | --- | --- |
-| Middle-school math composed from those writers' real symbols (`test/school_synth.jsonl`) | 700 | 90.1% |
-| Real expressions in middle-school notation (no subscripts, calculus or rare symbols) | 546 | 70.3% |
-| The full CROHME 2019 test set (university math, symbol set `all`) | 1,187 | 55.9% |
+| Middle-school math composed from those writers' real symbols (`test/school_synth.jsonl`) | 700 | 89.7% |
+| Real expressions in middle-school notation (no subscripts, calculus or rare symbols) | 546 | 69.8% |
+| The full CROHME 2019 test set (university math, symbol set `all`) | 1,187 | 55.3% |
 
-"Exactly right" means every symbol and every fraction, power, root and line in the LaTeX matches. By category on the composed school set: arithmetic 95%, one- and two-step equations 89%, inequalities 88%, fractions and mixed numbers 90%, powers and scientific notation 95%, roots 95%, percents and money 96%, ratios 90%, formulas 87%, absolute value 83%, multi-line work 81%.
+"Exactly right" means every symbol and every fraction, power, root and line in the LaTeX matches. Since 1.6.3 a 1 with a long, flat top is read as a 7, the way an American reader reads it ("I would never make the top that long on a one"); these writers, mostly European, write some of their 1s that way, which costs these figures about half a point (they were 90.6%, 70.3% and 55.9%). By category on the composed school set: arithmetic 95%, one- and two-step equations 87%, inequalities 87%, fractions and mixed numbers 91%, powers and scientific notation 95%, roots 96%, percents and money 91%, ratios 90%, formulas 85%, absolute value 83%, multi-line work 84%.
 
 ### When the writing is messy
 
@@ -55,7 +55,7 @@ Paste `nib.js` into the page once — as `<script src="nib.js"></script>` next t
 </script>
 ```
 
-Attributes: `symbols="school|all|numbers|0,1,2,x,+"`, `ink="#1b2a4a"`, `stroke-width="3"`, `delay="450"` (ms of rest before reading), `auto="false"` (only read when you call `recognize()`), `boxes` (draw what was read), `pen-only` (ignore fingers and palms), `lines="false"`, `degrees="false"`, `smooth="0.03"` (smooth very shaky ink before reading; off by default, as finger ink already reads as well as pen ink), `view="tidy|hand|typeset"` (show what was read in place — see below), `motion="false"` (change views without animating), `separate` (a board: writing in different places is read as separate expressions), `solve` (write the answer after any line that ends with "=", and solve equations — see below), `times="false"` (× is never read: x is always a letter, and you multiply with a dot or brackets), `reveal` (with `solve`: each answer waits behind a gold "?" chip until it is tapped), `fit` (when the pad gets smaller and the ink no longer fits, shrink and move it in, as one undoable step).
+Attributes: `symbols="school|all|numbers|0,1,2,x,+"`, `ink="#1b2a4a"`, `stroke-width="3"`, `delay="450"` (ms of rest before reading), `auto="false"` (only read when you call `recognize()`), `boxes` (draw what was read), `pen-only` (ignore fingers and palms), `lines="false"`, `degrees="false"`, `smooth="0.03"` (smooth very shaky ink before reading; off by default, as finger ink already reads as well as pen ink), `view="tidy|hand|typeset"` (show what was read in place — see below), `motion="false"` (change views without animating), `separate` (a board: writing in different places is read as separate expressions), `solve` (write the answer after any line that ends with "=", and solve equations — see below), `times="false"` (× is never read: x is always a letter, and you multiply with a dot or brackets), `reveal` (with `solve`: each answer is drawn out of focus, where it goes, until it is tapped), `fit` (when the pad gets smaller and the ink no longer fits, shrink and move it in, as one undoable step).
 
 Properties and methods: `latex`, `text`, `result`, `strokes` (get or set), `view` (get or set), `solve` (get or set), `answers` and `solved` (the answers, and the LaTeX with them written in), `shown` (what the view draws), `mode` (`'draw'` or `'erase'`), `undo()`, `redo()`, `clear()`, `recognize()`, `relabel(symbol, label)`, `toImage()`, `image({scale, background, dots})` (the ink as the view shows it, as a canvas, 2× by default), `getState()` / `setState(state)` (the strokes, the corrections as stroke indices and the answers shown by a tap, to keep and put back), `reveal` (get or set).
 
@@ -77,6 +77,17 @@ pad.undo(); pad.clear(); pad.setStrokes(saved); pad.getStrokes();
 const r = Nib.recognize(strokes, { symbols: 'numbers' });   // strokes: [[ [x, y], [x, y], ... ], ...]
 const r2 = await Nib.recognizeAsync(strokes);                // same, without blocking the page
 ```
+
+### Inside another tool
+
+Two ways to put Nib in a tool that has its own drawing — how Deckhand's Sketch Pad and its pen over the slides use it:
+
+- **A fixed page**, `page="1280 960"`: the pad's world is a page of that many units, always shown whole and centred in whatever room the element is given (a card that is resized, or put on the stage, shows the same page bigger or smaller). Nothing pans or zooms it, two fingers write, and writing beyond the page's edges (a card of another shape has margins) is kept in view when the frame gets smaller. `getState()` holds no camera. The host draws its own background under it from `el.pad.toScreen([0, 0])` and `el.pad.toScreen([1280, 960])` (`el.pad` is the element's engine), and repaints on `nib:camera`.
+- **Answers over a host's own ink**, `draw="answers"`: the element draws only the answers, takes no input (put it in a container with `pointer-events: none`) and reads the strokes the host gives it: `el.pad.syncStrokes(list, moved)` with `list` the host's strokes as arrays of `[x, y]` points in the element's CSS pixels, in the order they were written. A stroke given again as the same array is the same stroke (its corrections, and an answer shown by a tap on its line, stay); `moved` pairs `[newArray, oldArray]` for strokes the host moved, resized or recolored as new arrays, so they keep what Nib knew about them. On the host's pointer down, `el.pad.answerAt(clientX, clientY)` says whether an answer is there (`{key, hidden, box}`, a hidden one found anywhere on a fingertip-sized target); `el.pad.showAnswer(key)` shows it (the blur eases away) and `el.pad.hideAnswer(key)` hides it again.
+
+For a Fix tool on either: in `mode = 'fix'` a tap comes as `nib:tap {x, y}` (world units) and writes nothing; `el.pad.symbolAt(x, y)` gives the symbol drawn there (`{sym, box}`, with `sym.candidates`), and `el.relabel(sym, label)` corrects it — Nib remembers the shape (in this browser) for next time.
+
+And for a tool that had its own pad before: `palm="false"` turns off the hand's rules (a touch 28 px or more across is a palm, touch waits a second after the pen, a brief touch just before the pen is the hand, a finger's tap beside the pen is its heel) — every touch writes, as on a panel that reports fingers that wide or a stylus as a pen; `single` lets one pointer write at a time; `keep` keeps the pad alive when the element leaves the page, so a host that takes it out and puts it back later (a card torn down and built again) gets it back with its Undo history, corrections and reading; `setState(state, {steps: true})` puts a page back with its strokes undoable one by one. Every change to the page, a Fix included, sends `nib:change`.
 
 ## What you get back
 
