@@ -20,6 +20,13 @@ Splits used: train = 2019 train + 2014 test (`valid`) + 2012 test (`t12`); tunin
 the school set composed from the 2013 writers; reported test = 2019 test (`test`) and the school set composed
 from the 2019 test writers (`test/school_synth.jsonl`), never trained or tuned on.
 
+To fine-tune from the shipped model without retraining, fetch its checkpoints (the repo's `checkpoints` branch:
+`model_v3.npz.ckpt`, `model_v4.npz.ckpt`, `model_v4s50.npz`, the classes and the small models) into `scratch/work/`:
+
+```sh
+npm run checkpoints
+```
+
 ## 2. Symbol classifier (v2)
 
 ```sh

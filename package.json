@@ -6,6 +6,7 @@
   "scripts": {
     "build": "python3 build.py && python3 board/build.py && python3 replicator/build.py && python3 demo/build_demo.py",
     "data": "python3 tools/fetch_data.py",
+    "checkpoints": "bash tools/fetch_checkpoints.sh",
     "test": "node test/run.js",
     "test:browser": "node test/run.js --browser"
   },

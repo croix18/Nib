@@ -19,6 +19,7 @@ v3 in weight space (`training/README.md` §2c).
 
 It is made by `tools/freeze_model.py` from the trained files in `training/scratch/work/` and KaTeX in
 `node_modules/` (or `python3 build.py path/to/model.npz`, which freezes that model and then builds). The int8 weights
-here cannot be trained further: fine-tuning starts from the float checkpoints (`model_v3.npz.ckpt`,
-`model_v4s50.npz` and the rest of `training/scratch/work/`), which are not in the repo. The owner keeps them, and
-must keep them safe: without them the next model has to be trained again from the start (`training/README.md` §2).
+here cannot be trained further: fine-tuning starts from the float checkpoints (`model_v3.npz.ckpt`, `model_v4.npz.ckpt`,
+`model_v4s50.npz`), which are kept with the classes and the small models on the repo's `checkpoints` branch, apart from
+`main`. `npm run checkpoints` puts them in `training/scratch/work/` and checks them against their SHA-256 sums.
+Checked on 14 Nov 2026: freezing those files gives this `nib-data.json` byte for byte.
