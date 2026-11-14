@@ -5,7 +5,7 @@
 //   node test/shapes_browser.js [sheet.png]        (default test/shots/shapes_sheet.png)
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
+const puppeteer = require(require('./data').npm('puppeteer-core'));
 const OUT = path.resolve(process.argv[2] || path.join(__dirname, 'shots', 'shapes_sheet.png'));
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 let fails = 0;
@@ -13,8 +13,9 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
 const png = (file, dataUrl) => fs.writeFileSync(file, Buffer.from(dataUrl.split(',')[1], 'base64'));
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
+  await require('./data').packagesFor(page);
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });

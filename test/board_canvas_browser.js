@@ -6,7 +6,7 @@
 //   node test/board_canvas_browser.js [page=dist/Board.html]
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
+const puppeteer = require(require('./data').npm('puppeteer-core'));
 const out = path.join(__dirname, 'shots'); fs.mkdirSync(out, { recursive: true });
 let fails = 0;
 const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fails++; };
@@ -21,7 +21,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
 (async () => {
   const page_ = process.argv[2] || path.join(__dirname, '..', 'dist', 'Board.html');
   const url = 'file://' + path.resolve(page_);
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const errors = [];
   const open = async (w, h) => {
     const p = await browser.newPage();

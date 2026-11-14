@@ -3,13 +3,12 @@
 // node test/browser.js <page.html> <outdir> [expressionId]
 const path = require('path');
 const fs = require('fs');
-const puppeteer = require(require('path').join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
-const D = (process.env.NIB_DATA || require('path').join(__dirname, '..', 'training', 'scratch', 'data') + '/');
+const puppeteer = require(require('./data').npm('puppeteer-core'));
 
 (async () => {
   const [page_ = require('path').join(__dirname, '..', 'dist', 'Nib.html'), out = require('path').join(__dirname, 'shots'), id] = process.argv.slice(2);
   fs.mkdirSync(out, { recursive: true });
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const errors = [];
   const url = 'file://' + path.resolve(page_);
 
@@ -27,7 +26,7 @@ const D = (process.env.NIB_DATA || require('path').join(__dirname, '..', 'traini
   await page.screenshot({ path: out + '/desktop.png' });
 
   // 2. clear, then draw an expression with the mouse
-  const rows = fs.readFileSync(D + 'test.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+  const rows = fs.readFileSync(require('./data').need('test.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   const expr = id ? rows.find(r => r.id === id) : rows.find(r => r.truth && /\\frac\{[0-9]+\}\{[0-9]+\}x/.test(r.truth)) || rows[0];
   await page.click('#clear');
   const box = await (await page.$('#pad canvas')).boundingBox();

@@ -5,8 +5,8 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const R = require(path.join(__dirname, '..', 'replicator', 'core.js'));
-const opentype = require(path.join(__dirname, '..', 'demo', 'node_modules', 'opentype.js'));
-const D = process.env.NIB_DATA || path.join(__dirname, '..', 'training', 'scratch', 'data') + '/';
+const opentype = require(require('./data').npm('opentype.js'));
+const { need } = require('./data');
 const OUT = path.join(__dirname, 'shots', 'fonts');
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true });
 
@@ -14,7 +14,7 @@ let fails = 0;
 const ok = (c, m) => { if (!c) { console.log('  FAIL ' + m); fails++; } };
 
 // handwriting: one sample of each character from the 2019 test writers, fitted to the guides
-const rows = fs.readFileSync(D + 'test.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+const rows = fs.readFileSync(need('test.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
 const pool = {};
 for (const r of rows) for (const s of r.symbols) (pool[s.label] = pool[s.label] || []).push(s.strokes.map(k => r.strokes[k]));
 const LABEL = { '×': '\\times', '÷': '\\div', '±': '\\pm', '≠': '\\neq', '≤': '\\leq', '≥': '\\geq', 'π': '\\pi', 'θ': '\\theta', '√': '\\sqrt', '∞': '\\infty' };

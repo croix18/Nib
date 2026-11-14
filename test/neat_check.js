@@ -15,9 +15,9 @@ const tokens = res => [].concat(...res.lines.map((l, i) => (i ? ['\\\\'] : []).c
 const same = (a, b) => a.length === b.length && a.every((t, i) => t === b[i]);
 
 // a hand built from the 2019 test writers' symbols, placed on the Replicator's guides (as test/neat_view.js does)
-const D = process.env.NIB_DATA || path.join(__dirname, '..', 'training', 'scratch', 'data') + '/';
+const { need } = require('./data');
 function makeHand() {
-  const t = fs.readFileSync(D + 'test.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+  const t = fs.readFileSync(need('test.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   const pool = {};
   for (const r of t) for (const s of r.symbols) (pool[s.label] = pool[s.label] || []).push(s.strokes.map(k => r.strokes[k]));
   const G = { cap: 0.2, x: 0.376, base: 0.76, desc: 0.944 };

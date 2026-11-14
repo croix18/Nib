@@ -264,10 +264,10 @@ function checkPdf(name, pages, meta, extra) {
   // ------------------------------------------------------------------ 8. Chrome: a canvas JPEG, and the PDF made in the browser
   section('8. Chrome');
   let puppeteer = null;
-  try { puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core')); } catch (e) { /* no browser here */ }
-  if (!puppeteer || !fs.existsSync('/usr/bin/google-chrome')) console.log('  (skipped: no puppeteer-core / Chrome)');
+  try { puppeteer = require(require('./data').npm('puppeteer-core', { optional: true })); } catch (e) { /* no browser here */ }
+  if (!puppeteer || !fs.existsSync(require('./data').CHROME)) console.log('  (skipped: no puppeteer-core / Chrome)');
   else {
-    const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
+    const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox'] });
     try {
       const page = await browser.newPage(), errors = [];
       page.on('pageerror', e => errors.push(String(e)));

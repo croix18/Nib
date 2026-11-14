@@ -6,7 +6,7 @@
 //   node test/scribble_browser.js
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
+const puppeteer = require(require('./data').npm('puppeteer-core'));
 const Nib = require(path.join(__dirname, '..', 'dist', 'nib.js'));
 const { compose } = require('./compose.js');
 let fails = 0;
@@ -40,7 +40,7 @@ const zig = (b, legs, dir = 'h', over = 6) => {
 const ring = (c, r, turns = 3) => Array.from({ length: Math.round(48 * turns) + 1 }, (_, k) => { const a = 2 * Math.PI * k / 48; const rr = r * (1 + 0.04 * Math.sin(3 * a)) + k * 0.05; return [c[0] + rr * Math.cos(a), c[1] + rr * 0.7 * Math.sin(a)]; });
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));

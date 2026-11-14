@@ -4,11 +4,11 @@
 'use strict';
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const Nib = require(process.env.NIB || path.join(__dirname, '..', 'dist', 'nib.js'));
-const D = process.env.NIB_DATA || path.join(__dirname, '..', 'training', 'scratch', 'data') + '/';
+const { need } = require('./data');
 const [modelPath, nArg = '300'] = process.argv.slice(2);
 if (!modelPath) { console.log('usage: node test/parity.js <model.npz> [n]'); process.exit(2); }
 const I = Nib._internals;
-const rows = fs.readFileSync(D + 'test.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+const rows = fs.readFileSync(need('test.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
 const groups = [];
 for (const r of rows) {
   const ref = I.refSize(r.strokes);

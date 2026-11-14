@@ -5,7 +5,7 @@
 //   node test/embed_browser.js
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
+const puppeteer = require(require('./data').npm('puppeteer-core'));
 const Nib = require(path.join(__dirname, '..', 'dist', 'nib.js'));
 const { compose } = require('./compose.js');
 const out = path.join(__dirname, 'shots'); fs.mkdirSync(out, { recursive: true });
@@ -28,7 +28,7 @@ const written = (tex, x, y, h) => {
 };
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));

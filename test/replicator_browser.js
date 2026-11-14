@@ -6,10 +6,10 @@
 //   node test/replicator_browser.js [page=dist/Replicator.html] [outdir=test/shots]
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
-const opentype = require(path.join(__dirname, '..', 'demo', 'node_modules', 'opentype.js'));
+const puppeteer = require(require('./data').npm('puppeteer-core'));
+const opentype = require(require('./data').npm('opentype.js'));
 const R = require(path.join(__dirname, '..', 'replicator', 'core.js'));
-const D = process.env.NIB_DATA || path.join(__dirname, '..', 'training', 'scratch', 'data') + '/';
+const { need } = require('./data');
 
 let fails = 0;
 const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fails++; };
@@ -19,7 +19,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   const [page_ = path.join(__dirname, '..', 'dist', 'Replicator.html'), out = path.join(__dirname, 'shots')] = process.argv.slice(2);
   fs.mkdirSync(out, { recursive: true });
   const dl = path.join(out, 'downloads'); fs.rmSync(dl, { recursive: true, force: true }); fs.mkdirSync(dl, { recursive: true });
-  const rows = fs.readFileSync(D + 'test.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+  const rows = fs.readFileSync(need('test.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   const pool = {};
   for (const r of rows) for (const s of r.symbols) (pool[s.label] = pool[s.label] || []).push(s.strokes.map(k => r.strokes[k]));
   const G = R.GUIDE_FRAC;
@@ -33,7 +33,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     const k = Math.min((bot - top) / Math.max(y1 - y0, 1e-9), 0.75 / Math.max(x1 - x0, 1e-9));
     return st.map(s => s.map(p => [0.12 + (p[0] - x0) * k, top + (p[1] - y0) * k]));
   };
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const errors = [];
   // (the published page links Google Fonts, which this sandbox cannot reach: those failures are not the page's)
   const watch = p => { p.on('pageerror', e => errors.push(String(e))); p.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource: net::ERR_(TUNNEL_CONNECTION_FAILED|NAME_NOT_RESOLVED|INTERNET_DISCONNECTED|PROXY_CONNECTION_FAILED)/.test(m.text())) errors.push(m.text()); }); };

@@ -5,7 +5,7 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const R = require(path.join(__dirname, '..', 'replicator', 'core.js'));
-const D = process.env.NIB_DATA || path.join(__dirname, '..', 'training', 'scratch', 'data') + '/';
+const { need } = require('./data');
 let fails = 0, passes = 0;
 const ok = (c, m) => { if (c) { passes++; if (process.env.VERBOSE) console.log('  ok  ', m); } else { fails++; console.log('  FAIL', m); } };
 const section = n => console.log(n);
@@ -71,7 +71,7 @@ section('2. even sizes: letters span their guides, the pen keeps its weight');
 }
 
 // ------------------------------------------------------------------ synthetic writers
-const rows = fs.readFileSync(D + 'test.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+const rows = fs.readFileSync(need('test.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
 const byWriter = new Map();
 for (const r of rows) for (const s of r.symbols) {
   const w = r.writer || r.id.split('_')[0];

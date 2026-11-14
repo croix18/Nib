@@ -4,8 +4,8 @@
 //   node test/neat_view.js [ids or categories...]
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
-const D = process.env.NIB_DATA || path.join(__dirname, '..', 'training', 'scratch', 'data') + '/';
+const puppeteer = require(require('./data').npm('puppeteer-core'));
+const { need } = require('./data');
 const out = path.join(__dirname, 'shots'); fs.mkdirSync(out, { recursive: true });
 
 const rows = fs.readFileSync(path.join(__dirname, 'school_synth.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
@@ -15,7 +15,7 @@ if (!pick.length) { const cats = {}; for (const r of rows) if (!cats[r.cat] || c
 
 // a hand: one sample per character from the 2019 test writers, placed on the Replicator's guides
 function makeHand() {
-  const t = fs.readFileSync(D + 'test.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+  const t = fs.readFileSync(need('test.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   const pool = {};
   for (const r of t) for (const s of r.symbols) (pool[s.label] = pool[s.label] || []).push(s.strokes.map(k => r.strokes[k]));
   const G = { cap: 0.2, x: 0.376, base: 0.76, desc: 0.944 };
@@ -42,7 +42,7 @@ function makeHand() {
 
 (async () => {
   const hand = makeHand();
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));

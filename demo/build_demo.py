@@ -3,7 +3,9 @@ import base64, json, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-NPM = os.environ.get('NIB_NPM', os.path.join(HERE, 'node_modules'))
+# npm packages: NIB_NPM, else the root node_modules (npm ci), else demo/node_modules (where they were installed before package.json)
+NPM = os.environ.get('NIB_NPM') or next((p for p in (os.path.join(ROOT, 'node_modules'), os.path.join(ROOT, 'demo', 'node_modules'))
+                                         if os.path.isdir(p)), os.path.join(ROOT, 'node_modules'))
 KATEX_VER = '0.16.11'
 
 

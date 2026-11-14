@@ -6,7 +6,7 @@
 //   node test/canvas_browser.js
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
+const puppeteer = require(require('./data').npm('puppeteer-core'));
 const out = path.join(__dirname, 'shots'); fs.mkdirSync(out, { recursive: true });
 const rows = fs.readFileSync(path.join(__dirname, 'school_synth.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
 const byId = id => rows.find(r => r.id === id);
@@ -16,7 +16,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 const near = (a, b, e = 0.5) => Math.abs(a - b) <= e;
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));

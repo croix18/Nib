@@ -5,6 +5,9 @@ Everything here runs on a CPU (the shipped model was trained on two cores). Scra
 
 ## 1. Data
 
+`npm run data` (`tools/fetch_data.py`, from the repo root) does all of this and §2c's `board.jsonl`, at fixed commits of
+the two repositories, and checks `test.jsonl` is the one `test/school_synth.jsonl` was composed from. By hand:
+
 ```sh
 git clone --depth 1 https://github.com/Mahdiyeh-Asgharpour/CROHME2019 raw/crohme2019        # 2019 train / 2014 test / 2019 test
 git clone --depth 1 https://github.com/ThomasLech/CROHME_extractor raw/crohme_extractor     # has the 2012 and 2013 test sets
@@ -80,7 +83,8 @@ statistic `0.5·v3 + 0.5·v4`, folded as usual. Measured against v3 (dist built 
 Records he had to Fix, read raw by v4s50: 69+96 and 3.14·2 (both held out), 46·9 and 4x+4−x now read right;
 17+71 still reads 17+7) and the large 144·69 reads H4·69 (v4 alone read it right). Still wrong among his
 drill items: 1(1+1)= (his 1s as bars, held out), 10³·10⁻¹ (a 1 as a bar), g+g+g (his g as 9).
-`python3 ../build.py` builds from `model_v4s50.npz` by default.
+Its frozen data is `model/nib-data.json` (cnn.id `d74ed302a03a`), which `python3 ../build.py` builds from;
+`python3 ../build.py scratch/work/model_v4s50.npz` freezes it again.
 
 ## 3. Geometry and context models
 
@@ -93,7 +97,10 @@ python3 prior.py                   # school-vs-CROHME symbol frequency ratios ->
 ## 4. Build and measure
 
 ```sh
-python3 ../build.py scratch/work/model_v3.npz   # -> dist/nib.js (the default)
+python3 ../build.py scratch/work/model_v4s50.npz   # freeze it (../tools/freeze_model.py: the model, ep/classes.txt,
+                                                  # geo_models_v2.json, lm_v2.json, prior.json, KaTeX from npm ci)
+                                                  # -> ../model/nib-data.json, then -> dist/nib.js
+python3 ../build.py                             # dist/nib.js from ../model/nib-data.json as committed (no numpy)
 node ../test/eval.js test full school       # exact-match rate on the reported test set (real expressions)
 node ../test/eval_synth.js                  # the composed middle-school set (2019 test writers)
 POOL=scratch/data/t13.jsonl OUT=scratch/data/synth_t13.jsonl node ../test/compose.js   # tuning copy (2013 writers)

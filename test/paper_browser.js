@@ -5,7 +5,7 @@
 //   node test/paper_browser.js [sheet.png]       (default test/shots/paper_sheet.png; the thumbnails go beside it)
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
+const puppeteer = require(require('./data').npm('puppeteer-core'));
 const SRC = path.join(__dirname, '..', 'src');
 const out = path.join(__dirname, 'shots'); fs.mkdirSync(out, { recursive: true });
 const sheet = path.resolve(process.argv[2] || path.join(out, 'paper_sheet.png'));
@@ -42,8 +42,9 @@ ok(API.every(n => tops.includes(n)), 'the API is declared at the top level: ' + 
 }
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
+  await require('./data').packagesFor(page);
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });

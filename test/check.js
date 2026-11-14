@@ -2,12 +2,16 @@
 //   1. API shape              2. bad and odd input never throws, never hangs, always gives valid LaTeX
 //   3. scale / position invariance, slanted lines   4. determinism   5. options and corrections   6. memory
 //   7. accuracy floor on the composed school set (every 7th expression; --full: all 700)
-// LaTeX validity uses KaTeX when it can be required (npm i katex); otherwise that check is skipped.
+// LaTeX validity uses KaTeX (npm ci); without it the suite stops, unless NIB_NO_KATEX=1 (then that check is skipped).
 'use strict';
 const fs = require('fs'), path = require('path');
 const Nib = require(process.env.NIB || path.join(__dirname, '..', 'dist', 'nib.js'));
 let katex = null;
-for (const p of ['katex', path.join(__dirname, '..', 'demo', 'node_modules', 'katex')]) { try { katex = require(p); break; } catch (e) { /* next */ } }
+if (process.env.NIB_NO_KATEX !== '1') {
+  const k = require('./data').npm('katex', { optional: true });
+  if (!k) { console.log('KaTeX not found: it checks that every output is valid LaTeX. Run npm ci (or set NIB_NO_KATEX=1 to skip that check)'); process.exit(1); }
+  katex = require(k);
+}
 const FULL = process.argv.includes('--full');
 const FLOOR = { exact: 0.87, tokenErr: 0.035 };  // 1.1 scores 0.893 / 0.022 on all 700 (1.0: 0.867 / 0.031)
 
@@ -203,5 +207,5 @@ ok(exact / n >= FLOOR.exact - (FULL ? 0 : 0.05), `exact-match floor ${FLOOR.exac
 ok(ed / len <= FLOOR.tokenErr + (FULL ? 0 : 0.02), `token-error ceiling ${FLOOR.tokenErr}`);
 ok(invalid === 0, `every output is valid LaTeX (${invalid} invalid)`);
 
-console.log(`\n${passes} passed, ${fails} failed${katex ? '' : ' (KaTeX not found: LaTeX validity not checked)'}`);
+console.log(`\n${passes} passed, ${fails} failed${katex ? '' : ' (NIB_NO_KATEX=1: LaTeX validity not checked)'}`);
 process.exit(fails ? 1 : 0);

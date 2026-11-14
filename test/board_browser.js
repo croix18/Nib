@@ -4,8 +4,8 @@
 //   node test/board_browser.js [page=dist/Board.html]
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
-const D = process.env.NIB_DATA || path.join(__dirname, '..', 'training', 'scratch', 'data') + '/';
+const puppeteer = require(require('./data').npm('puppeteer-core'));
+const { need } = require('./data');
 const out = path.join(__dirname, 'shots'); fs.mkdirSync(out, { recursive: true });
 const rows = fs.readFileSync(path.join(__dirname, 'school_synth.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
 const byId = id => rows.find(r => r.id === id);
@@ -14,7 +14,7 @@ const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fai
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 function makeHandFile() {
-  const t = fs.readFileSync(D + 'test.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
+  const t = fs.readFileSync(need('test.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   const pool = {};
   for (const r of t) for (const s of r.symbols) (pool[s.label] = pool[s.label] || []).push(s.strokes.map(k => r.strokes[k]));
   const G = { cap: 0.2, x: 0.376, base: 0.76, desc: 0.944 }, glyphs = {};
@@ -40,7 +40,7 @@ function makeHandFile() {
 (async () => {
   const handFile = makeHandFile();
   const page_ = process.argv[2] || path.join(__dirname, '..', 'dist', 'Board.html');
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));

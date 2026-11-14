@@ -6,7 +6,7 @@
 //   node test/store_browser.js
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
+const puppeteer = require(require('./data').npm('puppeteer-core'));
 let fails = 0;
 const ok = (c, m) => { console.log((c ? '  ok   ' : '  FAIL ') + m); if (!c) fails++; };
 const section = n => console.log(n);
@@ -136,7 +136,7 @@ async function memory(browser, label, url, breaker, waitMs) {
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const HTTP = `http://127.0.0.1:${server.address().port}/store_page.html`, FILE = 'file://' + harness;
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('./data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   try {
     section('1. IndexedDB, a page opened as a file');
     await durable(browser, 'file://', FILE);

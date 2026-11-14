@@ -5,13 +5,13 @@
 // from a screenshot; test/fixtures/board_2026-11-04.json is one). The window is made that size, Solve is turned on.
 'use strict';
 const fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(__dirname, '..', 'demo', 'node_modules', 'puppeteer-core'));
+const puppeteer = require(require('../test/data').npm('puppeteer-core'));
 const [, , file, page_ = path.join(__dirname, '..', 'dist', 'Board.html'), shot] = process.argv;
 if (!file) { console.log('usage: node tools/replay_board.js strokes.json [page] [shot.png]'); process.exit(1); }
 const F = JSON.parse(fs.readFileSync(file, 'utf8'));
 
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
+  const browser = await puppeteer.launch({ executablePath: require('../test/data').needChrome(), headless: true, args: ['--no-sandbox', '--allow-file-access-from-files'] });
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));

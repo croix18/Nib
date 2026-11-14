@@ -83,6 +83,7 @@ function mirror(smp) {   // left-right mirror (keeps time order): a '<' written 
 }
 
 (function loadPool() {
+  if (!process.env.POOL) require('./data').need(POOL);
   const text = fs.readFileSync(POOL, 'utf8');
   let start = 0;
   while (start < text.length) {

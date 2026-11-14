@@ -237,7 +237,7 @@ Restricting the set is the single best way to raise accuracy in a given box.
 - The engine file is about 1 MB (the typeset fonts are 70 KB of it). A new stroke is read in roughly 0.1–0.3 s on a laptop; a whole expression handed over at once takes longer (about 0.05 s per stroke). The reading is done a few milliseconds at a time, so the page stays responsive throughout, even on a crowded board with the processor slowed four times.
 - The typeset view uses the KaTeX fonts, embedded unchanged under the SIL Open Font License 1.1 (`licenses/OFL-KaTeX-fonts.txt`).
 
-`docs/HANDOFF.md` explains how it works and how to change it; `training/README.md` how to retrain it; `node test/check.js` runs the regression suite.
+`docs/HANDOFF.md` explains how it works and how to change it; `training/README.md` how to retrain it. From a fresh clone: `npm ci` (KaTeX, the page fonts, puppeteer-core, opentype.js), `npm run data` (the CROHME test sets and the Board writing the tests read), `npm run build` (`dist/nib.js` from `src/` and `model/nib-data.json`, then the three pages), `npm test` (the node suites; `npm run test:browser` for the ones in Chrome). GitHub runs the same on every push (`.github/workflows/test.yml`).
 
 ## Replicator: your handwriting as a font
 
