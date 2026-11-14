@@ -32,6 +32,23 @@
     const z = pts[pts.length - 1];
     ptr('up', kind, id, z[0], z[1], at(pts.length - 1, n));
   };
+  // the same, at a hand's pace: a frame of the board between every move (as real writing comes — `line` sends every move
+  // at once, so the board draws the stroke only when it is done). During the stroke, `during(i)` is called after move i.
+  window.lineSlow = async (kind, id, pts, o = {}, n = 8, during) => {
+    const frame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    ptr('down', kind, id, pts[0][0], pts[0][1], o);
+    await frame();
+    let m = 0;
+    for (let k = 1; k < pts.length; k++) for (let i = 1; i <= n; i++) {
+      const a = pts[k - 1], b = pts[k];
+      ptr('move', kind, id, a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n, o);
+      await frame();
+      if (during) await during(++m);
+    }
+    const z = pts[pts.length - 1];
+    ptr('up', kind, id, z[0], z[1], o);
+    await frame();
+  };
   window.wheel = (x, y, dx, dy, o = {}) => {
     const cv = c.querySelector('canvas'), r = cv.getBoundingClientRect();
     cv.dispatchEvent(new WheelEvent('wheel', Object.assign({ clientX: r.left + x, clientY: r.top + y, deltaX: dx, deltaY: dy, deltaMode: 0, bubbles: true, cancelable: true }, o)));

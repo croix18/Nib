@@ -135,6 +135,73 @@ const near = (a, b, e = 0.5) => Math.abs(a - b) <= e;
   ok(looks.pxHl[0] > 200 && looks.pxHl[1] > 180 && looks.pxHl[2] < 150, `the highlighter is yellow and see-through: ${looks.pxHl}`);
   const thick = await page.evaluate(() => { const P = c.pad; let n = 0; for (let y = 180; y <= 240; y++) { const p = px(200, y); if (p[2] > 120 && p[0] < 120) n++; } return n; });
   ok(thick >= 10 && thick <= 14, `the marker's line is about 12 px wide (${thick})`);
+  // 1.6.4 (Croix at the Promethean board: "The default pen or marker worked well. The highlighter broke. It made a dot
+  // and didn't track."): written at a hand's pace, a frame between the moves, every tool's stroke is drawn as it goes
+  // and all of it stays when the pen lifts. The highlighter is drawn whole on every frame, and each stroke's drawing was
+  // kept from the first frame it was drawn in — a dot — however far the stroke went on.
+  await reset();
+  const paced = await page.evaluate(async () => {
+    const P = c.pad, out = {};
+    const inked = (x, y) => { const p = px(x, y); return p[3] > 0 && (p[0] < 240 || p[1] < 240 || p[2] < 240); };
+    // (and the highlighter with a finger: the Promethean's touch frame reports touches)
+    for (const [kind, y, by] of [['pen', 120, 'pen'], ['marker', 220, 'pen'], ['highlighter', 320, 'pen'], ['highlighter', 420, 'touch']]) {
+      P.penUntil = 0;
+      P.tool = Object.assign({ kind }, kind === 'highlighter' ? { color: '@hl-yellow', size: 24 } : {});
+      const live = [];
+      await lineSlow(by, 60, [[100, y], [700, y]], {}, 30, m => { if (m === 15) live.push(inked(150, y), inked(380, y)); if (m === 29) live.push(inked(670, y)); });
+      out[kind + (by === 'pen' ? '' : ' by finger')] = { live, after: [inked(110, y), inked(400, y), inked(690, y)], n: P.strokes[P.strokes.length - 1].length, of: P.strokes.length };
+    }
+    return out;
+  });
+  for (const kind of ['pen', 'marker', 'highlighter', 'highlighter by finger']) {
+    const r = paced[kind];
+    ok(r.live.every(Boolean), `${kind}, at a hand's pace: drawn as it goes (start, middle so far, near the pen: ${r.live})`);
+    ok(r.after.every(Boolean), `${kind}: all of it is there when the pen lifts (${r.after}; ${r.n} points)`);
+  }
+  ok(paced['highlighter by finger'].of === 4, 'the four strokes are four strokes (' + paced['highlighter by finger'].of + ')');
+  // a pen stroke that the board redraws while it is being written (an answer coming into focus, another pen, a pause
+  // that tried a shape): all of it is there when the pen lifts
+  await reset();
+  const redrawn = await page.evaluate(async () => {
+    const P = c.pad;
+    const inked = (x, y) => { const p = px(x, y); return p[3] > 0 && (p[0] < 240 || p[1] < 240 || p[2] < 240); };
+    P.penUntil = 0; P.tool = { kind: 'pen' };
+    await lineSlow('pen', 61, [[100, 420], [700, 420]], {}, 30, m => { if (m === 10) P.redraw(); });
+    P.redraw();
+    return [inked(110, 420), inked(400, 420), inked(690, 420)];
+  });
+  ok(redrawn.every(Boolean), `a pen stroke redrawn while it is written is all there after (${redrawn})`);
+  // a pen line held still long enough to become a line, then on (1.6.1's "my pen kept skipping"): the points were kept
+  // since 1.6.1, but the drawing stopped at the pause until 1.6.4
+  await reset();
+  const paused = await page.evaluate(async () => {
+    const P = c.pad;
+    const inked = (x, y) => { const p = px(x, y); return p[3] > 0 && (p[0] < 240 || p[1] < 240 || p[2] < 240); };
+    const frame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    P.penUntil = 0; P.tool = { kind: 'pen' };
+    ptr('down', 'pen', 62, 100, 300);
+    for (let x = 110; x <= 400; x += 10) { ptr('move', 'pen', 62, x, 300); await frame(); }
+    await new Promise(r => setTimeout(r, 900));
+    const held = [...P.ptrs.values()].some(q => q.snap);
+    for (let x = 410; x <= 700; x += 10) { ptr('move', 'pen', 62, x, 300 + (x - 400) * 0.3); await frame(); }
+    ptr('up', 'pen', 62, 700, 390); await frame();
+    return { held, n: P.strokes.length, after: [inked(150, 300), inked(390, 300), inked(550, 345), inked(690, 387)] };
+  });
+  ok(paused.held && paused.n === 1 && paused.after.every(Boolean), `a pen line held still (it became a line) and then carried on: one stroke, all of it drawn (${JSON.stringify(paused)})`);
+  // two at once: a highlighter and a pen (two students), each drawn whole
+  await reset();
+  const both = await page.evaluate(async () => {
+    const P = c.pad;
+    const inked = (x, y) => { const p = px(x, y); return p[3] > 0 && (p[0] < 240 || p[1] < 240 || p[2] < 240); };
+    P.penUntil = 0; P.tool = { kind: 'highlighter', color: '@hl-yellow', size: 24 };
+    const frame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    ptr('down', 'mouse', 70, 100, 150); ptr('down', 'touch', 71, 100, 450);
+    for (let i = 1; i <= 30; i++) { ptr('move', 'mouse', 70, 100 + 20 * i, 150); ptr('move', 'touch', 71, 100 + 20 * i, 450); await frame(); }
+    ptr('up', 'mouse', 70, 700, 150); ptr('up', 'touch', 71, 700, 450);
+    await frame(); P.redraw();
+    return { a: [inked(110, 150), inked(690, 150)], b: [inked(110, 450), inked(690, 450)], n: P.strokes.length };
+  });
+  ok(both.n === 2 && both.a.every(Boolean) && both.b.every(Boolean), `two at once, each drawn whole (${JSON.stringify(both)})`);
 
   console.log('what Nib reads');
   await reset();
