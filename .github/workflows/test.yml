@@ -2,7 +2,21 @@
 # browser suites in the runner's Chrome; some of those time the page with the CPU slowed, so a busy runner can fail them).
 name: test
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 9 * * 1'      # Mondays: the data sources, the pinned packages and the runner's Chrome still work together
+
+# the jobs only read the repository
+permissions:
+  contents: read
+
+# a newer push to the same branch replaces the run in progress
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   node:
@@ -30,6 +44,8 @@ jobs:
       - run: npm run data
       - name: dist/nib.js is what its sources and model build
         run: python3 build.py && git diff --exit-code dist/nib.js
+      - name: The sources name nothing that does not exist (lint)
+        run: npm run lint
       - run: npm test
       - name: Keep the logs
         if: failure()

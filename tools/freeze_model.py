@@ -84,7 +84,7 @@ def cnn_data(model, C):
 
 
 def typeset_data(katex):
-    fm_src = open(need(os.path.join(katex, 'src', 'fontMetricsData.js'), 'KaTeX font metrics')).read()
+    fm_src = open(need(os.path.join(katex, 'src', 'fontMetricsData.js'), 'KaTeX font metrics'), encoding='utf-8').read()
     fm_src = fm_src[fm_src.index('export default') + len('export default'):].strip().rstrip(';')
     fm = json.loads(re.sub(r',(\s*[}\]])', r'\1', fm_src))
     tsfm = {}
@@ -107,13 +107,13 @@ def main():
     except ImportError:
         fail('needs numpy (pip install numpy)')
     model = need(a.model, 'model')
-    classes = open(need(os.path.join(WORK, 'ep', 'classes.txt'), 'class list')).read().split('\n')
+    classes = open(need(os.path.join(WORK, 'ep', 'classes.txt'), 'class list'), encoding='utf-8').read().split('\n')
     geo_p = pick('geometry models', 'geo_models_v2.json', 'geo_models.json')
     lm_p = pick('context model', 'lm_v2.json', 'lm.json')
     prior_p = pick('symbol prior', 'prior.json')
     katex = katex_dir()
-    kver = json.load(open(os.path.join(katex, 'package.json'))).get('version', '?') if os.path.exists(os.path.join(katex, 'package.json')) else '?'
-    geo, lm, prior = json.load(open(geo_p)), json.load(open(lm_p)), json.load(open(prior_p))
+    kver = json.load(open(os.path.join(katex, 'package.json'), encoding='utf-8')).get('version', '?') if os.path.exists(os.path.join(katex, 'package.json')) else '?'
+    geo, lm, prior = json.load(open(geo_p, encoding='utf-8')), json.load(open(lm_p, encoding='utf-8')), json.load(open(prior_p, encoding='utf-8'))
     data = {
         'classes': classes,
         'cnn': cnn_data(model, len(classes)),
@@ -128,7 +128,7 @@ def main():
         print(f'  {what:<14} {p}')
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     out = json.dumps(data, separators=(',', ':'))
-    open(a.out, 'w').write(out)
+    open(a.out, 'w', encoding='utf-8', newline='\n').write(out)
     print(f'{os.path.relpath(os.path.abspath(a.out), ROOT)}: {len(classes)} classes, cnn.id {data["cnn"]["id"]}, {len(out) // 1024} KB')
 
 

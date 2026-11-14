@@ -22,9 +22,9 @@ def font_faces():
 
 
 def main():
-    tpl = open(os.path.join(HERE, 'template.html')).read()
-    core = open(os.path.join(HERE, 'core.js')).read().replace('</script', '<\\/script')
-    nib = open(os.path.join(ROOT, 'dist', 'nib.js')).read().replace('</script', '<\\/script')
+    tpl = open(os.path.join(HERE, 'template.html'), encoding='utf-8').read()
+    core = open(os.path.join(HERE, 'core.js'), encoding='utf-8').read().replace('</script', '<\\/script')
+    nib = open(os.path.join(ROOT, 'dist', 'nib.js'), encoding='utf-8').read().replace('</script', '<\\/script')
     base = tpl.replace('/*CORE_JS*/', core)
 
     # the offline file carries Nib, so "Teach Nib" can fill the memory every local Nib tool shares
@@ -32,7 +32,7 @@ def main():
     off = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
            + off.replace('<div class="app">', '</head>\n<body>\n<div class="app">', 1) + '\n</body>\n</html>\n')
-    open(os.path.join(ROOT, 'dist', 'Replicator.html'), 'w').write(off)
+    open(os.path.join(ROOT, 'dist', 'Replicator.html'), 'w', encoding='utf-8', newline='\n').write(off)
 
     link = ('<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
             '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700'
@@ -40,7 +40,7 @@ def main():
     # a published page's storage is its own, so it has no use for Nib
     art = base.replace('<!--NIB_JS-->', '').replace('/*FONT_FACES*/', '').replace('<!--FONT_LINK-->', link + '<script>window.REPLICATOR_PUBLISHED = true;</script>')
     os.makedirs(os.path.join(ROOT, 'dist', 'artifact'), exist_ok=True)
-    open(os.path.join(ROOT, 'dist', 'artifact', 'replicator.html'), 'w').write(art)
+    open(os.path.join(ROOT, 'dist', 'artifact', 'replicator.html'), 'w', encoding='utf-8', newline='\n').write(art)
     print('Replicator.html', len(off) // 1024, 'KB;  artifact', len(art) // 1024, 'KB')
 
 

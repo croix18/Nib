@@ -6,7 +6,7 @@ ROOT = os.path.dirname(HERE)
 # npm packages: NIB_NPM, else the root node_modules (npm ci), else demo/node_modules (where they were installed before package.json)
 NPM = os.environ.get('NIB_NPM') or next((p for p in (os.path.join(ROOT, 'node_modules'), os.path.join(ROOT, 'demo', 'node_modules'))
                                          if os.path.isdir(p)), os.path.join(ROOT, 'node_modules'))
-KATEX_VER = '0.16.11'
+KATEX_VER = '0.16.47'
 
 
 def b64(path):
@@ -14,7 +14,7 @@ def b64(path):
 
 
 def katex_css():
-    css = open(f'{NPM}/katex/dist/katex.min.css').read()
+    css = open(f'{NPM}/katex/dist/katex.min.css', encoding='utf-8').read()
     def repl(m):
         name = m.group(1)
         return f'src:url(data:font/woff2;base64,{b64(f"{NPM}/katex/dist/fonts/{name}.woff2")}) format("woff2")'
@@ -35,21 +35,21 @@ def font_faces():
 
 
 def main():
-    tpl = open(os.path.join(HERE, 'template.html')).read()
-    engine = open(os.path.join(ROOT, 'dist', 'nib.js')).read().replace('</script', '<\\/script')
+    tpl = open(os.path.join(HERE, 'template.html'), encoding='utf-8').read()
+    engine = open(os.path.join(ROOT, 'dist', 'nib.js'), encoding='utf-8').read().replace('</script', '<\\/script')
     sample_path = os.path.join(HERE, 'sample.json')
-    sample = open(sample_path).read().strip() if os.path.exists(sample_path) else 'null'
+    sample = open(sample_path, encoding='utf-8').read().strip() if os.path.exists(sample_path) else 'null'
     kcss = katex_css()
     base = tpl.replace('/*KATEX_CSS*/', kcss).replace('/*ENGINE*/', engine).replace('/*SAMPLE*/null', sample)
 
     # offline: one complete HTML file, nothing fetched
-    kjs = open(f'{NPM}/katex/dist/katex.min.js').read().replace('</script', '<\\/script')
+    kjs = open(f'{NPM}/katex/dist/katex.min.js', encoding='utf-8').read().replace('</script', '<\\/script')
     off = base.replace('/*FONT_FACES*/', font_faces()).replace('<!--FONT_LINK-->', '').replace('<!--KATEX_JS-->', f'<script>{kjs}</script>')
     off = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
            + off.replace('<div class="app">', '</head>\n<body>\n<div class="app">', 1) + '\n</body>\n</html>\n')
     os.makedirs(os.path.join(ROOT, 'dist'), exist_ok=True)
-    open(os.path.join(ROOT, 'dist', 'Nib.html'), 'w').write(off)
+    open(os.path.join(ROOT, 'dist', 'Nib.html'), 'w', encoding='utf-8', newline='\n').write(off)
 
     # artifact: Google Fonts + KaTeX script from cdnjs; KaTeX CSS and the engine inline
     link = ('<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
@@ -58,7 +58,7 @@ def main():
     art = base.replace('/*FONT_FACES*/', '').replace('<!--FONT_LINK-->', link).replace(
         '<!--KATEX_JS-->', f'<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/{KATEX_VER}/katex.min.js"></script>')
     os.makedirs(os.path.join(ROOT, 'dist', 'artifact'), exist_ok=True)
-    open(os.path.join(ROOT, 'dist', 'artifact', 'nib.html'), 'w').write(art)
+    open(os.path.join(ROOT, 'dist', 'artifact', 'nib.html'), 'w', encoding='utf-8', newline='\n').write(art)
     print('Nib.html', len(off) // 1024, 'KB;  artifact', len(art) // 1024, 'KB')
 
 

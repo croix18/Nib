@@ -106,7 +106,7 @@ def old_tests():
             z.extractall(out, members)
             n = ok = 0
             part = os.path.join(DATA, name + '.jsonl.part')
-            with open(part, 'w') as fo:
+            with open(part, 'w', encoding='utf-8', newline='\n') as fo:
                 for f in sorted(glob.glob(os.path.join(out, folder, '*.inkml'))):
                     n += 1
                     try:

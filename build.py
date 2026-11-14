@@ -9,11 +9,12 @@ import json, os, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, 'model', 'nib-data.json')
-VERSION = '1.6.6'
+VERSION = '1.6.7'
 
 pkg = os.path.join(HERE, 'package.json')
-if os.path.exists(pkg) and json.load(open(pkg)).get('version') != VERSION:
-    sys.exit(f'build.py: package.json says version {json.load(open(pkg)).get("version")}, build.py says {VERSION}: make them the same')
+pkg_version = json.load(open(pkg, encoding='utf-8')).get('version') if os.path.exists(pkg) else VERSION
+if pkg_version != VERSION:
+    sys.exit(f'build.py: package.json says version {pkg_version}, build.py says {VERSION}: make them the same')
 
 if len(sys.argv) > 1:
     model = os.path.abspath(sys.argv[1])
@@ -26,14 +27,14 @@ if len(sys.argv) > 1:
 
 if not os.path.exists(DATA):
     sys.exit(f'build.py: no model data at {DATA} (it is committed: check out model/, or freeze one with tools/freeze_model.py)')
-data = json.load(open(DATA))
-src = ''.join(open(os.path.join(HERE, 'src', f)).read() + '\n' for f in ('core.js', 'recognize.js', 'solve.js', 'neat.js', 'paper.js', 'shapes.js', 'pdf.js', 'store.js', 'scribble.js', 'pad.js', 'api.js')
+data = json.load(open(DATA, encoding='utf-8'))
+src = ''.join(open(os.path.join(HERE, 'src', f), encoding='utf-8').read() + '\n' for f in ('core.js', 'recognize.js', 'solve.js', 'neat.js', 'paper.js', 'shapes.js', 'pdf.js', 'store.js', 'scribble.js', 'pad.js', 'api.js')
               if os.path.exists(os.path.join(HERE, 'src', f)))
 src = src.replace("'use strict';\n", '')
 src = src.replace('/*__DATA__*/ null', json.dumps(data, separators=(',', ':')))
 src = src.replace('__VERSION__', VERSION)
-head = open(os.path.join(HERE, 'src', 'header.txt')).read().replace('__VERSION__', VERSION) if os.path.exists(os.path.join(HERE, 'src', 'header.txt')) else ''
+head = open(os.path.join(HERE, 'src', 'header.txt'), encoding='utf-8').read().replace('__VERSION__', VERSION) if os.path.exists(os.path.join(HERE, 'src', 'header.txt')) else ''
 out = head + "(function (global) {\n'use strict';\n" + src + "})(typeof window !== 'undefined' ? window : globalThis);\n"
 os.makedirs(os.path.join(HERE, 'dist'), exist_ok=True)
-open(os.path.join(HERE, 'dist', 'nib.js'), 'w').write(out)
+open(os.path.join(HERE, 'dist', 'nib.js'), 'w', encoding='utf-8', newline='\n').write(out)
 print('dist/nib.js', len(out) // 1024, 'KB, cnn.id', data['cnn']['id'])

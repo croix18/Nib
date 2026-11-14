@@ -21,20 +21,20 @@ def font_faces():
 
 
 def main():
-    tpl = open(os.path.join(HERE, 'template.html')).read()
-    nib = open(os.path.join(ROOT, 'dist', 'nib.js')).read().replace('</script', '<\\/script')
-    board = open(os.path.join(HERE, 'board.js')).read().replace('</script', '<\\/script')
+    tpl = open(os.path.join(HERE, 'template.html'), encoding='utf-8').read()
+    nib = open(os.path.join(ROOT, 'dist', 'nib.js'), encoding='utf-8').read().replace('</script', '<\\/script')
+    board = open(os.path.join(HERE, 'board.js'), encoding='utf-8').read().replace('</script', '<\\/script')
     base = tpl.replace('/*BOARD_SCRIPT*/', board).replace('/*ENGINE*/', nib)
     off = base.replace('/*FONT_FACES*/', font_faces()).replace('<!--FONT_LINK-->', '')
     off = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
            '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
            + off.replace('<div class="board"', '</head>\n<body>\n<div class="board"', 1) + '\n</body>\n</html>\n')
-    open(os.path.join(ROOT, 'dist', 'Board.html'), 'w').write(off)
+    open(os.path.join(ROOT, 'dist', 'Board.html'), 'w', encoding='utf-8', newline='\n').write(off)
     link = ('<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
             '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap">')
     art = base.replace('/*FONT_FACES*/', '').replace('<!--FONT_LINK-->', link)
     os.makedirs(os.path.join(ROOT, 'dist', 'artifact'), exist_ok=True)
-    open(os.path.join(ROOT, 'dist', 'artifact', 'board.html'), 'w').write(art)
+    open(os.path.join(ROOT, 'dist', 'artifact', 'board.html'), 'w', encoding='utf-8', newline='\n').write(art)
     print('Board.html', len(off) // 1024, 'KB;  artifact', len(art) // 1024, 'KB')
 
 

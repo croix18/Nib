@@ -11,8 +11,9 @@ What is in it:
   and `id` = `d74ed302a03a` (the first 12 hex digits of the SHA-1 of the int8 weights and scales)
 - `join`, `rel`: the stroke-join and layout-relation MLPs (`training/geo_models_v2.py`)
 - `lm`: the context model (`training/lm_v2.py`); `prior`: the school-vs-CROHME symbol prior (`training/prior.py`)
-- `tsfm`, `tsfont`: KaTeX 0.16.11's metrics and three of its fonts for the typeset view (SIL Open Font License 1.1,
-  `licenses/OFL-KaTeX-fonts.txt`)
+- `tsfm`, `tsfont`: KaTeX's metrics and three of its fonts for the typeset view (SIL Open Font License 1.1,
+  `licenses/OFL-KaTeX-fonts.txt`); frozen from KaTeX 0.16.11, and byte for byte the same from 0.16.47, the version
+  `package.json` pins now
 
 The classifier is `model_v4s50` (shipped in 1.5.3): v3 fine-tuned on the owner's Board drill, blended halfway back to
 v3 in weight space (`training/README.md` §2c).
