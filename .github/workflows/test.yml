@@ -57,6 +57,8 @@ jobs:
           path: training/scratch/data
           key: nib-data-${{ hashFiles('tools/fetch_data.py', 'training/parse_crohme.py', 'tools/training_to_jsonl.py', 'test/stress.js', 'test/compose.js', 'test/school_synth.jsonl', 'test/fixtures/training_*.json') }}
       - run: npm run data
+      - name: The pages in dist/ are what the build makes (and dist/artifact/, which the suites open, is built)
+        run: npm run build && git diff --exit-code dist
       - name: The browser suites, in the runner's Chrome
         run: CHROME="$(command -v google-chrome)" npm run test:browser
       - name: Keep the logs and screenshots
