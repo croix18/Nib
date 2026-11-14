@@ -1,4 +1,4 @@
-/*! Nib 1.6.4 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+/*! Nib 1.6.5 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -3213,7 +3213,7 @@ function placeAnswers(out, lines, em, ctx, P, opts) {
   for (const line of out.lines) {
     const nodes = opts.answers[line.li], row = lines[line.li], eq = row[row.length - 1];
     if (!nodes || !nodes.length || !eq || eq.k !== 's' || !ANSWER_AFTER.has(eq.label) || eq.sup || eq.sub) continue;
-    const units = answerUnitsOf(nodes, sample, P.ink);
+    const units = answerUnitsOf(nodes, (opts.sampleFor && opts.sampleFor(line.li)) || sample, P.ink);   // (sampleFor: the look each answer keeps, 1.6.5)
     if (!units) continue;
     const box = rowBox(units, 1, P, ctx), gap = spaceBetween('rel', 'ord') + (P.ink ? (ctx.gaps || { oo: 0.13 }).oo : 0);
     let x0, e;
@@ -3550,7 +3550,7 @@ function sampleDist(A, B) {
   return Math.min(f, r) / n;                                 // written either way round
 }
 function sampleBook(res, input, hand) {
-  const ink = inkOf(input), by = new Map(), eqPart = new Set();
+  const ink = inkOf(input), by = new Map(), eqPart = new Set(), src = new WeakMap();
   ((res && res.parts) || []).forEach((pt, k) => { if (((pt.result && pt.result.symbols) || []).some(sy => SAMPLE_REL.has(sy.label))) eqPart.add(k); });
   const whole = !(res && res.parts);                       // one expression: all of it is the problem's own
   for (const sy of (res && res.symbols) || []) {
@@ -3560,6 +3560,7 @@ function sampleBook(res, input, hand) {
     const part = typeof sy.part === 'number' ? sy.part : -1;
     if (!by.has(sy.label)) by.set(sy.label, []);
     by.get(sy.label).push({ p, pts, part, eq: whole || eqPart.has(part), shape: null });
+    src.set(pts, sy.strokes.filter(i => ink[i] && ink[i].length).map(i => input[i]));   // the board's own strokes it is
   }
   const refOf = label => { const ch = HAND_CHAR[label] || label; return (hand && hand[ch] && hand[ch].length && hand[ch]) || DEFAULT_GLYPHS[label] || null; };
   // the most typical of a list: the least summed distance in shape to the others and to the reference glyph
@@ -3596,6 +3597,7 @@ function sampleBook(res, input, hand) {
   };
   const book = make(-1);
   book.near = k => (typeof k === 'number' && k >= 0 ? make(k) : book);
+  book.srcOf = pts => (pts && src.get(pts)) || null;      // a glyph from the board: the strokes it was written as
   return book;
 }
 
@@ -5444,7 +5446,7 @@ function pdfMake(pages, meta) {
   if (title) info += ' /Title ' + pdfText(title);
   if (M.author) info += ' /Author ' + pdfText(M.author);
   if (M.subject) info += ' /Subject ' + pdfText(M.subject);
-  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.4) /CreationDate (' + pdfDate(date) + ') >>');
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.5) /CreationDate (' + pdfDate(date) + ') >>');
 
   for (let i = 0; i < pages.length; i++) {
     const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
@@ -5675,6 +5677,584 @@ function storeImageIds() {
 // → true when pictures outlive the page: IndexedDB is open and holds every one of them
 function storeImagesDurable() { return storeOpen().then(db => !!db && storeMem.size === 0).catch(() => false); }
 
+// ================================================================== scribble out
+// A pen or marker stroke that goes back and forth over writing — scribbled out — rubs out what it lies over (Croix,
+// 8 Nov 2026: "Scribble out to erase", then "I've experienced other apps that claim scribble to erase works and it
+// sucks. I want nib and by extension deckhand to work super well.").
+//
+// Two questions, asked of every stroke as it is lifted, and both have to say yes:
+//
+// scribbleOf(pts, z) — is it a scribble, by its shape alone? (z: screen px per unit)
+//   - a zig-zag: five legs or more back and forth along one line, each at least half the longest, nearly all of its
+//     turns sharp (it goes back the way it came: the round turns of an 8, an m, a ∞ or a cursive word are not), the
+//     path long and close-packed for its size (L² / hull area ≥ 20, and ≥ 25 with only five legs: a W or an M written
+//     over a symbol is not), the legs at least 12 px;
+//   - a coil: loops that cross each other five times or more, packed as tight (L² / area ≥ 45) and filling what they
+//     span (a circle gone round three times to ring an answer is not: its middle is empty), at least 20 px across.
+//
+// scribbleErase(sc, items, z) — what does it rub out? Only what it lies over: a stroke (walked in small even steps) at
+// least 60% inside the scribble and within its band (a little more than half the gap between its passes) goes; one it
+// only clips stays; a symbol most of which is under it goes whole (its dot or its small parts with it). A clear scribble
+// that falls short of a symbol's edges, or covers most of it and not the rest, takes the symbols it is on when nothing
+// else is under it (1.6.5: a hand at the board is not that careful). A scribble over clear paper rubs out nothing and
+// stays, as ink. Shading is not scribbling out: a scribble that fills a space bounded by lines (its turns on the lines
+// on both sides — or at a drawn straight line, one side of a region — or inside a closed shape) and has only a little
+// writing inside it is shading, and the lines of a drawing (a number line's ticks, a fraction bar's dividers, the dot on
+// a number line) are not taken with it: a straight mark joined to a long line it does not cover, or a mark a long line
+// runs through, stays.
+//
+// A scribble the board hears in pieces (a pen off the glass for a moment at a turn) is put together by the pad
+// (Pad._scribbleJoin) and asked these questions whole.
+
+// the bars (measured: see test/scribble_check.js)
+const SCR = { share: 0.6, group: 0.5, fin: 0.75, deep: 0.125 };
+function scrLen(pts) { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; }
+function scrBox(pts) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+  return [x0, y0, x1, y1];
+}
+function scrHull(pts) {
+  const P = pts.map(p => [p[0], p[1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (P.length < 3) return P;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+function scrArea(poly) { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p[0] * q[1] - q[0] * p[1]; } return Math.abs(a) / 2; }
+// is p inside the hull (a convex polygon with a positive signed area, as scrHull makes it) by at least `m` (m < 0: or
+// that close outside it)?
+function scrInHull(p, hull, m) {
+  const n = hull.length;
+  if (n < 3) return false;
+  for (let i = 0; i < n; i++) {
+    const a = hull[i], b = hull[(i + 1) % n], ex = b[0] - a[0], ey = b[1] - a[1], L = Math.hypot(ex, ey) || 1;
+    if ((ex * (p[1] - a[1]) - ey * (p[0] - a[0])) / L < m) return false;   // signed distance from the edge's line
+  }
+  return true;
+}
+// is p inside any polygon (even-odd)?
+function scrInPoly(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1] || 1e-12) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+// the stroke's two main axes (along its longest spread, and across it), and the four plain ones
+function scrAxes(pts) {
+  const n = pts.length; let mx = 0, my = 0;
+  for (const p of pts) { mx += p[0]; my += p[1]; }
+  mx /= n; my /= n;
+  let a = 0, b = 0, c = 0;
+  for (const p of pts) { const dx = p[0] - mx, dy = p[1] - my; a += dx * dx; b += dx * dy; c += dy * dy; }
+  const th = 0.5 * Math.atan2(2 * b, a - c), r = Math.SQRT1_2;
+  return [[Math.cos(th), Math.sin(th)], [-Math.sin(th), Math.cos(th)], [1, 0], [0, 1], [r, r], [r, -r]];
+}
+// legs back and forth along an axis: a turn is where the stroke comes back 35% of its reach from the furthest it went;
+// a leg counts when it spans at least half the reach. Also where each turn is.
+function scrLegs(pts, ax) {
+  const s = pts.map(p => p[0] * ax[0] + p[1] * ax[1]);
+  let lo = Infinity, hi = -Infinity;
+  for (const v of s) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const R = hi - lo;
+  if (!(R > 0)) return { n: 0, R: 0, turns: [] };
+  const h = 0.35 * R;
+  let dir = 0, ext = s[0], ei = 0, start = s[0];
+  const legs = [], turns = [];
+  for (let i = 0; i < s.length; i++) {
+    const v = s[i];
+    if (dir >= 0 && v > ext) { ext = v; ei = i; } else if (dir <= 0 && v < ext) { ext = v; ei = i; }
+    if (dir >= 0 && ext - v >= h && (dir === 1 || ext - start >= h)) { legs.push(Math.abs(ext - start)); turns.push(ei); start = ext; dir = -1; ext = v; ei = i; }
+    else if (dir <= 0 && v - ext >= h && (dir === -1 || start - ext >= h)) { legs.push(Math.abs(ext - start)); turns.push(ei); start = ext; dir = 1; ext = v; ei = i; }
+    else if (dir === 0) { if (v - start >= h) dir = 1; else if (start - v >= h) dir = -1; }
+  }
+  legs.push(Math.abs(ext - start));
+  return { n: legs.filter(L => L >= 0.5 * R).length, R, turns };
+}
+// the share of the turns that are sharp: the way in and the way out, 15% of the reach either side, at least 110° apart
+function scrSharp(pts, turns, R) {
+  if (!turns.length) return 0;
+  const w = 0.15 * R;
+  let sharp = 0;
+  for (const t of turns) {
+    let a = t, b = t, d = 0;
+    while (a > 0 && d < w) { d += Math.hypot(pts[a][0] - pts[a - 1][0], pts[a][1] - pts[a - 1][1]); a--; }
+    d = 0;
+    while (b < pts.length - 1 && d < w) { d += Math.hypot(pts[b + 1][0] - pts[b][0], pts[b + 1][1] - pts[b][1]); b++; }
+    const ux = pts[t][0] - pts[a][0], uy = pts[t][1] - pts[a][1], vx = pts[b][0] - pts[t][0], vy = pts[b][1] - pts[t][1];
+    const n = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+    if (n > 0 && Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / n))) >= 110 * Math.PI / 180) sharp++;
+  }
+  return sharp / turns.length;
+}
+// how many of its legs lie on top of an earlier leg (not the one just before): a scribble's legs move on, a stroke
+// gone over again and again comes back over itself — a Z written back and forth three times turns like a zig-zag,
+// but each pass lies on the last. A leg lies on an earlier one when it runs along it the whole way (its points, on
+// average, within a tenth of its length and at most d) from end to end (both ends near that leg's ends).
+function scrRepeats(pts, turns, d) {
+  const cut = [0].concat(turns, [pts.length - 1]), legs = [];
+  for (let k = 0; k + 1 < cut.length; k++) if (cut[k + 1] > cut[k]) { const L = pts.slice(cut[k], cut[k + 1] + 1); legs.push({ pts: L, len: scrLen(L) }); }
+  let n = 0, of = 0;
+  for (let k = 2; k < legs.length; k++) {
+    const leg = legs[k], m = Math.max(1, Math.floor(leg.pts.length / 8)), probe = [];
+    if (!(leg.len > 0)) continue;
+    for (let i = 0; i < leg.pts.length; i += m) probe.push(leg.pts[i]);
+    const near = Math.min(d, Math.max(0.4 * d, 0.1 * leg.len)), ends = Math.max(1.2 * d, 0.15 * leg.len);
+    const a0 = leg.pts[0], a1 = leg.pts[leg.pts.length - 1];
+    let hit = false;
+    for (let j = 0; j <= k - 2 && !hit; j++) {
+      const o = legs[j].pts, b0 = o[0], b1 = o[o.length - 1], dd = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+      if (!((dd(a0, b0) <= ends && dd(a1, b1) <= ends) || (dd(a0, b1) <= ends && dd(a1, b0) <= ends))) continue;
+      let t = 0;
+      for (const p of probe) t += scrDist(p, o);
+      if (t / probe.length <= near) hit = true;
+    }
+    of++;
+    if (hit) n++;
+  }
+  return of ? n / of : 0;
+}
+// how bent its legs are (between its turns): the middle one's path length over the distance it covers. A scribble's
+// legs are straight lines; a curved stroke gone over again and again (a 3, an S written over twice to darken it) turns
+// back at its ends like a scribble, but each pass is the curve
+function scrBent(pts, turns) {
+  const cut = [0].concat(turns, [pts.length - 1]), r = [];
+  for (let k = 0; k + 1 < cut.length; k++) {
+    const a = cut[k], b = cut[k + 1];
+    if (b - a < 2) continue;
+    const ch = Math.hypot(pts[b][0] - pts[a][0], pts[b][1] - pts[a][1]);
+    // (the leg a little smoothed: a finger's jitter on a touch frame is not a curve)
+    const leg = pts.slice(a, b + 1), sm = leg.map((p, i) => i === 0 || i === leg.length - 1 ? p : [0.25 * leg[i - 1][0] + 0.5 * p[0] + 0.25 * leg[i + 1][0], 0.25 * leg[i - 1][1] + 0.5 * p[1] + 0.25 * leg[i + 1][1]]);
+    if (ch > 0) r.push(scrLen(sm) / ch);
+  }
+  r.sort((x, y) => x - y);
+  return r.length ? r[r.length >> 1] : 1;
+}
+// the stroke walked in steps of about `step` (a fast stroke's far-apart samples and a slow one's crowded ones count alike)
+function scrWalk(pts, step) {
+  if (pts.length < 2 || !(step > 0)) return pts.map(p => [p[0], p[1]]);
+  const out = [[pts[0][0], pts[0][1]]];
+  let carry = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!L) continue;
+    let t = step - carry;
+    while (t <= L) { out.push([a[0] + (b[0] - a[0]) * t / L, a[1] + (b[1] - a[1]) * t / L]); t += step; }
+    carry = L - (t - step);
+  }
+  const e = pts[pts.length - 1], f = out[out.length - 1];
+  if (Math.hypot(e[0] - f[0], e[1] - f[1]) > step * 0.3) out.push([e[0], e[1]]);
+  return out;
+}
+function scrCross(a, b, c, d) {
+  const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+// how it turns: going round and round one way (a ring, a coil: the turning adds up) or back and forth (a zig-zag: it
+// cancels out). The path walked in about 160 steps (none under 3 px: a hand's jitter is not turning); true when it
+// turns one way through two whole turns or more, and most of its turning is that way
+function scrLoopy(pts, len, z) {
+  const q = scrWalk(pts, Math.max(len / 160, 3 / (z > 0 ? z : 1), 1e-6));
+  let sum = 0, abs = 0;
+  for (let i = 2; i < q.length; i++) {
+    const ax = q[i - 1][0] - q[i - 2][0], ay = q[i - 1][1] - q[i - 2][1], bx = q[i][0] - q[i - 1][0], by = q[i][1] - q[i - 1][1];
+    const a = Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
+    sum += a; abs += Math.abs(a);
+  }
+  return Math.abs(sum) >= 4 * Math.PI && Math.abs(sum) >= 0.5 * abs;
+}
+// how much of the path runs along another part of itself, within d: a stroke gone over again (to darken it, or to
+// mend it) runs along itself nearly all the way; a scribble only where it turns. The path walked in steps of d/2;
+// what is within d of a point farther along it than 3 d (not its own neighbours), as a share of the points.
+function scrOverlap(pts, d) {
+  const q = scrWalk(pts, d / 2), cell = new Map(), key = (x, y) => x + ',' + y;
+  q.forEach((p, i) => { const k = key(Math.floor(p[0] / d), Math.floor(p[1] / d)); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(i); });
+  let n = 0;
+  for (let i = 0; i < q.length; i++) {
+    const p = q[i], cx = Math.floor(p[0] / d), cy = Math.floor(p[1] / d);
+    let hit = false;
+    for (let dx = -1; dx <= 1 && !hit; dx++) for (let dy = -1; dy <= 1 && !hit; dy++) {
+      for (const j of cell.get(key(cx + dx, cy + dy)) || []) if (Math.abs(i - j) > 6 && Math.hypot(q[j][0] - p[0], q[j][1] - p[1]) <= d) { hit = true; break; }
+    }
+    if (hit) n++;
+  }
+  return q.length ? n / q.length : 0;
+}
+// times the path crosses itself (segments that are not neighbors), on the path walked in about 80 steps
+function scrCrossings(pts, len) {
+  const q = scrWalk(pts, Math.max(len / 80, 1e-6));
+  let n = 0;
+  for (let i = 0; i + 1 < q.length; i++) for (let j = i + 2; j + 1 < q.length; j++) if (scrCross(q[i], q[i + 1], q[j], q[j + 1])) n++;
+  return n;
+}
+// the distance from a point to a path
+function scrDist(q, path) {
+  let best = Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const a = path[i], b = path[i + 1] || a, dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+    const t = L ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L)) : 0;
+    const d = Math.hypot(a[0] + t * dx - q[0], a[1] + t * dy - q[1]);
+    if (d < best) { best = d; if (d === 0) break; }
+  }
+  return best;
+}
+// the path cut into pieces of about `n` points each, with their boxes (to measure distances to it quickly)
+function scrChunks(path, n) {
+  const out = [];
+  for (let i = 0; i < path.length - 1; i += n) {
+    const part = path.slice(i, Math.min(path.length, i + n + 1));
+    out.push({ part, box: scrBox(part) });
+  }
+  if (!out.length && path.length) out.push({ part: path, box: scrBox(path) });
+  return out;
+}
+function scrNear(q, chunks, r) {
+  for (const c of chunks) {
+    const b = c.box;
+    if (q[0] < b[0] - r || q[0] > b[2] + r || q[1] < b[1] - r || q[1] > b[3] + r) continue;
+    if (scrDist(q, c.part) <= r) return true;
+  }
+  return false;
+}
+// the distance from p to the path, with its pieces' boxes to skip the far ones
+function scrDistC(p, chunks) {
+  let best = Infinity;
+  for (const c of chunks) {
+    const b = c.box, dx = Math.max(b[0] - p[0], 0, p[0] - b[2]), dy = Math.max(b[1] - p[1], 0, p[1] - b[3]);
+    if (dx * dx + dy * dy >= best * best) continue;
+    const d = scrDist(p, c.part);
+    if (d < best) best = d;
+  }
+  return best;
+}
+// how the path covers its hull: the distances from a grid over the hull to the path, sorted
+function scrReach(hull, chunks, box) {
+  const W = box[2] - box[0], H = box[3] - box[1], step = Math.max(Math.max(W, H) / 32, Math.min(W, H) / 12, 1e-6);
+  const out = [];
+  for (let y = box[1] + step / 2; y < box[3]; y += step) for (let x = box[0] + step / 2; x < box[2]; x += step) {
+    const p = [x, y];
+    if (scrInHull(p, hull, 0)) out.push(scrDistC(p, chunks));
+  }
+  return out.sort((a, b) => a - b);
+}
+function scrFill(dists, r) { let n = 0; for (const d of dists) if (d <= r) n++; return dists.length ? n / dists.length : 0; }
+function scrQuant(dists, q) { return dists.length ? dists[Math.min(dists.length - 1, Math.floor(q * dists.length))] : 0; }
+function scribbleOf(pts, z) {
+  z = z > 0 ? z : 1;
+  if (!Array.isArray(pts) || pts.length < 8) return null;
+  for (const p of pts) if (!(p && isFinite(p[0]) && isFinite(p[1]))) return null;
+  const box = scrBox(pts), big = Math.max(box[2] - box[0], box[3] - box[1]);
+  if (big * z < 12) return null;                                   // a jot, not a scribble
+  const len = scrLen(pts), hull = scrHull(pts), A = Math.max(scrArea(hull), 1e-9), dense = len * len / A;
+  if (dense < 20) return null;
+  const axes = scrAxes(pts), span = ax => { let lo = Infinity, hi = -Infinity; for (const p of pts) { const v = p[0] * ax[0] + p[1] * ax[1]; if (v < lo) lo = v; if (v > hi) hi = v; } return hi - lo; };
+  // it spans something across its length: a line gone over again and again (a 1 or a bar retraced) is not a scribble
+  if (span(axes[1]) * z < 8) return null;
+  let sc = null;
+  for (const ax of axes) {
+    const L = scrLegs(pts, ax);
+    // legs at least 12 px, five or more, each at least half the longest; across most of the stroke — or, many and
+    // close-packed, moving along a line of writing (up and down over a whole equation)
+    if (!(L.R * z >= 12 && (L.R >= 0.25 * big || (L.n >= 8 && dense >= 40)) && L.n >= 5 && len >= 4 * L.R)) continue;
+    if (L.n < 6 && dense < 25) continue;                              // five legs, loosely: an M or a W written over a 5
+    if (span([-ax[1], ax[0]]) < Math.max(8 / z, 0.12 * L.R)) continue;   // its legs move on as they go back and forth
+    if (sc && L.n <= sc.legs) continue;
+    if (scrSharp(pts, L.turns, L.R) < 0.7) continue;
+    if (scrBent(pts, L.turns) > 1.3) continue;                        // its legs run straight: not a curve gone over again
+    // and they move on: not a Z, an N or a W gone over again and again (its legs come back on each other)
+    if (scrRepeats(pts, L.turns, 2.5 / z) >= 0.4) continue;
+    sc = { kind: 'zigzag', legs: L.n, reach: L.R, axis: ax, turns: L.turns.map(i => [pts[i][0], pts[i][1]]) };
+  }
+  const gap = A / len;                                             // its passes are about this far apart
+  const chunks = scrChunks(pts, 12);
+  let dists = null;
+  const reach = () => dists || (dists = scrReach(hull, chunks, box));
+  // it fills what it spans: a stroke gone over again and again along the same lines (a V retraced, a ring) does not
+  if (sc && scrFill(reach(), gap) < 0.6) sc = null;
+  // and it is not a stroke gone over again: a letter or a digit written over to darken it runs along itself nearly all
+  // the way and fills little of what it spans (a scribble runs along itself only where it turns; a tangle that crosses
+  // itself everywhere still fills what it spans)
+  if (sc && scrOverlap(pts, 1.5 / z) >= 0.9 && scrFill(reach(), gap) < 0.67) sc = null;
+  // a coil goes round and round one way, crossing itself (a stroke gone over again crosses itself too, back and forth)
+  if (!sc && dense >= 45 && big * z >= 20 && scrLoopy(pts, len, z)) {
+    const x = scrCrossings(pts, len);
+    if (x >= 5 && scrFill(reach(), gap) >= 0.7) sc = { kind: 'coil', legs: x, reach: big, axis: null, turns: [] };
+  }
+  if (!sc) return null;
+  dists = reach();
+  sc.gap = gap;
+  // round and round: it covers only what it passes over (a ring around an answer passes over nothing)
+  sc.loopy = scrLoopy(pts, len, z);
+  // what it covers: what is inside it and no farther from its path than nearly all of the inside is (its passes need
+  // not be even)
+  // (never far from its path: a ring gone round three times has nothing in its middle)
+  sc.band = Math.min(Math.max(1.25 * scrQuant(dists, 0.9), 0.75 * gap, 3 / z), 2 * gap, 0.35 * sc.reach);
+  sc.box = box; sc.hull = hull; sc.area = A; sc.len = len;
+  sc.path = pts.map(p => [p[0], p[1]]);
+  sc.chunks = chunks;
+  return sc;
+}
+// how deep inside the hull p is (its distance to the nearest edge; below 0 outside)
+function scrDepth(p, hull) {
+  let best = Infinity;
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[i], b = hull[(i + 1) % hull.length], ex = b[0] - a[0], ey = b[1] - a[1], L = Math.hypot(ex, ey) || 1;
+    const d = (ex * (p[1] - a[1]) - ey * (p[0] - a[0])) / L;
+    if (d < best) best = d;
+  }
+  return hull.length >= 3 ? best : -Infinity;
+}
+// what a scribble lies over: of a stroke's points (walked in small steps), how many are inside the scribble and
+// within its band (share), how many are inside it at all (fin), and how deep inside it the stroke is (the median of
+// its points' depths; 0 for those outside). {got, of, share, fin, depth}
+function scribbleCovers(sc, pts, z) {
+  z = z > 0 ? z : 1;
+  if (!sc || !Array.isArray(pts) || !pts.length) return { got: 0, of: 0, share: 0, fin: 0, depth: 0 };
+  const m = sc.band, B = sc.box, b = scrBox(pts);
+  const size = Math.max(b[2] - b[0], b[3] - b[1]), step = Math.max(0.5 / z, Math.min(m / 2, size / 12 || m / 2));
+  // nowhere near it: none of it (counted as the points it would be walked in, for a symbol's share)
+  if (b[2] < B[0] - m || b[0] > B[2] + m || b[3] < B[1] - m || b[1] > B[3] + m) return { got: 0, of: Math.max(1, Math.round(scrLen(pts) / step) + 1), share: 0, fin: 0, depth: 0 };
+  const q = scrWalk(pts, step);
+  let got = 0, inside = 0;
+  const deep = [];
+  for (const p of q) {
+    const d = scrDepth(p, sc.hull);
+    if (d >= 0) inside++;
+    if (d >= -0.75 / z && scrNear(p, sc.chunks, m)) { got++; deep.push(Math.max(d, 0)); } else deep.push(0);
+  }
+  deep.sort((x, y) => x - y);
+  const n = q.length;
+  return { got, of: n, share: n ? got / n : 0, fin: n ? inside / n : 0, depth: deep.length ? deep[deep.length >> 1] : 0 };
+}
+// does the scribble's path pass over a stroke: cross it, or come within a pen's width of it?
+function scrPasses(sc, pts, z) {
+  const q = scrWalk(pts, Math.max(1 / z, scrLen(pts) / 40));
+  const b = scrBox(q), r = 1.5 / z;
+  for (const c of sc.chunks) {
+    if (c.box[2] < b[0] - r || c.box[0] > b[2] + r || c.box[3] < b[1] - r || c.box[1] > b[3] + r) continue;
+    const P = c.part;
+    for (let i = 0; i + 1 < P.length; i++) for (let j = 0; j + 1 < q.length; j++) if (scrCross(P[i], P[i + 1], q[j], q[j + 1])) return true;
+  }
+  for (const p of q) if (scrDistC(p, sc.chunks) <= r) return true;
+  return false;
+}
+// how many times the scribble's path crosses a stroke
+function scrCrossings2(sc, pts, z) {
+  const q = scrWalk(pts, Math.max(1 / z, scrLen(pts) / 40)), b = scrBox(q);
+  let n = 0;
+  for (const c of sc.chunks) {
+    if (c.box[2] < b[0] || c.box[0] > b[2] || c.box[3] < b[1] || c.box[1] > b[3]) continue;
+    const P = c.part;
+    for (let i = 0; i + 1 < P.length; i++) for (let j = 0; j + 1 < q.length; j++) if (scrCross(P[i], P[i + 1], q[j], q[j + 1])) n++;
+  }
+  return n;
+}
+// does the scribble's path go into a box (any piece of it inside, or across it)?
+function scrEnters(sc, b) {
+  if (b[2] < b[0] || b[3] < b[1]) return false;
+  const inB = p => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+  const P = sc.path;
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], c = P[i + 1];
+    if (inB(a)) return true;
+    if (!c) break;
+    // the segment against the box's edges
+    const E = [[[b[0], b[1]], [b[2], b[1]]], [[b[2], b[1]], [b[2], b[3]]], [[b[2], b[3]], [b[0], b[3]]], [[b[0], b[3]], [b[0], b[1]]]];
+    if (Math.max(a[0], c[0]) < b[0] || Math.min(a[0], c[0]) > b[2] || Math.max(a[1], c[1]) < b[1] || Math.min(a[1], c[1]) > b[3]) continue;
+    for (const [e0, e1] of E) if (scrCross(a, c, e0, e1)) return true;
+  }
+  return false;
+}
+// the closest two strokes come, and how many times they cross
+function scrMeet(a, b) {
+  let best = Infinity, cross = 0;
+  const A = a.length > 1 ? a : [a[0], a[0]], B = b.length > 1 ? b : [b[0], b[0]];
+  for (let i = 0; i + 1 < A.length; i++) {
+    for (let j = 0; j + 1 < B.length; j++) {
+      if (scrCross(A[i], A[i + 1], B[j], B[j + 1])) { cross++; best = 0; }
+    }
+  }
+  if (best > 0) for (const p of A) { const d = scrDist(p, B); if (d < best) best = d; }
+  if (best > 0) for (const p of B) { const d = scrDist(p, A); if (d < best) best = d; }
+  return { d: best, cross };
+}
+// What a scribble rubs out, of `items` ([{pts, group?, closed?, fixed?}] in world units: the strokes it may take — pen
+// and marker writing and shapes — and those it may not (fixed: a number line under a dot is a line all the same); not
+// highlighters, text or pictures). Strokes with the same group are one symbol. {erase: [indexes], why, shares}
+function scribbleErase(sc, items, z) {
+  z = z > 0 ? z : 1;
+  const out = { erase: [], why: '', shares: [] };
+  if (!sc || !Array.isArray(items) || !items.length) { out.why = 'nothing under it'; return out; }
+  const S = items.map((it, i) => {
+    const pts = it && Array.isArray(it.pts) ? it.pts : [];
+    if (!pts.length) return null;
+    const b = scrBox(pts), len = scrLen(pts), size = Math.max(b[2] - b[0], b[3] - b[1]);
+    const c = scribbleCovers(sc, pts, z);
+    return { i, pts, b, len, size, share: c.share, got: c.got, of: c.of, fin: c.fin, depth: c.depth, group: it.group == null ? null : it.group, closed: !!it.closed, fixed: !!it.fixed, scr: null };
+  });
+  out.shares = S.map(s => (s ? s.share : 0));
+  const near = S.filter(s => s && s.share > 0);
+  if (!near.length) { out.why = 'nothing under it'; return out; }
+  // an earlier scribble under this one (shading gone over again, or a scribble that fell short and stayed as ink) is
+  // never what a scribble is for: it goes only with writing this one takes
+  for (const s of near) s.scr = s.share >= 0.3 && s.pts.length >= 8 && !!scribbleOf(s.pts, z);
+  // a stroke mostly under it — inside it all but a little (the writing beside what was scribbled out, which its edge
+  // reaches over, sticks out of it), or deep inside it; a symbol mostly under it, whole (its parts partly under it,
+  // and its small parts)
+  const hb = sc.box, deep = SCR.deep * Math.min(hb[2] - hb[0], hb[3] - hb[1]);
+  const inside = s => (s.fin >= SCR.fin && s.depth >= 0.25 * deep) || s.depth >= deep;   // (a line it only lies along: neither)
+  // going round and round, it passes over writing (a blot, a coil along a line) — or round it, over nothing (a ring
+  // round an answer, however flat): that takes nothing
+  if (sc.loopy && !near.some(s => !s.fixed && !s.scr && scrPasses(sc, s.pts, z))) { out.why = 'round it'; return out; }
+  // (round and round over writing, what it takes it goes over: a stroke its loops cross, or pass along away from its
+  // ends — a ring around a minus touches it at an end — or whose box they go into; not a stroke inside a ring that
+  // clipped its neighbour)
+  const mid = pts => { const L = scrLen(pts), out = []; let d = 0; for (let i = 0; i < pts.length; i++) { if (i) d += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (d >= 0.15 * L && d <= 0.85 * L) out.push(pts[i]); } return out.length ? out : pts; };
+  const into = s => { if (!sc.loopy || scrCrossings2(sc, s.pts, z) >= 1 || scrPasses(sc, mid(s.pts), z)) return true; const w = s.b[2] - s.b[0], h = s.b[3] - s.b[1]; return scrEnters(sc, [s.b[0] + 0.15 * w, s.b[1] + 0.15 * h - 1 / z, s.b[2] - 0.15 * w, s.b[3] - 0.15 * h + 1 / z]); };
+  // the lines it is bounded by are never what it takes: a long straight line its turns line up along (the top and the
+  // bottom of a fraction bar shaded with its turns a little past them; a table's rule) — not one whose end its turns
+  // only come to (a fraction bar scribbled out along its length turns at its ends)
+  const edges = new Set();
+  if (sc.turns.length >= 4) {
+    const tt = Math.max(4 / z, sc.band, 0.1 * sc.reach);
+    for (const s of near) {
+      const a = s.pts[0], b = s.pts[s.pts.length - 1], ends = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (!(ends > 0 && s.len <= 1.15 * ends && ends >= 0.9 * sc.reach)) continue;
+      const ux = (b[0] - a[0]) / ends, uy = (b[1] - a[1]) / ends, on = [];
+      for (const q of sc.turns) if (q[0] >= s.b[0] - tt && q[0] <= s.b[2] + tt && q[1] >= s.b[1] - tt && q[1] <= s.b[3] + tt && scrDist(q, s.pts) <= tt) on.push(q[0] * ux + q[1] * uy);
+      if (on.length < Math.max(3, 0.3 * sc.turns.length)) continue;
+      let lo = Infinity, hi = -Infinity;
+      for (const p of sc.path) { const v = p[0] * ux + p[1] * uy; if (v < lo) lo = v; if (v > hi) hi = v; }
+      if (Math.max(...on) - Math.min(...on) >= 0.5 * (hi - lo)) edges.add(s.i);
+    }
+  }
+  const take = new Set(near.filter(s => !s.fixed && !s.scr && !edges.has(s.i) && s.share >= SCR.share && inside(s) && into(s)).map(s => s.i));
+  const groups = new Map();
+  for (const s of S) if (s && s.group != null) { if (!groups.has(s.group)) groups.set(s.group, []); groups.get(s.group).push(s); }
+  for (const g of groups.values()) {
+    let got = 0, of = 0, fin = 0;
+    const ds = [];
+    for (const s of g) { got += s.got; of += s.of; fin += s.fin * s.of; for (let k = 0; k < Math.max(1, Math.round(s.of / 4)); k++) ds.push(s.depth); }
+    ds.sort((x, y) => x - y);
+    const gd = ds[ds.length >> 1];
+    if (sc.loopy && !g.some(s => s.share > 0 && into(s))) continue;
+    if (!of || got / of < SCR.group || !((fin / of >= SCR.fin && gd >= 0.25 * deep) || gd >= deep)) continue;
+    const b = g.reduce((u, s) => [Math.min(u[0], s.b[0]), Math.min(u[1], s.b[1]), Math.max(u[2], s.b[2]), Math.max(u[3], s.b[3])], [Infinity, Infinity, -Infinity, -Infinity]);
+    const gs = Math.max(b[2] - b[0], b[3] - b[1]);
+    for (const s of g) if (!s.fixed && !s.scr && !edges.has(s.i) && (s.share >= 0.25 || s.size <= 0.35 * gs)) take.add(s.i);
+  }
+  // aimed at writing, short of all of it (a hand at the board stops short of a symbol's edges, or goes over most of it
+  // and not the rest): when nothing is under it as the rules above have it, the symbols it is on go — each a good part
+  // under it (a third of it within its band, two fifths inside it), most of the scribble over them, and nothing else
+  // under it to speak of
+  // (a clear scribble only — six legs or more, or a coil: a ring gone round twice is five)
+  if (!take.size && (sc.kind !== 'zigzag' || sc.legs >= 6)) {
+    const units = new Map();
+    for (const s of near) { const k = s.group != null ? 'g' + s.group : 's' + s.i; if (!units.has(k)) units.set(k, []); units.get(k).push(s); }
+    for (const s of S) if (s && s.group != null && units.has('g' + s.group) && !units.get('g' + s.group).includes(s)) units.get('g' + s.group).push(s);
+    const cand = [], others = [];
+    for (const g of units.values()) {
+      let got = 0, of = 0, fin = 0;
+      for (const s of g) { got += s.got; of += s.of; fin += s.fin * s.of; }
+      const sh = of ? got / of : 0, fi = of ? fin / of : 0;
+      // (a loop it lies inside — a bubble filled in, a cell, a triangle — is what it fills, and a line its turns stop at —
+      // a fraction bar's side, a table's rule — is what it is bounded by: never what it is aimed at)
+      const holds = g.some(s => { if (s.pts.length < 6) return false; const ends = Math.hypot(s.pts[0][0] - s.pts[s.pts.length - 1][0], s.pts[0][1] - s.pts[s.pts.length - 1][1]); if (!(s.closed || ends <= 0.25 * s.size)) return false; let k = 0; for (const p of sc.path) if (scrInPoly(p, s.pts)) k++; return k >= 0.6 * sc.path.length; });
+      const stops = g.some(s => { if (sc.turns.length < 4) return false; const ends = Math.hypot(s.pts[0][0] - s.pts[s.pts.length - 1][0], s.pts[0][1] - s.pts[s.pts.length - 1][1]); if (!(s.len <= 1.15 * ends && ends >= 0.9 * sc.reach)) return false; const tt = Math.max(4 / z, sc.band, 0.1 * sc.reach); let k = 0; for (const q of sc.turns) if (scrDist(q, s.pts) <= tt) k++; return k >= 0.3 * sc.turns.length; });
+      if (holds || stops || g.some(s => edges.has(s.i))) { others.push(g); continue; }
+      // (and it goes over it — across its ink and into its middle — not round it)
+      const over = g.some(s => scrPasses(sc, s.pts, z)) && g.some(s => { const w = s.b[2] - s.b[0], h = s.b[3] - s.b[1]; return scrEnters(sc, [s.b[0] + 0.15 * w, s.b[1] + 0.15 * h - 1 / z, s.b[2] - 0.15 * w, s.b[3] - 0.15 * h + 1 / z]); });
+      if (!over || g.some(s => s.fixed || s.scr) || !(sh >= 0.35 && fi >= 0.4) || (sc.loopy && !g.some(s => s.share > 0 && into(s)))) { if (sh >= 0.15) others.push(g); continue; }
+      cand.push(g);
+    }
+    if (cand.length && !others.length) {
+      const boxes = cand.map(g => { const b = g.reduce((u, s) => [Math.min(u[0], s.b[0]), Math.min(u[1], s.b[1]), Math.max(u[2], s.b[2]), Math.max(u[3], s.b[3])], [Infinity, Infinity, -Infinity, -Infinity]); const m = Math.max(0.15 * Math.max(b[2] - b[0], b[3] - b[1]), sc.band); return [b[0] - m, b[1] - m, b[2] + m, b[3] + m]; });
+      const walk = scrWalk(sc.path, Math.max(sc.len / 200, 1e-6));
+      let on = 0;
+      for (const p of walk) if (boxes.some(b => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3])) on++;
+      if (walk.length && on / walk.length >= 0.6) for (const g of cand) { const gs = Math.max(...g.map(s => s.size)); for (const s of g) if (s.share >= 0.25 || s.size <= 0.35 * gs || g.length === 1) take.add(s.i); }
+    }
+  }
+  if (!take.size) { out.why = near.some(s => s.scr) ? 'over shading' : 'only clipped'; return out; }
+  // the lines of a drawing stay: a straight mark joined to a long line the scribble does not cover (a tick on a number
+  // line, a divider in a fraction bar), or a mark a long line runs through (the dot on a number line)
+  const tol = Math.max(3 / z, 0.25 * sc.band);
+  const longs = S.filter(s => s && !take.has(s.i) && !s.scr && s.len >= 0.5 * sc.reach);
+  const kept = new Set();
+  for (const i of [...take]) {
+    const s = S[i];
+    const chord = Math.hypot(s.pts[0][0] - s.pts[s.pts.length - 1][0], s.pts[0][1] - s.pts[s.pts.length - 1][1]);
+    const straight = s.len > 0 && s.len <= 1.25 * chord;
+    const cx = (s.b[0] + s.b[2]) / 2, cy = (s.b[1] + s.b[3]) / 2;
+    for (const u of longs) {
+      if (u.len < 4 * s.len) continue;                         // a line of a drawing is long beside the mark on it
+      if (u.b[2] < s.b[0] - tol || u.b[0] > s.b[2] + tol || u.b[3] < s.b[1] - tol || u.b[1] > s.b[3] + tol) continue;
+      const m = scrMeet(s.pts, u.pts);
+      if (straight ? m.d <= tol : m.cross >= 1 && scrDist([cx, cy], u.pts) <= 0.2 * s.size + tol) { take.delete(i); kept.add(i); break; }
+    }
+  }
+  if (!take.size) { out.why = 'part of a drawing'; return out; }
+  // shading: it fills a space bounded by lines (its turns on lines it does not cover, or it lies inside a closed shape
+  // and fills a good part of it), and the writing inside it is small beside it (a label in a shaded part)
+  let bounded = false;
+  const lines = S.filter(s => s && !take.has(s.i) && !s.scr && s.len >= 0.15 * sc.reach), edge = new Set();
+  if (sc.turns.length >= 4 && lines.length) {
+    const tt = Math.max(4 / z, sc.band, 0.1 * sc.reach);
+    // (its turns go one side and the other: a space between lines has its turns on both; a scribble that only bumps
+    // into a neighbour at one end — a minus scribbled out before a 2 — is not shading, unless what it stops at is a
+    // drawn line, straight and as long as the scribble: one side of a region)
+    const on = [0, 0], of = [0, 0], hit = new Set();
+    sc.turns.forEach((t, k) => {
+      of[k % 2]++;
+      const u = lines.find(u => t[0] >= u.b[0] - tt && t[0] <= u.b[2] + tt && t[1] >= u.b[1] - tt && t[1] <= u.b[3] + tt && scrDist(t, u.pts) <= tt);
+      if (u) { on[k % 2]++; hit.add(u); }
+    });
+    const ruler = u => { const ends = Math.hypot(u.pts[0][0] - u.pts[u.pts.length - 1][0], u.pts[0][1] - u.pts[u.pts.length - 1][1]); return u.len <= 1.15 * ends && ends >= 0.9 * sc.reach; };
+    const both = on[0] >= 0.5 * of[0] && on[1] >= 0.5 * of[1];
+    if ((on[0] + on[1] >= 0.5 * sc.turns.length) && (both || [...hit].every(ruler))) { bounded = true; for (const u of hit) edge.add(u.i); }
+  }
+  // (the room each piece of writing inside it fills — what it would take, and what it would not — its box a little
+  // grown, at least a square 0.6 of its size; not the lines it stops at, nor the lines of a drawing)
+  let freeArea = 0;
+  for (const s of near) {
+    if (s.fixed || s.scr || kept.has(s.i) || edge.has(s.i) || !(take.has(s.i) || s.fin >= 0.6)) continue;
+    const t = 0.15 * s.size;
+    freeArea += Math.max((s.b[2] - s.b[0] + t) * (s.b[3] - s.b[1] + t), 0.36 * s.size * s.size);
+  }
+  if (!bounded) {
+    for (const s of S) {
+      if (!s || take.has(s.i) || s.scr || s.pts.length < 6) continue;
+      const ends = Math.hypot(s.pts[0][0] - s.pts[s.pts.length - 1][0], s.pts[0][1] - s.pts[s.pts.length - 1][1]);
+      if (!(s.closed || ends <= 0.2 * s.size)) continue;
+      const area = scrArea(s.pts);
+      if (!(area > 0) || sc.area < 0.25 * area) continue;
+      let inside = 0;
+      for (const p of sc.path) if (scrInPoly(p, s.pts)) inside++;
+      if (inside >= 0.9 * sc.path.length) { bounded = true; break; }
+    }
+  }
+  // (between straight lines that run its length — a cell of a fraction bar, of a table — a bigger label is still a label)
+  let ruled = edge.size > 0;
+  for (const i of edge) {
+    const u = S[i], ends = Math.hypot(u.pts[0][0] - u.pts[u.pts.length - 1][0], u.pts[0][1] - u.pts[u.pts.length - 1][1]);
+    const ax = ends > 0 ? [(u.pts[u.pts.length - 1][0] - u.pts[0][0]) / ends, (u.pts[u.pts.length - 1][1] - u.pts[0][1]) / ends] : [1, 0];
+    let lo = Infinity, hi = -Infinity;
+    for (const p of sc.path) { const v = p[0] * ax[0] + p[1] * ax[1]; if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!(u.len <= 1.15 * ends && u.len >= 0.6 * (hi - lo))) { ruled = false; break; }
+  }
+  if (bounded && freeArea < (ruled ? 0.35 : 0.15) * sc.area) { out.why = 'shading'; return out; }
+  // with the writing it takes, an earlier scribble it mostly lies over (one that fell short)
+  for (const s of near) if (s.scr && !s.fixed && s.share >= 0.5) take.add(s.i);
+  out.erase = [...take].sort((a, b) => a - b);
+  out.why = 'scribbled out';
+  return out;
+}
+
 // ================================================================== writing pad
 const PAD_DEFAULTS = {
   ink: null,            // stroke color; default: the element's CSS --nib-ink, else its text color
@@ -5711,6 +6291,8 @@ const PAD_DEFAULTS = {
   snap: 0,              // shapes snap to a grid of this spacing (world units; 0: no snapping)
   hold: true,           // draw a line, circle, rectangle or triangle and hold the pen still: it becomes that shape
   read: true,           // Nib reads the pen and marker writing (false: a plain whiteboard)
+  scribble: true,       // a pen or marker scribbled back and forth over writing rubs it out (scribble.js), as one step
+                        // of Undo; over nothing it is ink like any other stroke
   // embedding (another tool's drawing surface over or under the pad)
   page: null,           // [W, H]: a fixed page of W × H world units, always shown whole and centred; nothing pans or zooms it
   layer: null,          // 'answers': draw only the answers (the strokes are the host's own, given with syncStrokes)
@@ -5958,6 +6540,10 @@ class Pad {
     this.lasers = [];               // laser trails fading out
     this._bb = new WeakMap(); this._paths = new WeakMap();   // per element: its bounds, its drawing (dropped when it changes)
     this._bbz = new WeakMap();      // the zoom a number line's or a plane's bounds were worked out for
+    this._looks = new Map();        // an answer (its line, its value, the view) → {sids, answer, view, hand, glyphs: label →
+                                    // {pts, src}}: the symbols it was first drawn with, kept (_replan's sampleFor; saved)
+    this._lifted = new WeakMap();   // a pen or marker stroke → when it went down and up, by what, in what pen (a scribble
+                                    // broken in two is put back together: _scribbleJoin)
     this.touches = new Map();       // touch pointerId -> {x, y, t} on screen: for two-finger gestures
     this.gesture = null;            // a pan or pinch under way
     this.spacePan = false;          // the space bar is down: a drag pans
@@ -6004,7 +6590,7 @@ class Pad {
   }
   _readKey() {
     const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange',
-      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'page', 'layer', 'palm', 'single']);
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'page', 'layer', 'palm', 'single', 'scribble']);
     return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
   }
 
@@ -6364,6 +6950,12 @@ class Pad {
       this.redraw();
       return;
     }
+    // scribbled out: a pen or marker gone back and forth over writing rubs out what it lies over, and is not kept — on its
+    // own, or with the strokes it broke off from a moment ago (a pen that left the glass at a turn, a touch frame that lost
+    // a fast finger)
+    const scribbly = !P.snap && this.o.scribble !== false && (!T.kind || T.kind === 'pen' || T.kind === 'marker');
+    if (scribbly && (this._scribbleOut(el, info) || this._scribbleJoin(el, info, P, T))) return;
+    if (scribbly) this._lifted.set(el, { t0: P.t0, t1: now, type: P.type, kind: T.kind || 'pen', color: T.color || null, size: T.size || null });
     this.strokes.push(el);
     this._push({ add: el });
     this._changed();
@@ -6455,6 +7047,118 @@ class Pad {
       P.erased.push({ i, s }); this.strokes.splice(i, 1); hit = true;
     }
     if (hit) { this._dropDead(); this.redraw(); } else this._frame();            // the ring follows the eraser
+  }
+  // ---------------------------------------------------------------- scribbled out
+  // A stroke s (look E) just finished: if it is a scribble over writing (scribble.js), what it lies over goes — as one
+  // step of Undo — and the scribble is not kept; a shown answer under it goes back out of focus. In a tidy, handwritten
+  // or typeset view what it lies over is what that view shows. Pens, markers and shapes go; highlighters, text,
+  // pictures, number lines and coordinate planes stay (as for the eraser). False when it rubs out nothing: it is ink.
+  // `pieces`: strokes already on the board that are the first part of this scribble (_scribbleJoin) — never what it lies
+  // over; they go with it.
+  _scribbleOut(s, E, pieces) {
+    if (typeof scribbleOf !== 'function' || this.o.layer) return false;
+    const z = this.cam.z, sc = scribbleOf(s, z);
+    if (!sc) return false;
+    const piece = new Set(pieces || []);
+    const live = new Set(this.strokes.filter(st => !piece.has(st))), units = [], shown = new Set();
+    const lookOf = st => this.info.get(st) || {};
+    const takes = st => { const L = lookOf(st), t = L.tool || 'pen'; return t === 'pen' || t === 'marker' || (t === 'shape' && L.shape !== 'numberline' && L.shape !== 'plane'); };
+    const boxGrid = b => { const out = []; for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) out.push([b[0] + (b[2] - b[0]) * (j % 2 ? 4 - i : i) / 4, b[1] + (b[3] - b[1]) * j / 4]); return out; };
+    const shownPaths = it => {
+      const out = [];
+      for (const part of it.parts || []) {
+        if ((part.t === 'ink' || part.t === 'line') && part.paths) { for (const q of part.paths) if (q.length) out.push(q); }
+        else if (it.box) out.push(boxGrid(it.box));
+      }
+      return out;
+    };
+    // what a view shows in place of the strokes it read
+    if (this.plan && this.plan.style !== 'ink') {
+      this.plan.items.forEach((it, k) => {
+        if (it.answer || !it.from.length || !it.from.every(st => live.has(st))) return;
+        for (const st of it.from) shown.add(st);
+        if (!it.from.every(takes)) return;
+        for (const q of shownPaths(it)) units.push({ pts: q, group: 'v' + k, from: it.from });
+      });
+    }
+    // the strokes as they are, a symbol's strokes together (as the last reading grouped them)
+    const sym = new Map();
+    if (this.result && this.result.symbols && this.resultStrokes) this.result.symbols.forEach((y, k) => { for (const i of y.strokes || []) { const st = this.resultStrokes[i]; if (st) sym.set(st, k); } });
+    this.strokes.forEach((st, k) => {
+      if (shown.has(st) || piece.has(st)) return;
+      const L = lookOf(st), t = L.tool || 'pen';
+      if (t === 'shape') {
+        // a shape by its outline; a number line or a plane stays, and is a line to what is drawn on it
+        const outl = typeof shapeOutline === 'function' ? shapeOutline(L, st) : [st];
+        const closed = ['rect', 'square', 'ellipse', 'circle', 'triangle', 'rtriangle', 'poly'].includes(L.shape);
+        for (const q of outl) if (q.length) units.push({ pts: q, group: 'e' + k, closed, fixed: !takes(st), from: [st] });
+      } else if (t === 'pen' || t === 'marker') units.push({ pts: st, group: sym.has(st) ? 's' + sym.get(st) : null, from: [st] });
+    });
+    const er = scribbleErase(sc, units, z);
+    const take = new Set();
+    for (const k of er.erase) for (const st of units[k].from) if (takes(st)) take.add(st);
+    // an answer shown by a tap, under the scribble: back out of focus (the eraser does the same)
+    const hid = [];
+    if (this.plan) for (const it of this.plan.items) {
+      if (!it.answer || it.hidden || !it.revealKey || !this.revealed.has(it.revealKey) || hid.includes(it.revealKey)) continue;
+      let got = 0, of = 0;
+      for (const q of shownPaths(it)) { const c = scribbleCovers(sc, q, z); got += c.got; of += c.of; }
+      if (of && got / of >= 0.5) hid.push(it.revealKey);
+    }
+    this.why = 'scribble: ' + er.why + (take.size ? ' (' + take.size + ')' : '') + (piece.size ? ' (joined ' + (piece.size + 1) + ')' : '');
+    if (!take.size && !hid.length) return false;
+    // the pieces it broke into go, and the steps that kept them (they are the last strokes and the last steps:
+    // _scribbleJoin), so one Undo puts back the board as it was before the scribble began
+    // (they fade with it: s is all of them)
+    for (const p of [...piece].reverse()) {
+      const i = this.strokes.lastIndexOf(p);
+      if (i >= 0) this.strokes.splice(i, 1);
+      const H = this.history[this.history.length - 1];
+      if (H && H.add === p) this.history.pop();
+    }
+    // one step: the strokes taken, from the end (so Undo puts each back where it was), and the answers hidden
+    const erased = [];
+    for (let i = this.strokes.length - 1; i >= 0; i--) if (take.has(this.strokes[i])) { erased.push({ i, s: this.strokes[i] }); this.strokes.splice(i, 1); }
+    for (const k of hid) this.revealed.delete(k);
+    if (hid.length) this._syncHidden();
+    const h = Object.assign({ erase: erased, scribble: true }, hid.length ? { hide: hid } : {});
+    this._push(h);
+    // what went fades away with the scribble, so it is seen to go
+    this._fade = { list: erased.map(x => ({ s: x.s, E: this.info.get(x.s) })).concat([{ s, E: Object.assign({ tool: 'pen' }, E && E.tool ? { tool: E.tool } : {}, E && E.color ? { color: E.color } : {}, E && E.size ? { size: E.size } : {}) }]),
+      t0: typeof performance !== 'undefined' ? performance.now() : 0, ms: 320 };
+    this._dropDead();
+    this._changed();
+    this.el.dispatchEvent(new CustomEvent('nib:scribble', { detail: { erased: erased.length, hidden: hid.length, step: h, joined: piece.size }, bubbles: true }));
+    return true;
+  }
+  // A scribble the board heard as several strokes — a pen that left the glass for a moment at a turn, a touch frame that
+  // lost a fast finger: the strokes just before this one, each lifted at most 150 ms before the next went down, and
+  // where it went down (no farther than the pen could go in that moment), with the same pen and nothing done between,
+  // are tried with it as one stroke — the longest chain first, three pieces before it at most. False: it is ink.
+  _scribbleJoin(el, E, P, T) {
+    if (typeof scribbleOf !== 'function' || this.o.layer || !el.length) return false;
+    const z = this.cam.z, chain = [];
+    let next = el, down = P.t0, k = this.strokes.length - 1, h = this.history.length - 1;
+    while (chain.length < 3 && k >= 0 && h >= 0) {
+      const st = this.strokes[k], L = this._lifted.get(st), H = this.history[h];
+      if (!L || !H || H.add !== st || L.type !== P.type || L.kind !== (T.kind || 'pen') || L.color !== (T.color || null) || L.size !== (T.size || null)) break;
+      const gap = down - L.t1;
+      if (!(gap >= 0 && gap <= 150)) break;
+      const a = st[st.length - 1], b = next[0], v = scrLen(st) / Math.max(L.t1 - L.t0, 1);
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) > Math.min(80 / z, Math.max(24 / z, 2 * v * gap))) break;
+      chain.unshift(st); next = st; down = L.t0; k--; h--;
+    }
+    for (let n = chain.length; n >= 1; n--) {
+      const pieces = chain.slice(chain.length - n);
+      if (this._scribbleOut([].concat(...pieces, el), E, pieces)) return true;
+    }
+    return false;
+  }
+  // Undo the scribble that `step` (a nib:scribble event's detail.step) was, if nothing has been done since
+  undoScribble(step) {
+    if (!step || this.history[this.history.length - 1] !== step) return false;
+    this.undo();
+    return true;
   }
   _frame() {
     if (this._raf || typeof requestAnimationFrame === 'undefined') return;
@@ -6823,6 +7527,13 @@ class Pad {
       }
     }
     for (const q of this.pending) this._drawEl(q.s);       // brief touches waiting to see whether the pen follows
+    // what a scribble just rubbed out, and the scribble, fading away
+    const G = this._fade;
+    if (G) {
+      const k = 1 - (performance.now() - G.t0) / G.ms;
+      if (k > 0) { ctx.save(); ctx.globalAlpha = 0.6 * k * k; for (const g of G.list) this._drawEl(g.s, g.E); ctx.restore(); this._frame(); }
+      else this._fade = null;
+    }
     // the eraser: a faint ring where it is
     for (const P of this.ptrs.values()) {
       if (P.mode !== 'erase' || !P.at) continue;
@@ -6908,7 +7619,7 @@ class Pad {
         try { hand = this.o.hand ? handClean(handOf(this.o.hand)) : handLoad(); } catch (err) { hand = null; }
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
-      const R = refSize(at), done = [];
+      const R = refSize(at), done = [], used = new Set();
       // writing still fresh is left as written: it changes into its view once the writer has rested
       const settle = style !== 'ink' ? Math.max(0, +this.o.settle || 0) : 0, now = performance.now();
       let holdUntil = 0;
@@ -6960,9 +7671,6 @@ class Pad {
         li += pr.tree.length;
         if (style === 'ink' && !(answers && answers.some(Boolean))) continue;
         let out = null;
-        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample: near }); } catch (err) { out = null; }
-        if (!out) continue;
-        const groups = new Map();
         // an answer shown by a tap stays shown while its line (its strokes) and the answer itself are the same
         const rowSids = pr.tree.map(row => {
           const ids = [];
@@ -6970,6 +7678,29 @@ class Pad {
           walk(row);
           return ids;
         });
+        // an answer keeps the look it was first drawn with (1.6.5, Croix: "I like that nib adapts as I go, but I don't
+        // like it to constantly update the previous answers"): each symbol of it is taken from the board's writing once,
+        // and kept while its line and the answer itself are the same, in this view — what Nib learns after shows in the
+        // answers that come after
+        const sampleFor = k => {
+          const a = answers && answers[k];
+          if (!a || !near) return null;
+          const sids = rowSids[k].slice().sort((x, y) => x - y), hand = this.o.hand ? 'h' : '';
+          const key = sids.join(',') + '|' + a.latex + '|' + style + '|' + hand;
+          let L = this._looks.get(key);
+          if (!L) { L = { sids, answer: a.latex, view: style, hand, glyphs: new Map() }; this._looks.set(key, L); }
+          used.add(key);
+          return label => {
+            if (!L.glyphs.has(label)) {
+              const v = near(label);
+              L.glyphs.set(label, { pts: v ? v.map(s => s.map(q => [q[0], q[1]])) : v, src: v && sample && sample.srcOf ? sample.srcOf(v) : null, dflt: !!v && v === DEFAULT_GLYPHS[label] });
+            }
+            return L.glyphs.get(label).pts;
+          };
+        };
+        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample: near, sampleFor }); } catch (err) { out = null; }
+        if (!out) continue;
+        const groups = new Map();
         for (const it of out.items) {
           if (fresh) continue;                             // nothing of a fresh part moves yet, its answer included
           if (it.answer) {
@@ -6994,6 +7725,7 @@ class Pad {
         for (const it of items) if (it.answer && groups.has(it.groupKey)) it.group = groups.get(it.groupKey);
       }
       this._fitAnswers(items);
+      if (this._looks.size > 400) for (const key of [...this._looks.keys()]) if (!used.has(key)) this._looks.delete(key);
       plan = { style, items, chips: this._chips(items) };
       clearTimeout(this.settleTimer);
       if (holdUntil) this.settleTimer = setTimeout(() => { if (this.result === res) this._replan(true); }, holdUntil - now + 30);
@@ -7909,6 +8641,13 @@ class Pad {
   // show an answer waiting for a tap (as a tap on it would), or hide a shown one again
   showAnswer(key) { if (key && !this.revealed.has(key)) this._reveal(key); }
   hideAnswer(key) { if (key && this.revealed.delete(key)) { this._syncHidden(); this._changed(); } }
+  // The last reading's symbols, each as the strokes it was read from — a host's own arrays when they came through
+  // syncStrokes (a tool with its own ink groups its strokes by them: Deckhand's scribble-out takes a symbol whole)
+  symbolStrokes() {
+    const res = this.result, at = this.resultStrokes || [];
+    if (!res || !res.symbols) return [];
+    return res.symbols.map(y => (y.strokes || []).map(i => { const st = at[i]; return st && this._hostSrc ? this._hostSrc.get(st) || st : st; }).filter(Boolean));
+  }
   // the symbol read under a world point (as the view draws it): the smallest one the point is inside, else the nearest
   // within a fingertip — {sym, box} or null (a Fix tool's tap: then relabel(sym, label))
   symbolAt(x, y) {
@@ -7940,6 +8679,21 @@ class Pad {
       if (ids.length && ids.every(i => i !== undefined)) revealed.push({ strokes: ids, answer: key.slice(cut + 1) });
     }
     const out = { strokes, fixes, revealed, types: this.strokes.map(s => this.strokeInfo(s).type) };
+    // each answer's look (1.6.5): its symbols as the board's strokes they were taken from, or their points (from the
+    // Replicator hand), or the built-in glyph — so an answer is drawn the same when the board is opened again
+    const looks = [];
+    for (const L of this._looks.values()) {
+      const rows = L.sids.map(x => bySid.get(String(x)));
+      if (!rows.length || rows.some(i => i === undefined) || !L.glyphs.size) continue;
+      const g = {};
+      for (const [label, v] of L.glyphs) {
+        if (!v.pts) continue;
+        const si = v.src && v.src.length ? v.src.map(s => idx.get(s)) : null;
+        g[label] = si && si.every(i => i !== undefined) ? { s: si } : v.dflt ? { d: 1 } : { p: v.pts.map(s => storePack(s, false)) };
+      }
+      looks.push({ strokes: rows, answer: L.answer, view: L.view, hand: L.hand, g });
+    }
+    if (looks.length) out.looks = looks;
     // each element's look when it is not a plain pen stroke, and a pen's pressure (0 … 100) when it gave one
     const meta = this.strokes.map(s => {
       const E = this.info.get(s);
@@ -7998,6 +8752,21 @@ class Pad {
       const ss = r && Array.isArray(r.strokes) ? r.strokes.map(at) : [];
       return ss.length && ss.every(Boolean) ? ss.map(s => this._sid(s)).sort((x, y) => x - y).join(',') + '|' + (r.answer || '') : null;
     }).filter(Boolean));
+    this._looks = new Map();
+    for (const L of Array.isArray(st.looks) ? st.looks : []) {
+      const rows = L && Array.isArray(L.strokes) ? L.strokes.map(at) : [];
+      if (!rows.length || !rows.every(Boolean) || typeof L.answer !== 'string' || !L.g || typeof L.g !== 'object') continue;
+      const sids = rows.map(s => this._sid(s)).sort((x, y) => x - y), view = typeof L.view === 'string' ? L.view : 'ink', hand = L.hand ? 'h' : '';
+      const glyphs = new Map();
+      for (const [label, v] of Object.entries(L.g)) {
+        let pts = null, src = null, dflt = false;
+        if (v && Array.isArray(v.s)) { const ss = v.s.map(at); if (ss.length && ss.every(Boolean)) { src = ss; pts = ss.map(s => s.map(q => [q[0], q[1]])); } }
+        else if (v && v.d && DEFAULT_GLYPHS[label]) { pts = DEFAULT_GLYPHS[label]; dflt = true; }
+        else if (v && Array.isArray(v.p)) { try { pts = v.p.map(x => storeUnpack(String(x)).map(q => [q[0], q[1]])).filter(s => s.length); } catch (e) { pts = null; } }
+        if (pts && pts.length) glyphs.set(label, { pts, src, dflt });
+      }
+      if (glyphs.size) this._looks.set(sids.join(',') + '|' + L.answer + '|' + view + '|' + hand, { sids, answer: L.answer, view, hand, glyphs });
+    }
     this.history = o && o.steps ? this.strokes.slice(-500).map(s => ({ add: s })) : []; this.future = []; this.parts.clear();
     if (this.o.page) this._pageCam();                     // a page with writing in its margins shows it
     if (!this._fitHere()) this._changed();
@@ -8209,7 +8978,7 @@ class Pad {
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
     static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'settle', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit', 'train',
-      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'read', 'page', 'draw', 'palm', 'single']; }
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'read', 'page', 'draw', 'palm', 'single', 'scribble']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -8247,6 +9016,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         page: (() => { const v = (a('page') || '').trim().split(/[\s,x]+/).map(Number); return v.length === 2 && v[0] > 0 && v[1] > 0 ? v : null; })(),
         layer: a('draw') === 'answers' ? 'answers' : null,
         palm: a('palm') !== 'false',
+        scribble: a('scribble') !== 'false',
         single: has('single') && a('single') !== 'false',
       };
     }
@@ -8363,7 +9133,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.6.4',
+  version: '1.6.5',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -8400,9 +9170,13 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven, scribbleOf: typeof scribbleOf === 'function' ? scribbleOf : null, scribbleErase: typeof scribbleErase === 'function' ? scribbleErase : null, SCR: typeof SCR !== 'undefined' ? SCR : null },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
+// Scribbled out (scribble.js), for a tool with its own ink (Deckhand's pen over the slides): of(points, z) is a scribble
+// or null (z: screen px per unit); erase(scribble, items, z) says which of items ([{pts, group?, closed?, fixed?}]) it
+// rubs out ({erase: [indexes], why}); covers(scribble, points, z) how much of a stroke it lies over.
+if (typeof scribbleOf === 'function') Nib.scribble = { of: scribbleOf, erase: scribbleErase, covers: scribbleCovers };
 // The canvas's parts, for a page that holds a board (the Board): named colors, papers, shapes, PDF and storage.
 Nib.canvas = {
   colors: PAD_COLORS, color: padColor,

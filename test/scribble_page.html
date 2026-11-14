@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nib scribble-out test page</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { font: 14px system-ui; background: #fbf8ef; }
+  #frame { position: absolute; left: 20px; top: 20px; width: 1000px; height: 640px; background: #fff; }
+  #frame nib-pad { position: absolute; inset: 0; --nib-ink: #1b2a4a; --nib-paper: #ffffff; --nib-answer: #8a6a10; }
+</style>
+</head>
+<body>
+<div id="frame"><nib-pad id="pad" separate solve reveal times="false" infinite></nib-pad></div>
+<script src="../dist/nib.js"></script>
+<script>
+  // pointer events straight to a pad's canvas, at (x, y) CSS px from its top left: kind 'pen' | 'touch' | 'mouse'
+  window.ptr = (el, type, kind, id, x, y, o = {}) => {
+    const cv = el.querySelector('canvas'), r = cv.getBoundingClientRect();
+    const e = new PointerEvent('pointer' + type, Object.assign({ pointerId: id, pointerType: kind, clientX: r.left + x, clientY: r.top + y, bubbles: true, cancelable: true,
+      isPrimary: true, button: type === 'down' ? 0 : -1, buttons: type === 'up' ? 0 : 1, width: 1, height: 1, pressure: 0.5 }, o));
+    cv.dispatchEvent(e); return e.defaultPrevented;
+  };
+  // strokes given in the pad's world units, written with pointer events where the pad's camera shows them
+  window.writeWorld = (el, strokes, kind = 'pen', id = 1) => {
+    const P = el.pad;
+    for (const s of strokes) {
+      const q = s.map(p => P.toScreen(p));
+      ptr(el, 'down', kind, id, q[0][0], q[0][1]);
+      for (let i = 1; i < q.length; i++) ptr(el, 'move', kind, id, q[i][0], q[i][1]);
+      ptr(el, 'up', kind, id, q[q.length - 1][0], q[q.length - 1][1]);
+    }
+  };
+  // the same, each stroke taking `ms` (a hand's speed: the palm rules look at how long a touch lasts)
+  window.writeSlow = async (el, strokes, kind = 'pen', ms = 600, id = 1) => {
+    const P = el.pad, sleep = t => new Promise(r => setTimeout(r, t));
+    for (const s of strokes) {
+      const q = s.map(p => P.toScreen(p)), dt = ms / Math.max(1, q.length - 1);
+      ptr(el, 'down', kind, id, q[0][0], q[0][1]);
+      for (let i = 1; i < q.length; i++) { await sleep(dt); ptr(el, 'move', kind, id, q[i][0], q[i][1]); }
+      ptr(el, 'up', kind, id, q[q.length - 1][0], q[q.length - 1][1]);
+    }
+  };
+  window.scribbles = [];
+  document.getElementById('pad').addEventListener('nib:scribble', e => scribbles.push({ erased: e.detail.erased, hidden: e.detail.hidden, step: e.detail.step }));
+</script>
+</body>
+</html>

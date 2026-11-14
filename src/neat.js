@@ -322,7 +322,7 @@ function placeAnswers(out, lines, em, ctx, P, opts) {
   for (const line of out.lines) {
     const nodes = opts.answers[line.li], row = lines[line.li], eq = row[row.length - 1];
     if (!nodes || !nodes.length || !eq || eq.k !== 's' || !ANSWER_AFTER.has(eq.label) || eq.sup || eq.sub) continue;
-    const units = answerUnitsOf(nodes, sample, P.ink);
+    const units = answerUnitsOf(nodes, (opts.sampleFor && opts.sampleFor(line.li)) || sample, P.ink);   // (sampleFor: the look each answer keeps, 1.6.5)
     if (!units) continue;
     const box = rowBox(units, 1, P, ctx), gap = spaceBetween('rel', 'ord') + (P.ink ? (ctx.gaps || { oo: 0.13 }).oo : 0);
     let x0, e;
@@ -659,7 +659,7 @@ function sampleDist(A, B) {
   return Math.min(f, r) / n;                                 // written either way round
 }
 function sampleBook(res, input, hand) {
-  const ink = inkOf(input), by = new Map(), eqPart = new Set();
+  const ink = inkOf(input), by = new Map(), eqPart = new Set(), src = new WeakMap();
   ((res && res.parts) || []).forEach((pt, k) => { if (((pt.result && pt.result.symbols) || []).some(sy => SAMPLE_REL.has(sy.label))) eqPart.add(k); });
   const whole = !(res && res.parts);                       // one expression: all of it is the problem's own
   for (const sy of (res && res.symbols) || []) {
@@ -669,6 +669,7 @@ function sampleBook(res, input, hand) {
     const part = typeof sy.part === 'number' ? sy.part : -1;
     if (!by.has(sy.label)) by.set(sy.label, []);
     by.get(sy.label).push({ p, pts, part, eq: whole || eqPart.has(part), shape: null });
+    src.set(pts, sy.strokes.filter(i => ink[i] && ink[i].length).map(i => input[i]));   // the board's own strokes it is
   }
   const refOf = label => { const ch = HAND_CHAR[label] || label; return (hand && hand[ch] && hand[ch].length && hand[ch]) || DEFAULT_GLYPHS[label] || null; };
   // the most typical of a list: the least summed distance in shape to the others and to the reference glyph
@@ -705,6 +706,7 @@ function sampleBook(res, input, hand) {
   };
   const book = make(-1);
   book.near = k => (typeof k === 'number' && k >= 0 ? make(k) : book);
+  book.srcOf = pts => (pts && src.get(pts)) || null;      // a glyph from the board: the strokes it was written as
   return book;
 }
 

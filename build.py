@@ -8,7 +8,7 @@ MODEL = sys.argv[1] if len(sys.argv) > 1 else os.path.join(WORK, 'model_v4s50.np
 if len(sys.argv) > 1 and not os.path.exists(MODEL):
     # a model asked for by name must exist: never build an engine with zero weights by a mistyped path
     sys.exit(f'build.py: no model at {MODEL} (paths are relative to {os.getcwd()})')
-VERSION = '1.6.4'
+VERSION = '1.6.5'
 
 classes = open(os.path.join(WORK, 'ep', 'classes.txt')).read().split('\n')
 C = len(classes)
@@ -82,7 +82,7 @@ for k, name in TS_FONTS.items():
 data['tsfm'] = tsfm
 data['tsfont'] = {k: b64(np.frombuffer(open(os.path.join(KATEX, 'dist', 'fonts', f'KaTeX_{name}.woff2'), 'rb').read(), np.uint8))
                   for k, name in TS_FONTS.items()}
-src = ''.join(open(os.path.join(HERE, 'src', f)).read() + '\n' for f in ('core.js', 'recognize.js', 'solve.js', 'neat.js', 'paper.js', 'shapes.js', 'pdf.js', 'store.js', 'pad.js', 'api.js')
+src = ''.join(open(os.path.join(HERE, 'src', f)).read() + '\n' for f in ('core.js', 'recognize.js', 'solve.js', 'neat.js', 'paper.js', 'shapes.js', 'pdf.js', 'store.js', 'scribble.js', 'pad.js', 'api.js')
               if os.path.exists(os.path.join(HERE, 'src', f)))
 src = src.replace("'use strict';\n", '')
 src = src.replace('/*__DATA__*/ null', json.dumps(data, separators=(',', ':')))

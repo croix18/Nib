@@ -65,9 +65,13 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven, scribbleOf: typeof scribbleOf === 'function' ? scribbleOf : null, scribbleErase: typeof scribbleErase === 'function' ? scribbleErase : null, SCR: typeof SCR !== 'undefined' ? SCR : null },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
+// Scribbled out (scribble.js), for a tool with its own ink (Deckhand's pen over the slides): of(points, z) is a scribble
+// or null (z: screen px per unit); erase(scribble, items, z) says which of items ([{pts, group?, closed?, fixed?}]) it
+// rubs out ({erase: [indexes], why}); covers(scribble, points, z) how much of a stroke it lies over.
+if (typeof scribbleOf === 'function') Nib.scribble = { of: scribbleOf, erase: scribbleErase, covers: scribbleCovers };
 // The canvas's parts, for a page that holds a board (the Board): named colors, papers, shapes, PDF and storage.
 Nib.canvas = {
   colors: PAD_COLORS, color: padColor,

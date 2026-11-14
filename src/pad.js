@@ -34,6 +34,8 @@ const PAD_DEFAULTS = {
   snap: 0,              // shapes snap to a grid of this spacing (world units; 0: no snapping)
   hold: true,           // draw a line, circle, rectangle or triangle and hold the pen still: it becomes that shape
   read: true,           // Nib reads the pen and marker writing (false: a plain whiteboard)
+  scribble: true,       // a pen or marker scribbled back and forth over writing rubs it out (scribble.js), as one step
+                        // of Undo; over nothing it is ink like any other stroke
   // embedding (another tool's drawing surface over or under the pad)
   page: null,           // [W, H]: a fixed page of W × H world units, always shown whole and centred; nothing pans or zooms it
   layer: null,          // 'answers': draw only the answers (the strokes are the host's own, given with syncStrokes)
@@ -281,6 +283,10 @@ class Pad {
     this.lasers = [];               // laser trails fading out
     this._bb = new WeakMap(); this._paths = new WeakMap();   // per element: its bounds, its drawing (dropped when it changes)
     this._bbz = new WeakMap();      // the zoom a number line's or a plane's bounds were worked out for
+    this._looks = new Map();        // an answer (its line, its value, the view) → {sids, answer, view, hand, glyphs: label →
+                                    // {pts, src}}: the symbols it was first drawn with, kept (_replan's sampleFor; saved)
+    this._lifted = new WeakMap();   // a pen or marker stroke → when it went down and up, by what, in what pen (a scribble
+                                    // broken in two is put back together: _scribbleJoin)
     this.touches = new Map();       // touch pointerId -> {x, y, t} on screen: for two-finger gestures
     this.gesture = null;            // a pan or pinch under way
     this.spacePan = false;          // the space bar is down: a drag pans
@@ -327,7 +333,7 @@ class Pad {
   }
   _readKey() {
     const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange',
-      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'page', 'layer', 'palm', 'single']);
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'page', 'layer', 'palm', 'single', 'scribble']);
     return JSON.stringify(Object.keys(this.o).filter(k => !skip.has(k) && typeof this.o[k] !== 'function').sort().map(k => [k, this.o[k]]));
   }
 
@@ -687,6 +693,12 @@ class Pad {
       this.redraw();
       return;
     }
+    // scribbled out: a pen or marker gone back and forth over writing rubs out what it lies over, and is not kept — on its
+    // own, or with the strokes it broke off from a moment ago (a pen that left the glass at a turn, a touch frame that lost
+    // a fast finger)
+    const scribbly = !P.snap && this.o.scribble !== false && (!T.kind || T.kind === 'pen' || T.kind === 'marker');
+    if (scribbly && (this._scribbleOut(el, info) || this._scribbleJoin(el, info, P, T))) return;
+    if (scribbly) this._lifted.set(el, { t0: P.t0, t1: now, type: P.type, kind: T.kind || 'pen', color: T.color || null, size: T.size || null });
     this.strokes.push(el);
     this._push({ add: el });
     this._changed();
@@ -778,6 +790,118 @@ class Pad {
       P.erased.push({ i, s }); this.strokes.splice(i, 1); hit = true;
     }
     if (hit) { this._dropDead(); this.redraw(); } else this._frame();            // the ring follows the eraser
+  }
+  // ---------------------------------------------------------------- scribbled out
+  // A stroke s (look E) just finished: if it is a scribble over writing (scribble.js), what it lies over goes — as one
+  // step of Undo — and the scribble is not kept; a shown answer under it goes back out of focus. In a tidy, handwritten
+  // or typeset view what it lies over is what that view shows. Pens, markers and shapes go; highlighters, text,
+  // pictures, number lines and coordinate planes stay (as for the eraser). False when it rubs out nothing: it is ink.
+  // `pieces`: strokes already on the board that are the first part of this scribble (_scribbleJoin) — never what it lies
+  // over; they go with it.
+  _scribbleOut(s, E, pieces) {
+    if (typeof scribbleOf !== 'function' || this.o.layer) return false;
+    const z = this.cam.z, sc = scribbleOf(s, z);
+    if (!sc) return false;
+    const piece = new Set(pieces || []);
+    const live = new Set(this.strokes.filter(st => !piece.has(st))), units = [], shown = new Set();
+    const lookOf = st => this.info.get(st) || {};
+    const takes = st => { const L = lookOf(st), t = L.tool || 'pen'; return t === 'pen' || t === 'marker' || (t === 'shape' && L.shape !== 'numberline' && L.shape !== 'plane'); };
+    const boxGrid = b => { const out = []; for (let j = 0; j <= 4; j++) for (let i = 0; i <= 4; i++) out.push([b[0] + (b[2] - b[0]) * (j % 2 ? 4 - i : i) / 4, b[1] + (b[3] - b[1]) * j / 4]); return out; };
+    const shownPaths = it => {
+      const out = [];
+      for (const part of it.parts || []) {
+        if ((part.t === 'ink' || part.t === 'line') && part.paths) { for (const q of part.paths) if (q.length) out.push(q); }
+        else if (it.box) out.push(boxGrid(it.box));
+      }
+      return out;
+    };
+    // what a view shows in place of the strokes it read
+    if (this.plan && this.plan.style !== 'ink') {
+      this.plan.items.forEach((it, k) => {
+        if (it.answer || !it.from.length || !it.from.every(st => live.has(st))) return;
+        for (const st of it.from) shown.add(st);
+        if (!it.from.every(takes)) return;
+        for (const q of shownPaths(it)) units.push({ pts: q, group: 'v' + k, from: it.from });
+      });
+    }
+    // the strokes as they are, a symbol's strokes together (as the last reading grouped them)
+    const sym = new Map();
+    if (this.result && this.result.symbols && this.resultStrokes) this.result.symbols.forEach((y, k) => { for (const i of y.strokes || []) { const st = this.resultStrokes[i]; if (st) sym.set(st, k); } });
+    this.strokes.forEach((st, k) => {
+      if (shown.has(st) || piece.has(st)) return;
+      const L = lookOf(st), t = L.tool || 'pen';
+      if (t === 'shape') {
+        // a shape by its outline; a number line or a plane stays, and is a line to what is drawn on it
+        const outl = typeof shapeOutline === 'function' ? shapeOutline(L, st) : [st];
+        const closed = ['rect', 'square', 'ellipse', 'circle', 'triangle', 'rtriangle', 'poly'].includes(L.shape);
+        for (const q of outl) if (q.length) units.push({ pts: q, group: 'e' + k, closed, fixed: !takes(st), from: [st] });
+      } else if (t === 'pen' || t === 'marker') units.push({ pts: st, group: sym.has(st) ? 's' + sym.get(st) : null, from: [st] });
+    });
+    const er = scribbleErase(sc, units, z);
+    const take = new Set();
+    for (const k of er.erase) for (const st of units[k].from) if (takes(st)) take.add(st);
+    // an answer shown by a tap, under the scribble: back out of focus (the eraser does the same)
+    const hid = [];
+    if (this.plan) for (const it of this.plan.items) {
+      if (!it.answer || it.hidden || !it.revealKey || !this.revealed.has(it.revealKey) || hid.includes(it.revealKey)) continue;
+      let got = 0, of = 0;
+      for (const q of shownPaths(it)) { const c = scribbleCovers(sc, q, z); got += c.got; of += c.of; }
+      if (of && got / of >= 0.5) hid.push(it.revealKey);
+    }
+    this.why = 'scribble: ' + er.why + (take.size ? ' (' + take.size + ')' : '') + (piece.size ? ' (joined ' + (piece.size + 1) + ')' : '');
+    if (!take.size && !hid.length) return false;
+    // the pieces it broke into go, and the steps that kept them (they are the last strokes and the last steps:
+    // _scribbleJoin), so one Undo puts back the board as it was before the scribble began
+    // (they fade with it: s is all of them)
+    for (const p of [...piece].reverse()) {
+      const i = this.strokes.lastIndexOf(p);
+      if (i >= 0) this.strokes.splice(i, 1);
+      const H = this.history[this.history.length - 1];
+      if (H && H.add === p) this.history.pop();
+    }
+    // one step: the strokes taken, from the end (so Undo puts each back where it was), and the answers hidden
+    const erased = [];
+    for (let i = this.strokes.length - 1; i >= 0; i--) if (take.has(this.strokes[i])) { erased.push({ i, s: this.strokes[i] }); this.strokes.splice(i, 1); }
+    for (const k of hid) this.revealed.delete(k);
+    if (hid.length) this._syncHidden();
+    const h = Object.assign({ erase: erased, scribble: true }, hid.length ? { hide: hid } : {});
+    this._push(h);
+    // what went fades away with the scribble, so it is seen to go
+    this._fade = { list: erased.map(x => ({ s: x.s, E: this.info.get(x.s) })).concat([{ s, E: Object.assign({ tool: 'pen' }, E && E.tool ? { tool: E.tool } : {}, E && E.color ? { color: E.color } : {}, E && E.size ? { size: E.size } : {}) }]),
+      t0: typeof performance !== 'undefined' ? performance.now() : 0, ms: 320 };
+    this._dropDead();
+    this._changed();
+    this.el.dispatchEvent(new CustomEvent('nib:scribble', { detail: { erased: erased.length, hidden: hid.length, step: h, joined: piece.size }, bubbles: true }));
+    return true;
+  }
+  // A scribble the board heard as several strokes — a pen that left the glass for a moment at a turn, a touch frame that
+  // lost a fast finger: the strokes just before this one, each lifted at most 150 ms before the next went down, and
+  // where it went down (no farther than the pen could go in that moment), with the same pen and nothing done between,
+  // are tried with it as one stroke — the longest chain first, three pieces before it at most. False: it is ink.
+  _scribbleJoin(el, E, P, T) {
+    if (typeof scribbleOf !== 'function' || this.o.layer || !el.length) return false;
+    const z = this.cam.z, chain = [];
+    let next = el, down = P.t0, k = this.strokes.length - 1, h = this.history.length - 1;
+    while (chain.length < 3 && k >= 0 && h >= 0) {
+      const st = this.strokes[k], L = this._lifted.get(st), H = this.history[h];
+      if (!L || !H || H.add !== st || L.type !== P.type || L.kind !== (T.kind || 'pen') || L.color !== (T.color || null) || L.size !== (T.size || null)) break;
+      const gap = down - L.t1;
+      if (!(gap >= 0 && gap <= 150)) break;
+      const a = st[st.length - 1], b = next[0], v = scrLen(st) / Math.max(L.t1 - L.t0, 1);
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) > Math.min(80 / z, Math.max(24 / z, 2 * v * gap))) break;
+      chain.unshift(st); next = st; down = L.t0; k--; h--;
+    }
+    for (let n = chain.length; n >= 1; n--) {
+      const pieces = chain.slice(chain.length - n);
+      if (this._scribbleOut([].concat(...pieces, el), E, pieces)) return true;
+    }
+    return false;
+  }
+  // Undo the scribble that `step` (a nib:scribble event's detail.step) was, if nothing has been done since
+  undoScribble(step) {
+    if (!step || this.history[this.history.length - 1] !== step) return false;
+    this.undo();
+    return true;
   }
   _frame() {
     if (this._raf || typeof requestAnimationFrame === 'undefined') return;
@@ -1146,6 +1270,13 @@ class Pad {
       }
     }
     for (const q of this.pending) this._drawEl(q.s);       // brief touches waiting to see whether the pen follows
+    // what a scribble just rubbed out, and the scribble, fading away
+    const G = this._fade;
+    if (G) {
+      const k = 1 - (performance.now() - G.t0) / G.ms;
+      if (k > 0) { ctx.save(); ctx.globalAlpha = 0.6 * k * k; for (const g of G.list) this._drawEl(g.s, g.E); ctx.restore(); this._frame(); }
+      else this._fade = null;
+    }
     // the eraser: a faint ring where it is
     for (const P of this.ptrs.values()) {
       if (P.mode !== 'erase' || !P.at) continue;
@@ -1231,7 +1362,7 @@ class Pad {
         try { hand = this.o.hand ? handClean(handOf(this.o.hand)) : handLoad(); } catch (err) { hand = null; }
         sample = sampleBook(res, at, hand && Object.keys(hand).length ? hand : null);
       }
-      const R = refSize(at), done = [];
+      const R = refSize(at), done = [], used = new Set();
       // writing still fresh is left as written: it changes into its view once the writer has rested
       const settle = style !== 'ink' ? Math.max(0, +this.o.settle || 0) : 0, now = performance.now();
       let holdUntil = 0;
@@ -1283,9 +1414,6 @@ class Pad {
         li += pr.tree.length;
         if (style === 'ink' && !(answers && answers.some(Boolean))) continue;
         let out = null;
-        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample: near }); } catch (err) { out = null; }
-        if (!out) continue;
-        const groups = new Map();
         // an answer shown by a tap stays shown while its line (its strokes) and the answer itself are the same
         const rowSids = pr.tree.map(row => {
           const ids = [];
@@ -1293,6 +1421,29 @@ class Pad {
           walk(row);
           return ids;
         });
+        // an answer keeps the look it was first drawn with (1.6.5, Croix: "I like that nib adapts as I go, but I don't
+        // like it to constantly update the previous answers"): each symbol of it is taken from the board's writing once,
+        // and kept while its line and the answer itself are the same, in this view — what Nib learns after shows in the
+        // answers that come after
+        const sampleFor = k => {
+          const a = answers && answers[k];
+          if (!a || !near) return null;
+          const sids = rowSids[k].slice().sort((x, y) => x - y), hand = this.o.hand ? 'h' : '';
+          const key = sids.join(',') + '|' + a.latex + '|' + style + '|' + hand;
+          let L = this._looks.get(key);
+          if (!L) { L = { sids, answer: a.latex, view: style, hand, glyphs: new Map() }; this._looks.set(key, L); }
+          used.add(key);
+          return label => {
+            if (!L.glyphs.has(label)) {
+              const v = near(label);
+              L.glyphs.set(label, { pts: v ? v.map(s => s.map(q => [q[0], q[1]])) : v, src: v && sample && sample.srcOf ? sample.srcOf(v) : null, dflt: !!v && v === DEFAULT_GLYPHS[label] });
+            }
+            return L.glyphs.get(label).pts;
+          };
+        };
+        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample: near, sampleFor }); } catch (err) { out = null; }
+        if (!out) continue;
+        const groups = new Map();
         for (const it of out.items) {
           if (fresh) continue;                             // nothing of a fresh part moves yet, its answer included
           if (it.answer) {
@@ -1317,6 +1468,7 @@ class Pad {
         for (const it of items) if (it.answer && groups.has(it.groupKey)) it.group = groups.get(it.groupKey);
       }
       this._fitAnswers(items);
+      if (this._looks.size > 400) for (const key of [...this._looks.keys()]) if (!used.has(key)) this._looks.delete(key);
       plan = { style, items, chips: this._chips(items) };
       clearTimeout(this.settleTimer);
       if (holdUntil) this.settleTimer = setTimeout(() => { if (this.result === res) this._replan(true); }, holdUntil - now + 30);
@@ -2232,6 +2384,13 @@ class Pad {
   // show an answer waiting for a tap (as a tap on it would), or hide a shown one again
   showAnswer(key) { if (key && !this.revealed.has(key)) this._reveal(key); }
   hideAnswer(key) { if (key && this.revealed.delete(key)) { this._syncHidden(); this._changed(); } }
+  // The last reading's symbols, each as the strokes it was read from — a host's own arrays when they came through
+  // syncStrokes (a tool with its own ink groups its strokes by them: Deckhand's scribble-out takes a symbol whole)
+  symbolStrokes() {
+    const res = this.result, at = this.resultStrokes || [];
+    if (!res || !res.symbols) return [];
+    return res.symbols.map(y => (y.strokes || []).map(i => { const st = at[i]; return st && this._hostSrc ? this._hostSrc.get(st) || st : st; }).filter(Boolean));
+  }
   // the symbol read under a world point (as the view draws it): the smallest one the point is inside, else the nearest
   // within a fingertip — {sym, box} or null (a Fix tool's tap: then relabel(sym, label))
   symbolAt(x, y) {
@@ -2263,6 +2422,21 @@ class Pad {
       if (ids.length && ids.every(i => i !== undefined)) revealed.push({ strokes: ids, answer: key.slice(cut + 1) });
     }
     const out = { strokes, fixes, revealed, types: this.strokes.map(s => this.strokeInfo(s).type) };
+    // each answer's look (1.6.5): its symbols as the board's strokes they were taken from, or their points (from the
+    // Replicator hand), or the built-in glyph — so an answer is drawn the same when the board is opened again
+    const looks = [];
+    for (const L of this._looks.values()) {
+      const rows = L.sids.map(x => bySid.get(String(x)));
+      if (!rows.length || rows.some(i => i === undefined) || !L.glyphs.size) continue;
+      const g = {};
+      for (const [label, v] of L.glyphs) {
+        if (!v.pts) continue;
+        const si = v.src && v.src.length ? v.src.map(s => idx.get(s)) : null;
+        g[label] = si && si.every(i => i !== undefined) ? { s: si } : v.dflt ? { d: 1 } : { p: v.pts.map(s => storePack(s, false)) };
+      }
+      looks.push({ strokes: rows, answer: L.answer, view: L.view, hand: L.hand, g });
+    }
+    if (looks.length) out.looks = looks;
     // each element's look when it is not a plain pen stroke, and a pen's pressure (0 … 100) when it gave one
     const meta = this.strokes.map(s => {
       const E = this.info.get(s);
@@ -2321,6 +2495,21 @@ class Pad {
       const ss = r && Array.isArray(r.strokes) ? r.strokes.map(at) : [];
       return ss.length && ss.every(Boolean) ? ss.map(s => this._sid(s)).sort((x, y) => x - y).join(',') + '|' + (r.answer || '') : null;
     }).filter(Boolean));
+    this._looks = new Map();
+    for (const L of Array.isArray(st.looks) ? st.looks : []) {
+      const rows = L && Array.isArray(L.strokes) ? L.strokes.map(at) : [];
+      if (!rows.length || !rows.every(Boolean) || typeof L.answer !== 'string' || !L.g || typeof L.g !== 'object') continue;
+      const sids = rows.map(s => this._sid(s)).sort((x, y) => x - y), view = typeof L.view === 'string' ? L.view : 'ink', hand = L.hand ? 'h' : '';
+      const glyphs = new Map();
+      for (const [label, v] of Object.entries(L.g)) {
+        let pts = null, src = null, dflt = false;
+        if (v && Array.isArray(v.s)) { const ss = v.s.map(at); if (ss.length && ss.every(Boolean)) { src = ss; pts = ss.map(s => s.map(q => [q[0], q[1]])); } }
+        else if (v && v.d && DEFAULT_GLYPHS[label]) { pts = DEFAULT_GLYPHS[label]; dflt = true; }
+        else if (v && Array.isArray(v.p)) { try { pts = v.p.map(x => storeUnpack(String(x)).map(q => [q[0], q[1]])).filter(s => s.length); } catch (e) { pts = null; } }
+        if (pts && pts.length) glyphs.set(label, { pts, src, dflt });
+      }
+      if (glyphs.size) this._looks.set(sids.join(',') + '|' + L.answer + '|' + view + '|' + hand, { sids, answer: L.answer, view, hand, glyphs });
+    }
     this.history = o && o.steps ? this.strokes.slice(-500).map(s => ({ add: s })) : []; this.future = []; this.parts.clear();
     if (this.o.page) this._pageCam();                     // a page with writing in its margins shows it
     if (!this._fitHere()) this._changed();
@@ -2532,7 +2721,7 @@ class Pad {
 if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' && !customElements.get('nib-pad')) {
   class NibPad extends HTMLElement {
     static get observedAttributes() { return ['symbols', 'ink', 'stroke-width', 'delay', 'settle', 'auto', 'boxes', 'pen-only', 'lines', 'degrees', 'smooth', 'view', 'motion', 'separate', 'solve', 'times', 'reveal', 'fit', 'train',
-      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'read', 'page', 'draw', 'palm', 'single']; }
+      'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'read', 'page', 'draw', 'palm', 'single', 'scribble']; }
     _opts() {
       const a = n => this.getAttribute(n), has = n => this.hasAttribute(n);
       const sym = a('symbols');
@@ -2570,6 +2759,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
         page: (() => { const v = (a('page') || '').trim().split(/[\s,x]+/).map(Number); return v.length === 2 && v[0] > 0 && v[1] > 0 ? v : null; })(),
         layer: a('draw') === 'answers' ? 'answers' : null,
         palm: a('palm') !== 'false',
+        scribble: a('scribble') !== 'false',
         single: has('single') && a('single') !== 'false',
       };
     }

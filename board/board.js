@@ -77,7 +77,7 @@
     ink: pick(saved.ink, INKS, 'pen'),    // the drawing tool last used: the board opens with it
     styles,
     eraser: pick(saved.eraser, ['stroke', 'area'], 'stroke'),
-    hold: bool(saved.hold, true), snap: bool(saved.snap, true), pressure: bool(saved.pressure, true), read: bool(saved.read, true),
+    hold: bool(saved.hold, true), snap: bool(saved.snap, true), pressure: bool(saved.pressure, true), read: bool(saved.read, true), scribble: bool(saved.scribble, true),
     paper: okPaper(saved.paper) || Object.assign({}, PAPER0),            // the paper new pages get
     xp: { what: pick(sx.what, ['page', 'all', 'view'], 'page'), as: pick(sx.as, ['pdf', 'png', 'clip'], 'pdf'), psize: pick(sx.psize, ['letter', 'a4', 'fit'], 'letter'),
       ans: pick(sx.ans, ['shown', 'all', 'none'], 'shown'), xpaper: pick(sx.xpaper, ['on', 'white'], 'on') },
@@ -104,6 +104,21 @@
     if (typeof m.im === 'string' && /^[\w-]{1,80}$/.test(m.im)) o.im = m.im;
     return Object.keys(o).length ? o : null;
   }
+  // an answer's look as kept (1.6.5): the strokes of its line, the answer, the view, and each symbol as board strokes
+  // ({s: [indexes]}), the built-in glyph ({d: 1}) or packed points ({p: [strings]})
+  function okLook(L) {
+    if (!L || typeof L !== 'object' || !Array.isArray(L.strokes) || !L.strokes.length || !L.strokes.every(Number.isInteger)) return null;
+    if (typeof L.answer !== 'string' || L.answer.length > 400 || !L.g || typeof L.g !== 'object' || Array.isArray(L.g)) return null;
+    const g = {};
+    for (const [label, v] of Object.entries(L.g)) {
+      if (label.length > 24 || !v || typeof v !== 'object') continue;
+      if (Array.isArray(v.s) && v.s.length && v.s.length <= 12 && v.s.every(Number.isInteger)) g[label] = { s: v.s };
+      else if (v.d) g[label] = { d: 1 };
+      else if (Array.isArray(v.p) && v.p.length && v.p.length <= 12 && v.p.every(x => typeof x === 'string' && x.length <= 20000)) g[label] = { p: v.p };
+    }
+    if (!Object.keys(g).length) return null;
+    return { strokes: L.strokes, answer: L.answer, view: ['ink', 'tidy', 'hand', 'typeset'].includes(L.view) ? L.view : 'ink', hand: L.hand ? 'h' : '', g };
+  }
   function okPage(p, legacyW) {
     if (!p || typeof p !== 'object') return null;
     let strokes = null, press = null;
@@ -118,6 +133,7 @@
     else if (legacyW) out.meta = strokes.map(() => ({ s: legacyW }));   // written before pens had sizes: the width it had
     if (press) out.press = press;
     if (p.cam && typeof p.cam === 'object') out.cam = p.cam;
+    if (Array.isArray(p.looks)) { const lk = p.looks.map(okLook).filter(Boolean); if (lk.length) out.looks = lk; }
     return out;
   }
   const legacyW = saved.v === 3 ? 0 : (OLD_PENS[saved.pen] || 3.5);
@@ -134,11 +150,12 @@
     else { o.strokes = st.strokes; if (st.press) o.press = st.press; }
     if (st.meta) o.meta = st.meta;
     if (st.cam) o.cam = st.cam;
+    if (st.looks) o.looks = st.looks;
     packed.set(st, o);
     return o;
   }
   const settingsOut = () => ({ view: S.view, solve: S.solve, reveal: S.reveal, rail: S.rail, theme: S.theme, finger: S.finger, pinch: S.pinch, train: S.train, trainNoted: S.trainNoted,
-    ink: S.ink, styles: S.styles, eraser: S.eraser, hold: S.hold, snap: S.snap, pressure: S.pressure, read: S.read, paper: S.paper, xp: S.xp });
+    ink: S.ink, styles: S.styles, eraser: S.eraser, hold: S.hold, snap: S.snap, pressure: S.pressure, read: S.read, scribble: S.scribble, paper: S.paper, xp: S.xp });
   // the page on the board as it is now, with its paper
   const here = () => Object.assign(pad.getState(), { paper: pages[cur].paper });
   // a text box still open is part of the page: kept before the page is (it would be lost with a page change or a close)
@@ -559,10 +576,10 @@
     persist(); marks(); drillRead();
   }
   function setPinch(on) { S.pinch = on; applySwitches(); persist(); marks(); }
-  const SWITCHES = { holdsw: 'hold', snapsw: 'snap', pressw: 'pressure', readsw: 'read' };
+  const SWITCHES = { holdsw: 'hold', scribsw: 'scribble', snapsw: 'snap', pressw: 'pressure', readsw: 'read' };
   for (const [id, k] of Object.entries(SWITCHES)) $(id).onclick = () => { S[k] = !S[k]; applySwitches(); persist(); };
   function applySwitches() {
-    attr('hold', S.hold ? null : 'false'); attr('pressure', S.pressure ? null : 'false'); attr('read', S.read ? null : 'false');
+    attr('hold', S.hold ? null : 'false'); attr('pressure', S.pressure ? null : 'false'); attr('read', S.read ? null : 'false'); attr('scribble', S.scribble ? null : 'false');
     attr('eraser', S.eraser === 'area' ? 'area' : null); attr('pinch', S.pinch ? null : 'false');
     for (const [id, k] of Object.entries(SWITCHES)) $(id).setAttribute('aria-checked', String(S[k]));
     applyPaper();
@@ -649,6 +666,20 @@
   }
   $('train').onclick = () => setTrain(!S.train);
   pad.addEventListener('nib:train', () => { trainLine(); persistTrain(); });
+  // scribbled out: a note with Undo, while the scribble is still the last thing done
+  let scribStep = null;
+  const SCRIB_NOTE = 'Scribbled out.';
+  pad.addEventListener('nib:scribble', e => {
+    const d = e.detail || {};
+    scribStep = d.step || null;
+    const what = d.erased ? '' : ' The answer is hidden again.';
+    note(SCRIB_NOTE + what, () => { if (pad.pad && scribStep) pad.pad.undoScribble(scribStep); scribStep = null; }, 'Undo', false, true);
+  });
+  pad.addEventListener('nib:change', () => {
+    if (!scribStep || !pad.pad) return;
+    const h = pad.pad.history;
+    if (h[h.length - 1] !== scribStep) { scribStep = null; if (!$('note').hidden && $('notetext').textContent.indexOf(SCRIB_NOTE) === 0) $('note').hidden = true; }
+  });
   function askForget(on) {
     $('forgetask').hidden = !on; $('trainbtns').hidden = on;
     if (on) { const n = records().length; $('forgetq').textContent = `Forget the ${n} expression${n === 1 ? '' : 's'} kept for training?`; }
