@@ -188,6 +188,25 @@ const ring = (c, r, turns = 3) => Array.from({ length: Math.round(48 * turns) + 
   ok(s1.n === n0 - three.strokes.length && s1.h === h0 + 1, `heard as three strokes: the 3 is gone, nothing stays, one step (${s1.n}, ${s1.h - h0})`);
   await page.evaluate(() => document.getElementById('pad').pad.undo());
   await wait(300);
+  // the page busy between the pieces (a big board drawn again on a slow computer): the second touch is heard 250 ms late,
+  // but the pen came down 40 ms after it lifted — by the events' own times it is one scribble
+  h0 = (await st()).h;
+  await page.evaluate(async (A, B) => {
+    const el = document.getElementById('pad'), P = el.pad, cv = el.querySelector('canvas'), r = cv.getBoundingClientRect(), sleep = t => new Promise(res => setTimeout(res, t));
+    const ev = (type, q) => new PointerEvent('pointer' + type, { pointerId: 1, pointerType: 'pen', clientX: r.left + q[0], clientY: r.top + q[1], bubbles: true, cancelable: true,
+      isPrimary: true, button: type === 'down' ? 0 : -1, buttons: type === 'up' ? 0 : 1, width: 1, height: 1, pressure: 0.5 });
+    await writeSlow(el, [A], 'pen', 10 * A.length);
+    await sleep(40);
+    const q = B.map(p => P.toScreen(p)), down = ev('down', q[0]);   // made now: its time is when the pen came down
+    const t = performance.now(); while (performance.now() - t < 250) { /* the page busy */ }
+    cv.dispatchEvent(down);
+    for (let i = 1; i < q.length; i++) { await sleep(10); cv.dispatchEvent(ev('move', q[i])); }
+    cv.dispatchEvent(ev('up', q[q.length - 1]));
+  }, A, B);
+  s1 = await st();
+  ok(s1.n === n0 - three.strokes.length && s1.h === h0 + 1, `the pen down 40 ms after it lifted, heard 250 ms late (the page busy): one scribble (${s1.n}, ${s1.h - h0})`);
+  await page.evaluate(() => document.getElementById('pad').pad.undo());
+  await wait(300);
   // not one scribble: the second piece 400 ms later; the second piece in the marker
   await slow([A, B], [400]);
   ok((await st()).n === n0 + 2, 'pieces 400 ms apart are two strokes of ink');

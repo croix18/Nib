@@ -442,6 +442,7 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
     ok(st.v === 3 && Array.isArray(st.pk) && st.pk.every(x => typeof x === 'string' && /^[AB]/.test(x)) && st.paper && st.paper.kind === 'dots' && st.cam && st.cam.z === 1,
       'kept as version 3: each element\'s points packed in a short string, the page\'s paper and view');
     ok(st.meta && st.meta[st.meta.length - 1] && st.meta[st.meta.length - 1].sh === 'arrow', 'with each element\'s look (the arrow: ' + JSON.stringify(st.meta && st.meta[st.meta.length - 1]) + ')');
+    await read();                                          // the writing read before it is compared (a busy machine reads late)
     const before = await P(() => document.getElementById('pad').latex);
     await page.reload({ waitUntil: 'load' }); await wait(800); await read();
     cdp = await page.target().createCDPSession();

@@ -44,6 +44,9 @@ const PAD_DEFAULTS = {
   onChange: null,       // (pad) => void, after every stroke / undo / clear
 };
 
+// when an input event happened, on the page's clock: its own time stamp (a pen lifted and set down again 40 ms apart is
+// 40 ms apart even when the page was busy drawing in between and heard the second touch later), else now
+function evTime(e, now) { const t = e && e.timeStamp; return t > 0 && t <= now + 1 ? t : now; }
 // Writing in different places on a board: strokes near each other belong together — neighbors on a line (within
 // 1.5 writing heights across, 0.6 up or down) or stacked (fractions, steps of working: within 1.6 heights down and
 // overlapping across). Returns groups of stroke indices in reading order.
@@ -393,7 +396,7 @@ class Pad {
     const m = this.mode;
     // mode 'fix': a tap is sent on as nib:tap (the Board's Fix picks the symbol under it); writing still writes
     const mode = eraser || m === 'erase' ? 'erase' : ['select', 'shape', 'text', 'laser'].includes(m) ? m : 'draw';
-    const P = { id: e.pointerId, type, mode, eraser, fix: m === 'fix' && !eraser, t0: now, last: now, cur: null, erased: [], ops: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e),
+    const P = { id: e.pointerId, type, mode, eraser, fix: m === 'fix' && !eraser, t0: now, te: evTime(e, now), last: now, cur: null, erased: [], ops: [], hid: [], at: null, r: 0, base: 0, chip: null, w: this._contact(e),
       tool: Object.assign({}, this.tool) };
     this.ptrs.set(e.pointerId, P);
     this.why = P.mode + (eraser ? ' (eraser end)' : '');
@@ -698,7 +701,7 @@ class Pad {
     // a fast finger)
     const scribbly = !P.snap && this.o.scribble !== false && (!T.kind || T.kind === 'pen' || T.kind === 'marker');
     if (scribbly && (this._scribbleOut(el, info) || this._scribbleJoin(el, info, P, T))) return;
-    if (scribbly) this._lifted.set(el, { t0: P.t0, t1: now, type: P.type, kind: T.kind || 'pen', color: T.color || null, size: T.size || null });
+    if (scribbly) this._lifted.set(el, { t0: P.te != null ? P.te : P.t0, t1: evTime(e, now), type: P.type, kind: T.kind || 'pen', color: T.color || null, size: T.size || null });
     this.strokes.push(el);
     this._push({ add: el });
     this._changed();
@@ -875,13 +878,14 @@ class Pad {
     return true;
   }
   // A scribble the board heard as several strokes — a pen that left the glass for a moment at a turn, a touch frame that
-  // lost a fast finger: the strokes just before this one, each lifted at most 150 ms before the next went down, and
-  // where it went down (no farther than the pen could go in that moment), with the same pen and nothing done between,
-  // are tried with it as one stroke — the longest chain first, three pieces before it at most. False: it is ink.
+  // lost a fast finger: the strokes just before this one, each lifted at most 150 ms before the next went down (by the
+  // events' own times, so a page busy drawing in between does not stretch the gap), and where it went down (no farther
+  // than the pen could go in that moment), with the same pen and nothing done between, are tried with it as one stroke
+  // — the longest chain first, three pieces before it at most. False: it is ink.
   _scribbleJoin(el, E, P, T) {
     if (typeof scribbleOf !== 'function' || this.o.layer || !el.length) return false;
     const z = this.cam.z, chain = [];
-    let next = el, down = P.t0, k = this.strokes.length - 1, h = this.history.length - 1;
+    let next = el, down = P.te != null ? P.te : P.t0, k = this.strokes.length - 1, h = this.history.length - 1;
     while (chain.length < 3 && k >= 0 && h >= 0) {
       const st = this.strokes[k], L = this._lifted.get(st), H = this.history[h];
       if (!L || !H || H.add !== st || L.type !== P.type || L.kind !== (T.kind || 'pen') || L.color !== (T.color || null) || L.size !== (T.size || null)) break;
