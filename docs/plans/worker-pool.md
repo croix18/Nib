@@ -1,6 +1,12 @@
 # The worker pool: a full page read on every core
 
-**Planned for Nib 1.8.0. Not built**: nothing in `src/` or `dist/` knows of it. What is here is the design as
+**Built as Nib 1.8.0** (15 November 2026; `docs/HANDOFF.md`, The worker pool (1.8.0), has what was built, the
+checks and the build's numbers). Kept below as it was written before the build, so it speaks of the pool as planned and
+of `tools/pool/`, which is gone now (`docs/plans/README.md`). Where the release differs from it, after the review of
+the first build: `needs()` keeps no size and writes no cache, and an answer waits beside the cache until a read asks
+for exactly that classification (here: `fill` puts it in the cache, only while the recognizer is at that size); a
+chunk is waited for 5 s, not 20; a single core gets no worker; what is queued for a recognizer replaced or another
+smoothing is dropped too. What is here is the design as
 decided, the measurements it rests on (`tools/pool/`, a prototype that runs against the released engine without
 changing it; 15 November 2026, Chrome 153 on a two-core machine, Nib 1.7.0), the order to build it in, and the checks
 it has to pass. The instruction to build from is `briefs/worker-pool-build.md`. Croix's word, 15 November: the two

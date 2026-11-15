@@ -19,8 +19,8 @@ Everything here runs from a clone after `npm ci` and `npm run data` (the Chrome 
 | `sessions.sh` | the ten reference sessions, each compared with its reference as it ends. Eight against 1.6.7 (`s1`–`s6`: 16 expressions, 30 steps; `big8`: 60 and 30; `big7`: 100 and 22; 640 steps in all). Two against 1.7.1 (`many9`, `many11`: 120 expressions and 22 steps, 112 steps in all, on pages that need 13 and 14 joins, with half of their moves taking one stroke off its symbol: what 1.6.7 and 1.7.0 read wrongly). `SESSIONS="s1 big8"` runs only those; `NIB_SESSION_INIT` is the line of script, `NIB_SESSION_ATTRS` more attributes for the pad |
 | `cmpsess.js` | two recorded sessions step by step: which steps differ, and in what. A confidence that moved by 2.5e-6 at most is counted apart (engines whose arithmetic differs in the last bit). Exit 1 when a step differs |
 | `engine.sh` | a released engine out of this repository's history (`dist/nib.js` at a commit) into `.engines/`, to compare with. 1.6.7 is `b84b93d`, 1.7.0 is `fc9b824` |
-| `pages_probe.js` | pages that carry Nib, served over http the way a site serves them: which classifier runs under each page's own Content-Security-Policy, what the Board's Settings says, whether a rule was broken, and a reading. Each page is tried again with `'wasm-unsafe-eval'` taken out of its rule, which must fall back to JavaScript. Written for mrshaffer.org (`node tools/verify/pages_probe.js ../mrshaffer-site/public`) |
-| `file_probe.js` | a file that carries Nib, opened from `file://` as a teacher opens it: which Nib is inside, which classifier it runs, whether it reads. For a file the engine was just put into, before it is pushed: `node tools/verify/file_probe.js ../deckhand/Deckhand.html dist/Board.html` |
+| `pages_probe.js` | pages that carry Nib, served over http the way a site serves them: which classifier runs under each page's own Content-Security-Policy, what the Board's Settings says, whether a rule was broken, a reading, and since Nib 1.8.0 whether the worker pool's workers start under that rule (from `blob:`), on which classifier, and whether a handful of groups classified there have this thread's bits. Each page is tried again with `'wasm-unsafe-eval'` taken out of its rule, which must fall back to JavaScript. Written for mrshaffer.org (`node tools/verify/pages_probe.js ../mrshaffer-site/public`) |
+| `file_probe.js` | a file that carries Nib, opened from `file://` as a teacher opens it: which Nib is inside, which classifier it runs, whether it reads, and since Nib 1.8.0 whether the pool's workers start from the file's own copy of the engine and give this thread's bits. For a file the engine was just put into, before it is pushed: `node tools/verify/file_probe.js ../deckhand/Deckhand.html dist/Board.html` |
 | `joins_probe.js`, `moved_probe.js` | the two faults of `docs/reviews/found-2026-11-15.md`, each on pages made for it: does a board join every pair of pieces that belongs together, however many there are; is a symbol whose stroke was moved read where its strokes are now. Each exits 1 on an engine that has its fault (1.7.0 and before), 0 since 1.7.1; both take an engine as their last argument |
 | `deckhand/playwright.system-chrome.config.js` | Deckhand's own Playwright suite run with the system's Chrome, for a machine where Playwright's Chromium cannot be downloaded (how 7.63.1 was checked before it was pushed) |
 | `gold-1.6.7/` | the reference: what Nib 1.6.7 (`b84b93d`) read and did — `readings/` (16 files, 5,605 lines) and `sessions/` (8 files, 640 lines), gzipped, with `SHA256` (the hash, the lines and the bytes of each file unzipped) |
@@ -66,6 +66,20 @@ gzipped). The released 1.7.0 differs from it at 55 of 58 and 54 of 54 steps: tho
 joins it made. A session of this kind needs `NIB_SESSION_STROKES=1` when it is run by hand (`sessions.sh` sets it for
 the two).
 
+## What they showed for 1.8.0 (15 November 2026: the worker pool)
+
+- **Readings**: 5,605 of 5,605 as 1.6.7 read them (node has no workers: this shows that `needs`, `fill`, the answer
+  taken in `probs` and the wrapper's name moved nothing); the largest difference in a confidence 2.27e-7, as before.
+- **Sessions**, three times — the pool as it comes (`sessions.sh dist/nib.js <out>`: one worker on the two-core
+  machine), off (`NIB_SESSION_INIT="Nib._internals.poolUse(0)"`) and at two workers (`…poolUse(2)`): the ten
+  sessions, 752 of 752 steps the same each time. Each opens with a page of 16 to 120 expressions, which is where the
+  pool runs; the script waits for `pad.busy`, which covers the asking.
+- **The pages**: `file_probe.js dist/Board.html dist/Replicator.html dist/Nib.html` — each starts a worker from its
+  own copy of the engine, on the kernel, and the groups classified there have this thread's bits; `pages_probe.js`
+  on the site's folder after the sync says the same under the site's rule (and with `'wasm-unsafe-eval'` taken out,
+  workers that run the JavaScript path).
+- **The two faults of 1.7.1**: both probes still pass.
+
 ## What they showed for 1.7.1 (15 November 2026)
 
 - **Readings**: 5,605 of 5,605 as 1.6.7 read them; the largest difference in a confidence 2.3e-7, as for 1.7.0.
@@ -73,8 +87,9 @@ the two).
   none of their moves takes a stroke off its symbol, so nothing in them was touched by the two fixes.
 - **The two faults**: `joins_probe.js` ends `every page was joined to the end` and `moved_probe.js`
   `moved ink is read where it is`; with 1.7.0 both exit 1 (`docs/reviews/found-2026-11-15.md` has the tables).
-- **The pool's prototype** (`tools/pool/exact.js`) still holds on 1.7.1: a cache filled ahead reads what a cold read
-  reads, 0 differences.
+- **The pool's prototype** (`tools/pool/exact.js`, gone since 1.8.0: `test/pool_check.js` holds the same on the
+  engine's own `needs` and `fill`) still held on 1.7.1: a cache filled ahead reads what a cold read reads, 0
+  differences.
 
 ## What they showed for 1.7.0 (14 and 15 November 2026)
 

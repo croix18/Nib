@@ -1,11 +1,14 @@
 // Pages that carry Nib, served over http as a site serves them: which classifier runs under each page's own rule
-// (its Content-Security-Policy), what the Board's Settings says, whether a rule was broken, and a reading.
+// (its Content-Security-Policy), what the Board's Settings says, whether a rule was broken, and a reading. Since
+// Nib 1.8.0 also whether the worker pool's workers start under that rule (from blob:, the engine's own source) and
+// which classifier they run: a handful of groups is asked of the pool and compared with this thread's.
 // A page with a rule is also tried with 'wasm-unsafe-eval' taken out of it: the control, which must fall back to
 // JavaScript — so the check would notice a rule that stops the kernel.
 //   node tools/verify/pages_probe.js <folder the site serves> [/path/ ...]
 //   e.g. for mrshaffer.org:  node tools/verify/pages_probe.js ../mrshaffer-site/public
 //        (default paths: /teacher/nib/board/ /teacher/nib/replicator/ /teacher/deckhand/)
-// Exit 1 when a page does not run the kernel, does not read, breaks its rule or throws.
+// Exit 1 when a page does not run the kernel, does not read, breaks its rule, throws, or (Nib 1.8.0 and later)
+// cannot start a worker or gets other bits from one.
 'use strict';
 const REPO = require('path').join(__dirname, '..', '..'), T = require(REPO + '/test/data');   // the repository, and where its tests find packages and Chrome
 const fs = require('fs'), path = require('path'), http = require('http');
@@ -41,14 +44,31 @@ const server = http.createServer((req, res) => {
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => { const t = m.text(); if (/Content Security Policy|Refused to/.test(t)) broken.push(t.slice(0, 160)); });
     await page.goto(base + url, { waitUntil: 'load' }); await new Promise(r => setTimeout(r, 1500));
-    const r = await page.evaluate(() => ({
-      nib: window.Nib ? Nib.version : null, kernel: window.Nib ? Nib.kernel : null,
-      line: (document.getElementById('engineline') || {}).textContent || null,
-      csp: (document.querySelector('meta[http-equiv="Content-Security-Policy"]') || {}).content || null,
-      read: window.Nib ? Nib.recognize([[[0, 0], [0, 40]], [[20, 20], [50, 20]], [[35, 5], [35, 35]], [[70, 2], [90, 0], [92, 18], [72, 40], [95, 40]]], { times: false }).latex : null }));
-    const ok = r.kernel === want && r.read === '1+2' && errors.length === 0 && (want === 'js' || broken.length === 0);
+    const r = await page.evaluate(async () => {
+      const S = [[[0, 0], [0, 40]], [[20, 20], [50, 20]], [[35, 5], [35, 35]], [[70, 2], [90, 0], [92, 18], [72, 40], [95, 40]]];
+      const out = {
+        nib: window.Nib ? Nib.version : null, kernel: window.Nib ? Nib.kernel : null,
+        line: (document.getElementById('engineline') || {}).textContent || null,
+        csp: (document.querySelector('meta[http-equiv="Content-Security-Policy"]') || {}).content || null,
+        read: window.Nib ? Nib.recognize(S, { times: false }).latex : null, pool: null };
+      // the pool (1.8.0): the sample's groups classified by workers under this page's rule, against this thread's
+      const I = window.Nib && Nib._internals;
+      if (I && I.poolRun && Nib.Recognizer) {
+        const need = new Nib.Recognizer().needs(S, { times: false }), got = new Map();
+        const done = await Promise.race([I.poolRun(need.jobs.map(j => ({ group: j.group, ref: need.ref, key: j.key })), (j, e) => got.set(j.key, e)).done, new Promise(res => setTimeout(() => res('late'), 10000))]);
+        let differ = 0;
+        for (const j of need.jobs) { const e = got.get(j.key), z = I.classifyGroup(j.group, need.ref); if (!e || e.length !== z.length || e.some((v, k) => !Object.is(v, z[k])) || e.hidden.some((v, k) => !Object.is(v, z.hidden[k]))) differ++; }
+        const st = I.poolTest('stats');
+        out.pool = { done, asked: need.jobs.length, differ, started: st.started, kernels: st.kernels, dead: st.dead, why: st.why, size: st.size };
+      }
+      return out;
+    });
+    const P = r.pool, poolOk = !P || (P.done === true && P.differ === 0 && !P.dead && P.started > 0 && P.kernels.every(k => k === want));
+    const ok = r.kernel === want && r.read === '1+2' && errors.length === 0 && (want === 'js' || broken.length === 0) && poolOk;
     if (!ok) bad++;
-    console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}: Nib ${r.nib}, kernel ${r.kernel}, reads ${r.read}` + (r.line ? `, Settings: "${r.line}"` : '') + `, rule ${r.csp ? JSON.stringify(r.csp) : 'none'}` +
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}: Nib ${r.nib}, kernel ${r.kernel}, reads ${r.read}` + (r.line ? `, Settings: "${r.line}"` : '') +
+      (P ? (P.done === true && !P.dead ? `, ${P.started} worker${P.started === 1 ? '' : 's'} started (${P.kernels.join(', ')}): ${P.asked} groups, ${P.differ} differ` : `, no worker (${P.dead ? P.why : 'asked: ' + P.done})`) : ', no pool in this Nib') +
+      `, rule ${r.csp ? JSON.stringify(r.csp) : 'none'}` +
       (errors.length ? ' | page errors: ' + errors.join(' ; ') : '') + (want !== 'js' && broken.length ? ' | rule broken: ' + broken[0] : ''));
     await page.close();
   }

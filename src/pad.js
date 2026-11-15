@@ -117,6 +117,10 @@ function clusterNear(boxes, ref, link) {
 // pair each time it is asked): 30 million, a third of a second on a slow laptop. Counted, not timed: what a page
 // reads may not depend on the machine. (Only the looking is counted: reading each joined piece comes on top.)
 const JOIN_WORK = 3e7;
+// When a read asks the worker pool first (Pad._ask, 1.8.0): when the pieces it has to read have this many strokes
+// between them (some hundred groups to classify) — and what they list is worth asking for (poolWorth, src/pool.js).
+// Ordinary writing — a stroke, an expression — is under it, is not even planned, and never touches the pool.
+const POOL_MIN_STROKES = 60;
 // Pieces of writing that belong together but were left apart by the spaces between them. A line of working that only
 // asks ("x =", "y <") under a piece is joined to that piece (an equation, or two of them), however far the writer
 // dropped it (within 2.5 line heights). Pieces of one line left apart by the spaces in it: a piece whose reading ends in + − · × ÷ < > ≤ ≥ ≠ ±
@@ -341,6 +345,7 @@ class Pad {
     this.timer = null; this.gen = 0; this._raf = 0; this._due = false; this._liveGen = 0;
     this.plan = null; this.anim = null; this.sid = new WeakMap(); this.nsid = 1;
     this.parts = new Map(); this.recs = new WeakMap(); this.optsVersion = 0;
+    this._asks = new Set();         // what this pad's reads have asked of the worker pool and is not answered yet (_ask)
     // what went wrong (the optional intelligence never breaks writing, erasing, undo or saving): the last 20 failures
     // ({where, message, time}), each distinct one said once (_fault); and the readings that failed, by their part key
     // (a piece of writing that cannot be read is not tried again until its strokes, corrections, options or memory change)
@@ -2283,7 +2288,7 @@ class Pad {
     this.redraw();
     if (this.o.onChange) this.o.onChange(this);
     this.el.dispatchEvent(new CustomEvent('nib:change', { detail: this, bubbles: true }));
-    if (!this.ink.length) { clearTimeout(this.timer); this.gen++; this._due = false; if (this.result || this.plan) this._emit(null); return; }  // nothing left to read
+    if (!this.ink.length) { clearTimeout(this.timer); this.gen++; this._due = false; this._askDrop(true); if (this.result || this.plan) this._emit(null); return; }  // nothing left to read
     if (this.o.auto) this._schedule(this.o.delay);
   }
   // Read the ink without freezing the page: classify the new stroke groups a few milliseconds at a time,
@@ -2291,31 +2296,126 @@ class Pad {
   // A board's read is one run of steps (_partsSteps) from the first group to the reading itself: every group, and
   // every group joined to another, is warmed and read inside the slices, so nothing is left to classify at the end
   // (until 1.7.0 the groups joined by joinOperands were read cold in the final pass, with the page held).
+  // A big read asks the worker pool first (_ask, 1.8.0): the steps then find most of their classifications done.
   _schedule(ms) {
     clearTimeout(this.timer);
     const gen = ++this.gen;
     this._due = true; this._liveGen = gen;
+    this._askDrop();                                      // (a page replaced: what was asked for the old one goes now)
     this.timer = setTimeout(() => {
-      const board = !!this.o.separate, it = board ? this._partsSteps(this._ropts()) : this._warm(this._ropts()), start = performance.now();
-      let last = null, failed = false;
-      const step = () => {
-        if (gen !== this.gen) return;
-        const t0 = performance.now();
-        // (a failure in the warm-up is said by _warm, one in a group of a board by its own read; one outside a piece
-        // of writing ends the steps: the read itself copes)
-        const next = () => { try { last = it.next(); return last.done; } catch (err) { failed = true; this._fault('read', err); return true; } };
-        while (performance.now() - t0 < 14) if (next()) {
-          // the reading the steps came to is the page's when the ink is still the ink they began from; ink changed
-          // under them (a second pointer still down: _inkMark) is read as it is now, at once, as the last pass
-          // always was — without what these steps kept, which may be of ink half moved
-          if (board && !failed && this.ink.length && !this._inkChanged(this._pass && this._pass.mark)) { clearTimeout(this.timer); this.gen++; this._announce(last.value, start); }
-          else { if (board && this._pass) for (const k of this._pass.keys) this.parts.delete(k); this.recognize(start); }
-          return;
-        }
-        this.timer = setTimeout(step, 0);
-      };
-      step();
+      const start = performance.now();
+      this._ask(gen, () => this._steps(gen, start));
     }, ms);
+  }
+  // the read itself, in slices of 14 ms between frames, and the announcement of what it comes to (start: when the
+  // read began, the asking included)
+  _steps(gen, start) {
+    const board = !!this.o.separate, it = board ? this._partsSteps(this._ropts()) : this._warm(this._ropts());
+    let last = null, failed = false;
+    const step = () => {
+      if (gen !== this.gen) return;
+      const t0 = performance.now();
+      // (a failure in the warm-up is said by _warm, one in a group of a board by its own read; one outside a piece
+      // of writing ends the steps: the read itself copes)
+      const next = () => { try { last = it.next(); return last.done; } catch (err) { failed = true; this._fault('read', err); return true; } };
+      while (performance.now() - t0 < 14) if (next()) {
+        // the reading the steps came to is the page's when the ink is still the ink they began from; ink changed
+        // under them (a second pointer still down: _inkMark) is read as it is now, at once, as the last pass
+        // always was — without what these steps kept, which may be of ink half moved
+        if (board && !failed && this.ink.length && !this._inkChanged(this._pass && this._pass.mark)) { clearTimeout(this.timer); this.gen++; this._announce(last.value, start); }
+        else { if (board && this._pass) for (const k of this._pass.keys) this.parts.delete(k); this.recognize(start); }
+        return;
+      }
+      this.timer = setTimeout(step, 0);
+    };
+    step();
+  }
+  // Before a big read's steps, the worker pool is asked for the groups their warm-ups would classify first (src/pool.js;
+  // docs/HANDOFF.md, The worker pool). The asking changes nothing a read can see, and an answer stands in only for
+  // the very call to the classifier it was made for (Recognizer.needs, fill): the steps then run as they always have
+  // and find that work done, so what they read cannot differ. In order:
+  //   - a small read is not even planned: the pieces not kept (this.parts, _badParts) have fewer than POOL_MIN_STROKES
+  //     strokes between them, or the pool cannot run here;
+  //   - what earlier reads asked for and is still queued is dropped where no read can use its answer any more
+  //     (_askDrop), and the rest is waited for (a read cut short by new ink leaves its requests running: the work is
+  //     not wasted);
+  //   - each piece's recognizer lists what it needs (Recognizer.needs, with the options _partsPass gives warmup), in
+  //     slices of 14 ms as the read is;
+  //   - a list this thread would classify in less than the pool is worth asking for (poolWorth): the steps;
+  //   - else the pool is asked, and each answer is handed to its recognizer (Recognizer.fill: kept beside the cache
+  //     until a read asks for exactly that classification) if that recognizer is still the one the pad holds for the
+  //     piece (it is replaced when ink is resized), whatever has become of this read meanwhile;
+  //   - once everything asked is answered, or the pool has died, the steps.
+  // gen: the read this is for; a new read (new ink, a pointer down) leaves it, and then() is not called.
+  _ask(gen, then) {
+    if (gen !== this.gen) return;
+    if (this._asks.size) {
+      this._askDrop();
+      Promise.all([...this._asks].map(a => a.done)).then(() => this._ask(gen, then));
+      return;
+    }
+    const board = !!this.o.separate, ink = this.ink;
+    if (!poolSize() || ink.length < POOL_MIN_STROKES) { then(); return; }
+    // The asking is an extra: whatever fails in it, the steps begin as they always did (and what is wrong with the
+    // page is theirs to say, as it was). Each stage runs in here and says how it ended; then() is called outside it.
+    const stage = f => { try { return f(); } catch (err) { return 'steps'; } };
+    const todo = [], jobs = [];
+    let ro = null, i = 0, ask = null;
+    const listed = stage(() => {
+      ro = this._ropts();
+      let n = 0;
+      if (board) {
+        // (the keys in the order the read makes them: _partKey names the strokes it meets)
+        for (const g of clustersOf(ink)) {
+          const st = g.map(k => ink[k]), key = this._partKey(st, ro);
+          if (this.parts.has(key) || this._badParts.has(key)) continue;
+          todo.push(st); n += st.length;
+        }
+      } else if (this._badWhole !== this._partKey(ink, ro)) { todo.push(ink); n = ink.length; }
+      return n < POOL_MIN_STROKES ? 'steps' : 'plan';
+    });
+    if (listed !== 'plan') { then(); return; }
+    const plan = () => {
+      if (gen !== this.gen) return;
+      const how = stage(() => {
+        const t0 = performance.now();
+        while (i < todo.length && performance.now() - t0 < 14) {
+          const st = todo[i++], rec = board ? this._recFor(st[0]) : this.rec;
+          let need;
+          // (writing whose warm-up throws is met again by the read, which says so and keeps it as ink)
+          try { need = rec.needs(st, Object.assign({}, ro, { fix: this._fixFor(st) })); } catch (err) { continue; }
+          for (const j of need.jobs) jobs.push({ group: j.group, ref: need.ref, key: j.key, bucket: need.bucket, rec, first: st[0], st, smooth: ro.smooth });
+        }
+        if (i < todo.length) return 'more';
+        if (!poolWorth(jobs.length)) return 'steps';
+        ask = poolRun(jobs, (j, e) => { if (this._recOf(j) === j.rec) j.rec.fill(j.key, j.bucket, j.ref, j.group, e); });
+        return 'asked';
+      });
+      if (how === 'more') { this.timer = setTimeout(plan, 0); return; }
+      if (how !== 'asked' || !ask) { then(); return; }
+      this._asks.add(ask);
+      ask.done.then(() => { this._asks.delete(ask); if (gen === this.gen) then(); });
+    };
+    plan();
+  }
+  // the recognizer the pad holds now for the piece a job was asked for (a board's: by the piece's first stroke)
+  _recOf(j) { return this.o.separate ? this.recs.get(j.first) : this.rec; }
+  // What was asked of the pool and is still queued is taken out of the queue where no read can use its answer any
+  // more: a piece whose strokes are no longer all on the pad (a page cleared or replaced must not make the next read
+  // wait for the old one's groups), one whose recognizer the pad has replaced (ink resized: _inkMoved), one asked
+  // with another smoothing (every stroke is then another stroke, under another id). The next read waits only for the
+  // chunks the workers already hold, and asks again for what it needs.
+  _askDrop(all) {
+    if (!this._asks.size) return;
+    try {
+      const on = new Set(this.ink), gone = new Map(), smooth = this._ropts().smooth;
+      const test = j => {
+        let g = gone.get(j.st);
+        if (g === undefined) { g = all || !j.st.every(s => on.has(s)) || this._recOf(j) !== j.rec || j.smooth !== smooth; gone.set(j.st, g); }
+        return g;
+      };
+      for (const a of this._asks) a.drop(test);
+    } catch (err) { /* what stays queued is classified for nothing, and costs only that */ }
   }
   // The reading is kept and announced whatever happens after it: a view, the answers or the training log that fails
   // leaves the ink as written (and is said once, _fault)
@@ -2990,6 +3090,7 @@ class Pad {
     for (const p of this._trainParts()) this._trainSkip.add(this._trainKey(p.strokes));
   }
   destroy() {
+    this._askDrop(true);
     clearTimeout(this.timer); clearTimeout(this._trainTimer); clearTimeout(this._camTimer); this.gen++; this._due = false; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
     if (this.editing) { this.editing.ta.remove(); this.editing = null; }
     if (this._raf) cancelAnimationFrame(this._raf);

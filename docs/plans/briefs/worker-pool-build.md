@@ -1,5 +1,8 @@
 # Nib 1.8.0: a page's cold read on every core
 
+(Done, 15 November 2026: Nib 1.8.0. Kept as it was given; what the review of the first build changed is in
+`docs/HANDOFF.md`, The worker pool (1.8.0), The review.)
+
 The task form of `docs/plans/worker-pool.md`. Read that first: it has the design, why the reading cannot differ, and
 what the prototype measured. This is what to build, what must hold when it is built, and what to report.
 

@@ -1,11 +1,11 @@
-/*! Nib 1.7.1 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+/*! Nib 1.8.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
  *  Copyright (c) 2009-2010, Design Science, Inc. (<www.mathjax.org>); Copyright (c) 2014-2018 Khan Academy
  *  (<www.khanacademy.org>), with Reserved Font Names KaTeX_Main, KaTeX_Math and KaTeX_Size1. Licensed under the
  *  SIL Open Font License, Version 1.1 (licenses/OFL-KaTeX-fonts.txt, https://openfontlicense.org). */
-(function (global) {
+(function NibEngine(global) {
 'use strict';
 /* Nib — handwritten math to LaTeX. Recognition core. No dependencies.
  * Pipeline: strokes -> symbol groups (time-ordered DP: CNN + stroke-join model)
@@ -565,7 +565,9 @@ const KERN_WASM = 'AGFzbQEAAAABLgRgCn9/f39/f39/f38AYAh/f39/f39/fwBgBn9/f39/fwBgC
 // module's memory once; the memory is laid out here and never grows. Each call below does one classification's part
 // in that memory and gives back new arrays, as the JS path does.
 function kernLoad(M) {
-  const say = why => { if (typeof console !== 'undefined' && console.info) console.info('Nib: the classifier runs in JavaScript (' + why + ')'); return null; };
+  // (the engine as a worker of the page's pool says nothing: the page has said it, or will, for the same browser)
+  const quiet = typeof self !== 'undefined' && self.__nibWorker === 1;
+  const say = why => { if (!quiet && typeof console !== 'undefined' && console.info) console.info('Nib: the classifier runs in JavaScript (' + why + ')'); return null; };
   const L = M.L, convs = ['c0', 'c1', 'c2', 'c3', 'c4'], onls = L.o0 ? ['o0', 'o1', 'o2'] : [];
   // the shapes the kernel takes: those of convFeatures, onlineJS and fcJS in src/core.js, every channel count a multiple of 4
   // (and no more than 2,048 inputs to one output: the kernel lists them in the first 16 KiB of its memory)
@@ -694,6 +696,16 @@ function normStrokes(input) {
   return { strokes: out, src };
 }
 
+// The same strokes, point for point (groups as classifyGroup is given them: strokes of [x, y] points)?
+function sameGroup(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const s = a[i], t = b[i];
+    if (s.length !== t.length) return false;
+    for (let k = 0; k < s.length; k++) if (!Object.is(s[k][0], t[k][0]) || !Object.is(s[k][1], t[k][1])) return false;
+  }
+  return true;
+}
 // Gaussian smoothing along the pen path (sigma in ink units); the ends stay put, and sparse points (a mouse)
 // are barely touched because the window only spans points within ~2.5 sigma of path length.
 function smoothPath(s, sigma) {
@@ -788,14 +800,19 @@ function fixesOf(list, src, n) {
 }
 
 class Recognizer {
-  constructor(o) { this.cache = new Map(); this.jcache = new Map(); this.ids = new WeakMap(); this.next = 1; this.max = (o && o.cacheSize) || 6000; this.cref = 0; this.lastIds = new Set(); }
+  // (ahead: classifications made somewhere else and waiting for the read that asks for them — fill, _adopt)
+  constructor(o) { this.cache = new Map(); this.jcache = new Map(); this.ahead = new Map(); this.ids = new WeakMap(); this.next = 1; this.max = (o && o.cacheSize) || 6000; this.cref = 0; this.lastIds = new Set(); }
   // The size reference the classifier sees. While the same ink keeps growing (a pad being written on) it is held
   // steady unless the writing's scale really changes, so earlier symbols are not re-classified after every stroke.
   classRef(ref, ids) {
+    const c = this.crefNow(ref, ids);
+    this.lastIds = new Set(ids); this.cref = c;
+    return c;
+  }
+  // what classRef would give for this ink now, without keeping it (needs() asks; only a read decides)
+  crefNow(ref, ids) {
     const same = ids.some(id => this.lastIds.has(id));
-    this.lastIds = new Set(ids);
-    if (!(same && this.cref > 0 && Math.abs(Math.log(ref / this.cref)) < 0.15)) this.cref = ref;
-    return this.cref;
+    return same && this.cref > 0 && Math.abs(Math.log(ref / this.cref)) < 0.15 ? this.cref : ref;
   }
   // The strokes' ids, for the caches' keys. What a cache keeps under a key is how a group of strokes looked, so a
   // stroke may keep its id only while it is the same object, has the same shape, and stands where it stood among
@@ -893,8 +910,15 @@ class Recognizer {
         const d = new Float32Array(model().cls.length); d[model().junk] = 1;
         return d;
       }
-      this.classified = (this.classified || 0) + 1;
-      e = classifyGroup(group, ref);
+      // classified somewhere else already (the worker pool: fill), for exactly this call? Then that is the answer.
+      e = this._adopt(k, group, ref);
+      if (!e) {
+        this.classified = (this.classified || 0) + 1;
+        // (what a classification costs here, and how many there were, go to the pool: src/pool.js, poolNote)
+        const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+        e = classifyGroup(group, ref);
+        poolNote((typeof performance !== 'undefined' ? performance : Date).now() - t0);
+      }
       if (this.cache.size > this.max) this.cache.clear();
       this.cache.set(k, e);
     }
@@ -902,13 +926,16 @@ class Recognizer {
     if (e.memv !== MEM.version) { e.mem = memApply(e); e.memv = MEM.version; }
     return e.mem;
   }
-  pjoin(a, b, ref, key) {
+  // (peek: what a read would get now, kept nowhere — needs())
+  pjoin(a, b, ref, key, peek) {
     const k = key + '|' + Math.round(Math.log(ref) * 40);
     let p = this.jcache.get(k);
     if (p === undefined) {
       p = mlp(DATA.join, joinFeatures(a, b, ref))[0];
-      if (this.jcache.size > this.max) this.jcache.clear();
-      this.jcache.set(k, p);
+      if (!peek) {
+        if (this.jcache.size > this.max) this.jcache.clear();
+        this.jcache.set(k, p);
+      }
     }
     return clip(p, 1e-4, 1 - 1e-4);
   }
@@ -978,23 +1005,14 @@ class Recognizer {
   // rest — a stroke added later to an earlier symbol is scored together with it — until a rehearsal needs nothing new.
   *warmup(input, options) {
     const opts = optsOf(options);
-    const { strokes, src, ids } = this.prepare(input, opts);
-    if (!strokes.length) return;
-    const ref = refSize(strokes), cref = this.classRef(ref, ids), n = strokes.length, boxes = strokes.map(sbox);
-    const pj = [];
-    for (let k = 0; k + 1 < n; k++) pj.push(this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1]));
-    const bucket = '|' + Math.round(Math.log(cref) * 40);
-    for (let i = n - 1; i >= 0; i--) {
-      let u = boxes[i], gmax = 0;
-      for (let j = i; j < Math.min(n, i + MAXK); j++) {
-        if (j > i) {
-          gmax = Math.max(gmax, boxGap(u, boxes[j])); if (gmax > GAPMAX * ref || pj[j - 1] < opts.prune) break;
-          u = ubox(u, boxes[j]);
-        }
-        const key = ids.slice(i, j + 1).join(',');
-        if (!this.cache.has(key + bucket)) { this.probs(strokes.slice(i, j + 1), cref, key, false); yield; }
-      }
+    const w = this._warmStart(input, opts);
+    if (!w) return;
+    const { strokes, src, ids, ref, cref, bucket, n } = w;
+    for (const [i, j, key] of this._warmGroups(w, opts)) {
+      if (!this.cache.has(key + bucket)) { this.probs(strokes.slice(i, j + 1), cref, key, false); yield; }
     }
+    // (every group of this ink is in the cache now: an answer still waiting was made for other ink, or another size)
+    if (this.ahead.size) this.ahead.clear();
     if (opts.oracle) return;
     const mask = allowedMask(opts.symbols, opts.times), { fixOf, fixes } = fixesOf(opts.fix, src, n);
     this.prior = priorVector(opts); this.foldX = opts.times === false;
@@ -1011,6 +1029,80 @@ class Recognizer {
         done.add(m.key); this.probs(m.group, cref, m.key, false); yield;
       }
     }
+  }
+
+  // What a warm-up does before its first loop: the strokes made clean and given their ids, the size they are
+  // classified at, the join model's chance for each neighboring pair. null when there is nothing to read.
+  // peek (needs()): the size and the chances are worked out as a read would work them out now, and kept nowhere —
+  // classRef's held size, lastIds and the join cache are a read's to change. The strokes are given their ids either
+  // way (prepare): an id is a name, and no reading depends on which name a stroke has.
+  _warmStart(input, opts, peek) {
+    const { strokes, src, ids } = this.prepare(input, opts);
+    if (!strokes.length) return null;
+    const ref = refSize(strokes), cref = peek ? this.crefNow(ref, ids) : this.classRef(ref, ids), n = strokes.length, boxes = strokes.map(sbox);
+    const pj = [];
+    for (let k = 0; k + 1 < n; k++) pj.push(this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1], peek));
+    return { strokes, src, ids, ref, cref, n, boxes, pj, bucket: '|' + Math.round(Math.log(cref) * 40) };
+  }
+  // The warm-up's first loop without its classifying: every candidate group of the segmentation, newest ink first,
+  // as [first stroke, last stroke, key]. warmup and needs both go through it, so what the pool is asked for is what
+  // the warm-up would have classified, and the two cannot drift apart. It takes no classifier result: only the
+  // strokes, their boxes, the join model and the options.
+  *_warmGroups(w, opts) {
+    const { n, ids, ref, boxes, pj } = w;
+    for (let i = n - 1; i >= 0; i--) {
+      let u = boxes[i], gmax = 0;
+      for (let j = i; j < Math.min(n, i + MAXK); j++) {
+        if (j > i) {
+          gmax = Math.max(gmax, boxGap(u, boxes[j])); if (gmax > GAPMAX * ref || pj[j - 1] < opts.prune) break;
+          u = ubox(u, boxes[j]);
+        }
+        yield [i, j, ids.slice(i, j + 1).join(',')];
+      }
+    }
+  }
+  // The groups a warm-up's first loop would classify if it ran now — those not in the cache and not already
+  // answered and waiting (ahead) — so that they can be classified somewhere else first (the worker pool,
+  // src/pool.js): {ref: the size a read would classify them at now, bucket: the cache's bucket for it, jobs:
+  // [{key, group}]}. It changes nothing a read can see: the size is not kept, the join cache is not written, nothing
+  // is classified; only the strokes are given their ids, as any read gives them. (A group listed twice — the same
+  // stroke object given twice — is asked for once: the warm-up finds the second in the cache.)
+  needs(input, options) {
+    const opts = optsOf(options);
+    const w = this._warmStart(input, opts, true);
+    if (!w) return { ref: 0, bucket: '', jobs: [] };
+    const jobs = [], asked = new Set();
+    for (const [i, j, key] of this._warmGroups(w, opts)) {
+      const k = key + w.bucket;
+      if (this.cache.has(k) || asked.has(key)) continue;
+      asked.add(key);
+      const group = w.strokes.slice(i, j + 1), a = this.ahead.get(k);
+      if (a && a.ref === w.cref && sameGroup(a.group, group)) continue;
+      jobs.push({ key, group });
+    }
+    return { ref: w.cref, bucket: w.bucket, jobs };
+  }
+  // A classification made somewhere else — e: what classifyGroup(group, ref) returns, the probabilities with
+  // .hidden — kept beside the cache (ahead) until a read asks for exactly that: probs takes it (_adopt) only for the
+  // same strokes, point for point, at the same size, where it would otherwise have called classifyGroup(group, ref)
+  // itself and got the same bits. So an answer can only ever stand in for the call it was made for: one that comes
+  // for ink that has since moved or grown, for another size, or under a key no longer in use, is never read. Not
+  // kept where the recognizer has classified that group itself meanwhile. Returns whether it was kept.
+  fill(key, bucket, ref, group, e) {
+    if (!(ref > 0) || bucket !== '|' + Math.round(Math.log(ref) * 40) || !Array.isArray(group) || !(e && e.hidden)) return false;
+    const k = key + bucket;
+    if (this.cache.has(k)) return false;
+    if (this.ahead.size > this.max) this.ahead.clear();
+    this.ahead.set(k, { ref, group, e });
+    return true;
+  }
+  // the answer waiting under this key for exactly this call, or null; whatever waited there is done with either way
+  // (an answer for other ink or another size will not be asked for again: the cache has the key from now on)
+  _adopt(k, group, ref) {
+    const a = this.ahead.get(k);
+    if (!a) return null;
+    this.ahead.delete(k);
+    return a.ref === ref && sameGroup(a.group, group) ? a.e : null;
   }
 
   // A stroke added later to a symbol written earlier (crossing the t at the end, finishing a 4 after the next
@@ -5749,7 +5841,7 @@ function pdfMake(pages, meta) {
   if (title) info += ' /Title ' + pdfText(title);
   if (M.author) info += ' /Author ' + pdfText(M.author);
   if (M.subject) info += ' /Subject ' + pdfText(M.subject);
-  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.7.1) /CreationDate (' + pdfDate(date) + ') >>');
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.8.0) /CreationDate (' + pdfDate(date) + ') >>');
 
   for (let i = 0; i < pages.length; i++) {
     const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
@@ -6602,6 +6694,257 @@ function scribbleErase(sc, items, z) {
   return out;
 }
 
+// ================================================================== the worker pool (1.8.0)
+// A big read's classifications in worker threads, on every core but one. The pool classifies ahead of a read:
+// Recognizer.needs lists what a warm-up's first loop would classify (and changes nothing a read can see),
+// Recognizer.fill keeps each answer beside the cache, and the read then runs as it always has and takes an answer
+// where it would otherwise call the classifier — only for the same strokes at the same size. A classification
+// depends on the strokes of the group and the size they are classified at and on nothing else, and a worker is this
+// same engine, so it gives the same bits. See docs/HANDOFF.md, The worker pool (1.8.0).
+// The engine is its own worker: build.py names its wrapper function (NibEngine), so the engine can read its own source
+// and start a worker from it through a Blob URL — one file still, which works from file:// and offline. Every way the
+// pool can fail ends in one place: the caller is told "not done" and classifies on the page's thread, as before.
+// Nothing here runs when the engine starts: the pool is made the first time a read asks it for something.
+const POOL_CHUNK = 8;               // groups to a message: posting costs little, and idle workers take the next chunk
+const POOL_READY_MS = 4000;         // a worker that has not said it is ready by then is not going to be
+const POOL_CHUNK_MS = 5000;         // nor one that has not answered a chunk — 8 groups, some 10 ms on the kernel and a
+                                    // tenth of a second on the JavaScript path — by then: the board waits no longer
+                                    // than this for a worker that has gone quiet (a device asleep through it, and
+                                    // the pool declared dead by mistake, costs only speed)
+const POOL_NULLS = 8;               // so many groups in a row that workers' classifiers threw on: not odd groups, a fault
+const POOL_IDLE_MS = 30000;         // a worker with nothing to do for that long is let go, and started again when needed
+// What is worth asking the pool for: a list that would take this thread that long to classify itself (poolWorth).
+// Under it a worker's start (60 to 95 ms on a two-core laptop, more on slow hardware) and the round trip cost more
+// than they give. A classification is taken to cost POOL_COST_MS until this thread has made one.
+const POOL_WORK_MS = 150, POOL_COST_MS = 1.2;
+const POOL = {
+  use: 'auto',                      // poolUse: 'auto', or how many workers (0: none)
+  dead: false,                      // once a failure has been seen, for the page's life: never tried again
+  url: null, workers: [], queue: [], seq: 0, nulls: 0,
+  limits: { ready: POOL_READY_MS, chunk: POOL_CHUNK_MS, idle: POOL_IDLE_MS, work: POOL_WORK_MS },
+  cost: 0,                          // what a classification costs on this thread, in ms (a running mean; 0: none seen yet)
+  // counted, for the tests: workers started, chunks and groups sent, groups answered with a classification, groups a
+  // worker's classifier threw on (answered with null), groups taken out of the queue, groups classified on this
+  // thread (Recognizer.probs), what each worker said its classifier was
+  stats: { started: 0, chunks: 0, sent: 0, answered: 0, failed: 0, dropped: 0, here: 0, kernels: [], why: '' },
+};
+
+// Can this page run workers made from the engine's own source at all? (Not in node, not in a worker of the pool
+// itself, not where the engine's wrapper has no name: a copy of the engine put together some other way.)
+function poolCan() {
+  return typeof Worker === 'function' && typeof Blob === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function' &&
+    typeof NibEngine === 'function' && !(typeof self !== 'undefined' && self.__nibWorker === 1);
+}
+// How many workers the pool may use: every core but one, at most 4 — none on a single core, where a worker would
+// only take the page's thread's turns; and no more than the gigabytes of memory the browser says the device has (a
+// worker costs about 34 MB: its own copy of the engine and the model, the kernel's memory and a heap), so a device
+// that says under 1 GB gets none. A browser that does not say how many cores there are is taken to have two.
+function poolSize() {
+  if (POOL.dead || !poolCan()) return 0;
+  if (POOL.use !== 'auto') return POOL.use;
+  const nav = typeof navigator !== 'undefined' ? navigator : null;
+  const cores = nav && nav.hardwareConcurrency > 0 ? Math.floor(nav.hardwareConcurrency) : 2;
+  let n = Math.max(0, Math.min(4, cores - 1));
+  const mem = nav && nav.deviceMemory;
+  if (typeof mem === 'number' && isFinite(mem)) n = Math.min(n, Math.max(0, Math.floor(mem)));
+  return n;
+}
+// how many workers are running now (Nib.workers)
+function poolWorkers() { return POOL.workers.length; }
+// For the tests: 0 turns the pool off, a number sets how many workers, 'auto' puts it back. The workers there are
+// let go (a chunk one held is put back at the head of the queue); a pool that has died stays dead.
+function poolUse(n) {
+  if (!(n === 'auto' || (typeof n === 'number' && n >= 0 && n <= 16 && Math.floor(n) === n))) throw new Error("Nib: poolUse takes 0, a number of workers up to 16, or 'auto'");
+  POOL.use = n;
+  for (const me of POOL.workers) poolLetGo(me, true);
+  POOL.workers = [];
+  if (!poolSize()) poolEnd(POOL.queue.splice(0), false);
+  else poolPump();
+  return poolSize();
+}
+// What a classification costs here: the running mean of the ones this thread has made (Recognizer.probs tells the
+// pool each one), by which a pad judges whether a read is worth asking the pool for (poolWorth)
+function poolNote(ms) {
+  POOL.stats.here++;
+  if (ms >= 0 && ms < 1000) POOL.cost = POOL.cost ? 0.9 * POOL.cost + 0.1 * ms : ms;
+}
+// Is a list of n groups worth asking the pool for? Only how the reading is come by depends on this, and on the
+// machine through it: what is read does not.
+function poolWorth(n) { return n > 0 && n * (POOL.cost || POOL_COST_MS) >= POOL.limits.work; }
+
+// Ask for jobs ([{group, ref, …}]: the strokes of each group and the size to classify them at; other fields are the
+// caller's) to be classified. each(job, entry) is called for every answer as it comes (entry: what classifyGroup
+// returns, the probabilities with .hidden; a group a worker's classifier threw on has no answer, and no call).
+// Returns {done, drop}: done is a Promise of true once every job has been answered or dropped, or of false — "not
+// done" — when the pool cannot run or has died, and then what has not been answered never will be; drop(test) takes
+// out of the queue the jobs for which test(job) is true that no worker holds yet (a chunk a worker holds is
+// finished).
+function poolRun(jobs, each) {
+  const req = { left: 0, each, over: false, resolve: null };
+  req.done = new Promise(resolve => { req.resolve = resolve; });
+  const handle = { done: req.done, drop: test => poolDrop(req, test) };
+  if (!jobs.length) { poolOver(req, true); return handle; }
+  if (!poolSize()) { poolOver(req, false); return handle; }
+  for (let a = 0; a < jobs.length; a += POOL_CHUNK) { POOL.queue.push({ id: ++POOL.seq, req, jobs: jobs.slice(a, a + POOL_CHUNK) }); req.left++; }
+  poolPump();
+  return handle;
+}
+function poolOver(req, answered) {
+  if (req.over) return;
+  req.over = true;
+  req.resolve(answered);
+}
+function poolDrop(req, test) {
+  if (req.over) return;
+  for (let i = POOL.queue.length - 1; i >= 0; i--) {
+    const c = POOL.queue[i];
+    if (c.req !== req) continue;
+    const keep = c.jobs.filter(j => !test(j));
+    POOL.stats.dropped += c.jobs.length - keep.length;
+    if (keep.length) c.jobs = keep;
+    else { POOL.queue.splice(i, 1); req.left--; }
+  }
+  if (!req.left) poolOver(req, true);
+}
+// chunks that will not be answered: their requests are "not done"
+function poolEnd(chunks, answered) { for (const c of chunks) poolOver(c.req, answered); }
+
+// The pool is dead for the page's life: every worker let go, every request "not done", said once. Never retried — a
+// pool declared dead by mistake (a device that slept through a limit) costs only speed until the page is opened again.
+function poolDie(why) {
+  if (POOL.dead) return;
+  POOL.dead = true; POOL.stats.why = why;
+  const held = [];
+  for (const me of POOL.workers) { if (me.held) held.push(me.held); poolLetGo(me, false); }
+  POOL.workers = [];
+  poolEnd(held.concat(POOL.queue.splice(0)), false);
+  if (POOL.url) { try { URL.revokeObjectURL(POOL.url); } catch (e) { /* gone with the page */ } POOL.url = null; }
+  try { console.info('Nib: reading on the page\'s own thread only (' + why + ')'); } catch (e) { /* no console */ }
+}
+// a worker terminated and its timers cleared; requeue: the chunk it held goes back to the head of the queue
+function poolLetGo(me, requeue) {
+  clearTimeout(me.timer); clearTimeout(me.idle); me.gone = true;
+  if (requeue && me.held) POOL.queue.unshift(me.held);
+  me.held = null;
+  try { me.w.terminate(); } catch (e) { /* already gone */ }
+}
+
+function poolStart() {
+  try {
+    if (!POOL.url) POOL.url = URL.createObjectURL(new Blob(['self.__nibWorker = 1;\n(' + NibEngine.toString() + ')(self);\n'], { type: 'text/javascript' }));
+  } catch (e) { poolDie('its source cannot be made into a worker: ' + (e && e.message || e)); return; }
+  let w;
+  try { w = new Worker(POOL.url); } catch (e) { poolDie('a worker cannot be started here: ' + (e && e.message || e)); return; }
+  const me = { w, ready: false, held: null, gone: false, idle: null, timer: null };
+  POOL.workers.push(me); POOL.stats.started++;
+  // a worker this page's rule forbids does not throw in Chrome: it fires error a moment later
+  me.timer = setTimeout(() => poolDie('a worker did not start within ' + POOL.limits.ready / 1000 + ' s'), POOL.limits.ready);
+  w.onerror = e => { if (e && e.preventDefault) e.preventDefault(); if (!me.gone) poolDie('a worker failed' + (e && e.message ? ': ' + e.message : '')); };
+  w.onmessageerror = () => { if (!me.gone) poolDie('an answer could not be read'); };
+  w.onmessage = e => { if (!me.gone) poolHeard(me, e.data); };
+}
+// what a worker said: that it is ready, or the answer to the chunk it holds — anything else, and the pool is dead
+function poolHeard(me, d) {
+  if (!me.ready) {
+    if (!(d && d.ready === 1 && d.version === Nib.version)) { poolDie('a worker said something else than that it is ready'); return; }
+    clearTimeout(me.timer); me.ready = true; POOL.stats.kernels = POOL.stats.kernels.slice(-15).concat(d.kernel);
+    poolPump();
+    return;
+  }
+  const c = me.held, M = model(), H = M.L.f1.co;
+  let fine = !!(c && d && d.id === c.id && Array.isArray(d.out) && d.out.length === c.jobs.length);
+  // (null: the worker's classifier threw on that group — that group's fault, not the pool's: nothing is kept for
+  // it, and the read meets the same failure on this thread, where it is said)
+  for (let i = 0; fine && i < d.out.length; i++) {
+    const o = d.out[i];
+    fine = o === null || !!(o && o.p instanceof Float64Array && o.p.length === M.C && o.h instanceof Float32Array && o.h.length === H);
+  }
+  if (!fine) { poolDie('an answer of the wrong shape'); return; }
+  clearTimeout(me.timer); me.held = null;
+  for (let i = 0; i < d.out.length; i++) {
+    const o = d.out[i];
+    if (!o) { POOL.stats.failed++; POOL.nulls++; continue; }
+    POOL.stats.answered++; POOL.nulls = 0;
+    if (c.req.over) continue;
+    const e = o.p; e.hidden = o.h;
+    // (what the caller does with an answer is its own: a fault there leaves that group to be classified here)
+    try { c.req.each(c.jobs[i], e); } catch (err) { /* classified on this thread by the read instead */ }
+  }
+  if (!c.req.over && !--c.req.left) poolOver(c.req, true);
+  // (workers that can classify nothing are no use: every read would pay for the asking and then classify here anyway)
+  if (POOL.nulls >= POOL_NULLS) { poolDie('the workers\' classifier fails'); return; }
+  poolPump();
+}
+// give chunks to the workers that are ready and idle, starting workers up to the size while there is work; a worker
+// with nothing left to do waits POOL_IDLE_MS and goes
+function poolPump() {
+  if (POOL.dead) return;
+  const want = poolSize();
+  while (POOL.queue.length && POOL.workers.length < want) { poolStart(); if (POOL.dead) return; }
+  for (const me of POOL.workers) {
+    if (!me.ready || me.held) continue;
+    if (!POOL.queue.length) { if (!me.idle) me.idle = setTimeout(() => poolIdle(me), POOL.limits.idle); continue; }
+    clearTimeout(me.idle); me.idle = null;
+    const c = me.held = POOL.queue.shift();
+    try { me.w.postMessage({ id: c.id, jobs: c.jobs.map(j => ({ g: j.group, ref: j.ref })) }); }
+    catch (e) { poolDie('a group could not be sent: ' + (e && e.message || e)); return; }
+    POOL.stats.chunks++; POOL.stats.sent += c.jobs.length;
+    me.timer = setTimeout(() => poolDie('a worker did not answer within ' + POOL.limits.chunk / 1000 + ' s'), POOL.limits.chunk);
+  }
+}
+function poolIdle(me) {
+  me.idle = null;
+  if (me.gone || me.held) return;
+  poolLetGo(me, false);
+  POOL.workers = POOL.workers.filter(x => x !== me);
+}
+
+// For the tests (Nib._internals.poolTest): 'stats' (a copy of the counts), 'reset' (the counts from zero),
+// 'limits' ({ready, chunk, idle, work} in ms: shorter limits, to try them; work: 0 has every planned read ask the
+// pool, whatever a classification costs on the machine the test runs on), 'crash' (worker i throws when it is next
+// given a chunk: a worker that fails in the middle of a read), 'mute' (worker i never answers again), 'garble'
+// (worker i answers its next chunk with the wrong number of groups), 'ready' (how many workers have said they are
+// ready)
+function poolTest(what, arg) {
+  if (what === 'stats') return JSON.parse(JSON.stringify(Object.assign({ workers: POOL.workers.length, dead: POOL.dead, size: poolSize(), queued: POOL.queue.length, cost: POOL.cost }, POOL.stats)));
+  if (what === 'reset') { Object.assign(POOL.stats, { started: 0, chunks: 0, sent: 0, answered: 0, failed: 0, dropped: 0, here: 0, kernels: [] }); return true; }
+  if (what === 'limits') { Object.assign(POOL.limits, arg || {}); return Object.assign({}, POOL.limits); }
+  if (what === 'ready') return POOL.workers.filter(me => me.ready).length;
+  if (what === 'crash' || what === 'mute' || what === 'garble') {
+    const me = POOL.workers[arg || 0];
+    if (!me) return false;
+    me.w.postMessage({ test: what });
+    return true;
+  }
+  throw new Error('Nib: poolTest takes stats, reset, limits, ready, crash, mute or garble');
+}
+
+// The engine started as a worker of the pool: it answers {id, jobs: [{g, ref}]} with {id, out: [{p, h}]}, each job's
+// classifyGroup(g, ref) — the probabilities and the hidden vector, their buffers handed over, not copied — or null
+// for a group the classifier throws on (the page's thread then meets that failure itself, in the read, where it is
+// said: one odd group is not the pool's end). It defines no element and reads no storage (nothing at the engine's
+// start does), and does nothing else.
+function poolWorkerMain() {
+  let mute = false, crash = false, garble = false;
+  // (a typed array shares its buffer with nothing here today; were it ever a view, it goes as a copy)
+  const own = a => (a.byteOffset || a.byteLength !== a.buffer.byteLength ? a.slice() : a);
+  self.onmessage = e => {
+    const d = e.data;
+    if (d && d.test) { if (d.test === 'mute') mute = true; else if (d.test === 'crash') crash = true; else if (d.test === 'garble') garble = true; return; }
+    if (mute) return;
+    if (crash) throw new Error('Nib: a worker of the pool stopped (asked to, by a test)');
+    if (garble) { self.postMessage({ id: d.id, out: [] }); return; }
+    const out = [], tr = [];
+    for (const j of d.jobs) {
+      let p, h;
+      try { const z = classifyGroup(j.g, j.ref); p = own(z); h = own(z.hidden); } catch (err) { out.push(null); continue; }
+      out.push({ p, h }); tr.push(p.buffer, h.buffer);
+    }
+    self.postMessage({ id: d.id, out }, tr);
+  };
+  self.postMessage({ ready: 1, version: Nib.version, kernel: Nib.kernel });
+}
+
 // ================================================================== writing pad
 const PAD_DEFAULTS = {
   ink: null,            // stroke color; default: the element's CSS --nib-ink, else its text color
@@ -6721,6 +7064,10 @@ function clusterNear(boxes, ref, link) {
 // pair each time it is asked): 30 million, a third of a second on a slow laptop. Counted, not timed: what a page
 // reads may not depend on the machine. (Only the looking is counted: reading each joined piece comes on top.)
 const JOIN_WORK = 3e7;
+// When a read asks the worker pool first (Pad._ask, 1.8.0): when the pieces it has to read have this many strokes
+// between them (some hundred groups to classify) — and what they list is worth asking for (poolWorth, src/pool.js).
+// Ordinary writing — a stroke, an expression — is under it, is not even planned, and never touches the pool.
+const POOL_MIN_STROKES = 60;
 // Pieces of writing that belong together but were left apart by the spaces between them. A line of working that only
 // asks ("x =", "y <") under a piece is joined to that piece (an equation, or two of them), however far the writer
 // dropped it (within 2.5 line heights). Pieces of one line left apart by the spaces in it: a piece whose reading ends in + − · × ÷ < > ≤ ≥ ≠ ±
@@ -6945,6 +7292,7 @@ class Pad {
     this.timer = null; this.gen = 0; this._raf = 0; this._due = false; this._liveGen = 0;
     this.plan = null; this.anim = null; this.sid = new WeakMap(); this.nsid = 1;
     this.parts = new Map(); this.recs = new WeakMap(); this.optsVersion = 0;
+    this._asks = new Set();         // what this pad's reads have asked of the worker pool and is not answered yet (_ask)
     // what went wrong (the optional intelligence never breaks writing, erasing, undo or saving): the last 20 failures
     // ({where, message, time}), each distinct one said once (_fault); and the readings that failed, by their part key
     // (a piece of writing that cannot be read is not tried again until its strokes, corrections, options or memory change)
@@ -8887,7 +9235,7 @@ class Pad {
     this.redraw();
     if (this.o.onChange) this.o.onChange(this);
     this.el.dispatchEvent(new CustomEvent('nib:change', { detail: this, bubbles: true }));
-    if (!this.ink.length) { clearTimeout(this.timer); this.gen++; this._due = false; if (this.result || this.plan) this._emit(null); return; }  // nothing left to read
+    if (!this.ink.length) { clearTimeout(this.timer); this.gen++; this._due = false; this._askDrop(true); if (this.result || this.plan) this._emit(null); return; }  // nothing left to read
     if (this.o.auto) this._schedule(this.o.delay);
   }
   // Read the ink without freezing the page: classify the new stroke groups a few milliseconds at a time,
@@ -8895,31 +9243,126 @@ class Pad {
   // A board's read is one run of steps (_partsSteps) from the first group to the reading itself: every group, and
   // every group joined to another, is warmed and read inside the slices, so nothing is left to classify at the end
   // (until 1.7.0 the groups joined by joinOperands were read cold in the final pass, with the page held).
+  // A big read asks the worker pool first (_ask, 1.8.0): the steps then find most of their classifications done.
   _schedule(ms) {
     clearTimeout(this.timer);
     const gen = ++this.gen;
     this._due = true; this._liveGen = gen;
+    this._askDrop();                                      // (a page replaced: what was asked for the old one goes now)
     this.timer = setTimeout(() => {
-      const board = !!this.o.separate, it = board ? this._partsSteps(this._ropts()) : this._warm(this._ropts()), start = performance.now();
-      let last = null, failed = false;
-      const step = () => {
-        if (gen !== this.gen) return;
-        const t0 = performance.now();
-        // (a failure in the warm-up is said by _warm, one in a group of a board by its own read; one outside a piece
-        // of writing ends the steps: the read itself copes)
-        const next = () => { try { last = it.next(); return last.done; } catch (err) { failed = true; this._fault('read', err); return true; } };
-        while (performance.now() - t0 < 14) if (next()) {
-          // the reading the steps came to is the page's when the ink is still the ink they began from; ink changed
-          // under them (a second pointer still down: _inkMark) is read as it is now, at once, as the last pass
-          // always was — without what these steps kept, which may be of ink half moved
-          if (board && !failed && this.ink.length && !this._inkChanged(this._pass && this._pass.mark)) { clearTimeout(this.timer); this.gen++; this._announce(last.value, start); }
-          else { if (board && this._pass) for (const k of this._pass.keys) this.parts.delete(k); this.recognize(start); }
-          return;
-        }
-        this.timer = setTimeout(step, 0);
-      };
-      step();
+      const start = performance.now();
+      this._ask(gen, () => this._steps(gen, start));
     }, ms);
+  }
+  // the read itself, in slices of 14 ms between frames, and the announcement of what it comes to (start: when the
+  // read began, the asking included)
+  _steps(gen, start) {
+    const board = !!this.o.separate, it = board ? this._partsSteps(this._ropts()) : this._warm(this._ropts());
+    let last = null, failed = false;
+    const step = () => {
+      if (gen !== this.gen) return;
+      const t0 = performance.now();
+      // (a failure in the warm-up is said by _warm, one in a group of a board by its own read; one outside a piece
+      // of writing ends the steps: the read itself copes)
+      const next = () => { try { last = it.next(); return last.done; } catch (err) { failed = true; this._fault('read', err); return true; } };
+      while (performance.now() - t0 < 14) if (next()) {
+        // the reading the steps came to is the page's when the ink is still the ink they began from; ink changed
+        // under them (a second pointer still down: _inkMark) is read as it is now, at once, as the last pass
+        // always was — without what these steps kept, which may be of ink half moved
+        if (board && !failed && this.ink.length && !this._inkChanged(this._pass && this._pass.mark)) { clearTimeout(this.timer); this.gen++; this._announce(last.value, start); }
+        else { if (board && this._pass) for (const k of this._pass.keys) this.parts.delete(k); this.recognize(start); }
+        return;
+      }
+      this.timer = setTimeout(step, 0);
+    };
+    step();
+  }
+  // Before a big read's steps, the worker pool is asked for the groups their warm-ups would classify first (src/pool.js;
+  // docs/HANDOFF.md, The worker pool). The asking changes nothing a read can see, and an answer stands in only for
+  // the very call to the classifier it was made for (Recognizer.needs, fill): the steps then run as they always have
+  // and find that work done, so what they read cannot differ. In order:
+  //   - a small read is not even planned: the pieces not kept (this.parts, _badParts) have fewer than POOL_MIN_STROKES
+  //     strokes between them, or the pool cannot run here;
+  //   - what earlier reads asked for and is still queued is dropped where no read can use its answer any more
+  //     (_askDrop), and the rest is waited for (a read cut short by new ink leaves its requests running: the work is
+  //     not wasted);
+  //   - each piece's recognizer lists what it needs (Recognizer.needs, with the options _partsPass gives warmup), in
+  //     slices of 14 ms as the read is;
+  //   - a list this thread would classify in less than the pool is worth asking for (poolWorth): the steps;
+  //   - else the pool is asked, and each answer is handed to its recognizer (Recognizer.fill: kept beside the cache
+  //     until a read asks for exactly that classification) if that recognizer is still the one the pad holds for the
+  //     piece (it is replaced when ink is resized), whatever has become of this read meanwhile;
+  //   - once everything asked is answered, or the pool has died, the steps.
+  // gen: the read this is for; a new read (new ink, a pointer down) leaves it, and then() is not called.
+  _ask(gen, then) {
+    if (gen !== this.gen) return;
+    if (this._asks.size) {
+      this._askDrop();
+      Promise.all([...this._asks].map(a => a.done)).then(() => this._ask(gen, then));
+      return;
+    }
+    const board = !!this.o.separate, ink = this.ink;
+    if (!poolSize() || ink.length < POOL_MIN_STROKES) { then(); return; }
+    // The asking is an extra: whatever fails in it, the steps begin as they always did (and what is wrong with the
+    // page is theirs to say, as it was). Each stage runs in here and says how it ended; then() is called outside it.
+    const stage = f => { try { return f(); } catch (err) { return 'steps'; } };
+    const todo = [], jobs = [];
+    let ro = null, i = 0, ask = null;
+    const listed = stage(() => {
+      ro = this._ropts();
+      let n = 0;
+      if (board) {
+        // (the keys in the order the read makes them: _partKey names the strokes it meets)
+        for (const g of clustersOf(ink)) {
+          const st = g.map(k => ink[k]), key = this._partKey(st, ro);
+          if (this.parts.has(key) || this._badParts.has(key)) continue;
+          todo.push(st); n += st.length;
+        }
+      } else if (this._badWhole !== this._partKey(ink, ro)) { todo.push(ink); n = ink.length; }
+      return n < POOL_MIN_STROKES ? 'steps' : 'plan';
+    });
+    if (listed !== 'plan') { then(); return; }
+    const plan = () => {
+      if (gen !== this.gen) return;
+      const how = stage(() => {
+        const t0 = performance.now();
+        while (i < todo.length && performance.now() - t0 < 14) {
+          const st = todo[i++], rec = board ? this._recFor(st[0]) : this.rec;
+          let need;
+          // (writing whose warm-up throws is met again by the read, which says so and keeps it as ink)
+          try { need = rec.needs(st, Object.assign({}, ro, { fix: this._fixFor(st) })); } catch (err) { continue; }
+          for (const j of need.jobs) jobs.push({ group: j.group, ref: need.ref, key: j.key, bucket: need.bucket, rec, first: st[0], st, smooth: ro.smooth });
+        }
+        if (i < todo.length) return 'more';
+        if (!poolWorth(jobs.length)) return 'steps';
+        ask = poolRun(jobs, (j, e) => { if (this._recOf(j) === j.rec) j.rec.fill(j.key, j.bucket, j.ref, j.group, e); });
+        return 'asked';
+      });
+      if (how === 'more') { this.timer = setTimeout(plan, 0); return; }
+      if (how !== 'asked' || !ask) { then(); return; }
+      this._asks.add(ask);
+      ask.done.then(() => { this._asks.delete(ask); if (gen === this.gen) then(); });
+    };
+    plan();
+  }
+  // the recognizer the pad holds now for the piece a job was asked for (a board's: by the piece's first stroke)
+  _recOf(j) { return this.o.separate ? this.recs.get(j.first) : this.rec; }
+  // What was asked of the pool and is still queued is taken out of the queue where no read can use its answer any
+  // more: a piece whose strokes are no longer all on the pad (a page cleared or replaced must not make the next read
+  // wait for the old one's groups), one whose recognizer the pad has replaced (ink resized: _inkMoved), one asked
+  // with another smoothing (every stroke is then another stroke, under another id). The next read waits only for the
+  // chunks the workers already hold, and asks again for what it needs.
+  _askDrop(all) {
+    if (!this._asks.size) return;
+    try {
+      const on = new Set(this.ink), gone = new Map(), smooth = this._ropts().smooth;
+      const test = j => {
+        let g = gone.get(j.st);
+        if (g === undefined) { g = all || !j.st.every(s => on.has(s)) || this._recOf(j) !== j.rec || j.smooth !== smooth; gone.set(j.st, g); }
+        return g;
+      };
+      for (const a of this._asks) a.drop(test);
+    } catch (err) { /* what stays queued is classified for nothing, and costs only that */ }
   }
   // The reading is kept and announced whatever happens after it: a view, the answers or the training log that fails
   // leaves the ink as written (and is said once, _fault)
@@ -9594,6 +10037,7 @@ class Pad {
     for (const p of this._trainParts()) this._trainSkip.add(this._trainKey(p.strokes));
   }
   destroy() {
+    this._askDrop(true);
     clearTimeout(this.timer); clearTimeout(this._trainTimer); clearTimeout(this._camTimer); this.gen++; this._due = false; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
     if (this.editing) { this.editing.ta.remove(); this.editing = null; }
     if (this._raf) cancelAnimationFrame(this._raf);
@@ -9768,7 +10212,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.7.1',
+  version: '1.8.0',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -9785,6 +10229,9 @@ const Nib = {
   classes() { return model().cls.filter(c => c !== 'junk'); },
   // which classifier runs: 'simd' (the WebAssembly kernel) or 'js' (where WebAssembly cannot run); asking decides it
   get kernel() { return kern() ? 'simd' : 'js'; },
+  // how many worker threads the pool is running now (1.8.0, src/pool.js): 0 until a big read asks it for something,
+  // and where workers cannot run
+  get workers() { return poolWorkers(); },
   // In place: the writing laid out again where it was written, as the writer's own strokes tidied up ('tidy'),
   // in the writer's Replicator handwriting ('hand') or typeset ('typeset'). Returns {items, strokes, latex, ...}.
   neaten(strokes, options) { const o = options || {}; return inPlace(strokes, o.style === 'hand' ? 'hand' : 'tidy', o); },
@@ -9807,7 +10254,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, kernelUse, convJS, onlineJS, fcJS, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven, scribbleOf: typeof scribbleOf === 'function' ? scribbleOf : null, scribbleErase: typeof scribbleErase === 'function' ? scribbleErase : null, SCR: typeof SCR !== 'undefined' ? SCR : null },
+  _internals: { poolUse, poolSize, poolRun, poolTest, rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, kernelUse, convJS, onlineJS, fcJS, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven, scribbleOf: typeof scribbleOf === 'function' ? scribbleOf : null, scribbleErase: typeof scribbleErase === 'function' ? scribbleErase : null, SCR: typeof SCR !== 'undefined' ? SCR : null },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 // Scribbled out (scribble.js), for a tool with its own ink (Deckhand's pen over the slides): of(points, z) is a scribble
@@ -9828,5 +10275,7 @@ Nib.canvas = {
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = Nib;
 global.Nib = Nib;
+// started as a worker of a page's pool (src/pool.js): from here on it only classifies what the page sends
+if (typeof self !== 'undefined' && self.__nibWorker === 1 && typeof document === 'undefined' && typeof self.postMessage === 'function') poolWorkerMain();
 
 })(typeof window !== 'undefined' ? window : globalThis);

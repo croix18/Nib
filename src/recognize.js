@@ -48,6 +48,16 @@ function normStrokes(input) {
   return { strokes: out, src };
 }
 
+// The same strokes, point for point (groups as classifyGroup is given them: strokes of [x, y] points)?
+function sameGroup(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const s = a[i], t = b[i];
+    if (s.length !== t.length) return false;
+    for (let k = 0; k < s.length; k++) if (!Object.is(s[k][0], t[k][0]) || !Object.is(s[k][1], t[k][1])) return false;
+  }
+  return true;
+}
 // Gaussian smoothing along the pen path (sigma in ink units); the ends stay put, and sparse points (a mouse)
 // are barely touched because the window only spans points within ~2.5 sigma of path length.
 function smoothPath(s, sigma) {
@@ -142,14 +152,19 @@ function fixesOf(list, src, n) {
 }
 
 class Recognizer {
-  constructor(o) { this.cache = new Map(); this.jcache = new Map(); this.ids = new WeakMap(); this.next = 1; this.max = (o && o.cacheSize) || 6000; this.cref = 0; this.lastIds = new Set(); }
+  // (ahead: classifications made somewhere else and waiting for the read that asks for them — fill, _adopt)
+  constructor(o) { this.cache = new Map(); this.jcache = new Map(); this.ahead = new Map(); this.ids = new WeakMap(); this.next = 1; this.max = (o && o.cacheSize) || 6000; this.cref = 0; this.lastIds = new Set(); }
   // The size reference the classifier sees. While the same ink keeps growing (a pad being written on) it is held
   // steady unless the writing's scale really changes, so earlier symbols are not re-classified after every stroke.
   classRef(ref, ids) {
+    const c = this.crefNow(ref, ids);
+    this.lastIds = new Set(ids); this.cref = c;
+    return c;
+  }
+  // what classRef would give for this ink now, without keeping it (needs() asks; only a read decides)
+  crefNow(ref, ids) {
     const same = ids.some(id => this.lastIds.has(id));
-    this.lastIds = new Set(ids);
-    if (!(same && this.cref > 0 && Math.abs(Math.log(ref / this.cref)) < 0.15)) this.cref = ref;
-    return this.cref;
+    return same && this.cref > 0 && Math.abs(Math.log(ref / this.cref)) < 0.15 ? this.cref : ref;
   }
   // The strokes' ids, for the caches' keys. What a cache keeps under a key is how a group of strokes looked, so a
   // stroke may keep its id only while it is the same object, has the same shape, and stands where it stood among
@@ -247,8 +262,15 @@ class Recognizer {
         const d = new Float32Array(model().cls.length); d[model().junk] = 1;
         return d;
       }
-      this.classified = (this.classified || 0) + 1;
-      e = classifyGroup(group, ref);
+      // classified somewhere else already (the worker pool: fill), for exactly this call? Then that is the answer.
+      e = this._adopt(k, group, ref);
+      if (!e) {
+        this.classified = (this.classified || 0) + 1;
+        // (what a classification costs here, and how many there were, go to the pool: src/pool.js, poolNote)
+        const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+        e = classifyGroup(group, ref);
+        poolNote((typeof performance !== 'undefined' ? performance : Date).now() - t0);
+      }
       if (this.cache.size > this.max) this.cache.clear();
       this.cache.set(k, e);
     }
@@ -256,13 +278,16 @@ class Recognizer {
     if (e.memv !== MEM.version) { e.mem = memApply(e); e.memv = MEM.version; }
     return e.mem;
   }
-  pjoin(a, b, ref, key) {
+  // (peek: what a read would get now, kept nowhere — needs())
+  pjoin(a, b, ref, key, peek) {
     const k = key + '|' + Math.round(Math.log(ref) * 40);
     let p = this.jcache.get(k);
     if (p === undefined) {
       p = mlp(DATA.join, joinFeatures(a, b, ref))[0];
-      if (this.jcache.size > this.max) this.jcache.clear();
-      this.jcache.set(k, p);
+      if (!peek) {
+        if (this.jcache.size > this.max) this.jcache.clear();
+        this.jcache.set(k, p);
+      }
     }
     return clip(p, 1e-4, 1 - 1e-4);
   }
@@ -332,23 +357,14 @@ class Recognizer {
   // rest — a stroke added later to an earlier symbol is scored together with it — until a rehearsal needs nothing new.
   *warmup(input, options) {
     const opts = optsOf(options);
-    const { strokes, src, ids } = this.prepare(input, opts);
-    if (!strokes.length) return;
-    const ref = refSize(strokes), cref = this.classRef(ref, ids), n = strokes.length, boxes = strokes.map(sbox);
-    const pj = [];
-    for (let k = 0; k + 1 < n; k++) pj.push(this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1]));
-    const bucket = '|' + Math.round(Math.log(cref) * 40);
-    for (let i = n - 1; i >= 0; i--) {
-      let u = boxes[i], gmax = 0;
-      for (let j = i; j < Math.min(n, i + MAXK); j++) {
-        if (j > i) {
-          gmax = Math.max(gmax, boxGap(u, boxes[j])); if (gmax > GAPMAX * ref || pj[j - 1] < opts.prune) break;
-          u = ubox(u, boxes[j]);
-        }
-        const key = ids.slice(i, j + 1).join(',');
-        if (!this.cache.has(key + bucket)) { this.probs(strokes.slice(i, j + 1), cref, key, false); yield; }
-      }
+    const w = this._warmStart(input, opts);
+    if (!w) return;
+    const { strokes, src, ids, ref, cref, bucket, n } = w;
+    for (const [i, j, key] of this._warmGroups(w, opts)) {
+      if (!this.cache.has(key + bucket)) { this.probs(strokes.slice(i, j + 1), cref, key, false); yield; }
     }
+    // (every group of this ink is in the cache now: an answer still waiting was made for other ink, or another size)
+    if (this.ahead.size) this.ahead.clear();
     if (opts.oracle) return;
     const mask = allowedMask(opts.symbols, opts.times), { fixOf, fixes } = fixesOf(opts.fix, src, n);
     this.prior = priorVector(opts); this.foldX = opts.times === false;
@@ -365,6 +381,80 @@ class Recognizer {
         done.add(m.key); this.probs(m.group, cref, m.key, false); yield;
       }
     }
+  }
+
+  // What a warm-up does before its first loop: the strokes made clean and given their ids, the size they are
+  // classified at, the join model's chance for each neighboring pair. null when there is nothing to read.
+  // peek (needs()): the size and the chances are worked out as a read would work them out now, and kept nowhere —
+  // classRef's held size, lastIds and the join cache are a read's to change. The strokes are given their ids either
+  // way (prepare): an id is a name, and no reading depends on which name a stroke has.
+  _warmStart(input, opts, peek) {
+    const { strokes, src, ids } = this.prepare(input, opts);
+    if (!strokes.length) return null;
+    const ref = refSize(strokes), cref = peek ? this.crefNow(ref, ids) : this.classRef(ref, ids), n = strokes.length, boxes = strokes.map(sbox);
+    const pj = [];
+    for (let k = 0; k + 1 < n; k++) pj.push(this.pjoin(strokes[k], strokes[k + 1], cref, ids[k] + '~' + ids[k + 1], peek));
+    return { strokes, src, ids, ref, cref, n, boxes, pj, bucket: '|' + Math.round(Math.log(cref) * 40) };
+  }
+  // The warm-up's first loop without its classifying: every candidate group of the segmentation, newest ink first,
+  // as [first stroke, last stroke, key]. warmup and needs both go through it, so what the pool is asked for is what
+  // the warm-up would have classified, and the two cannot drift apart. It takes no classifier result: only the
+  // strokes, their boxes, the join model and the options.
+  *_warmGroups(w, opts) {
+    const { n, ids, ref, boxes, pj } = w;
+    for (let i = n - 1; i >= 0; i--) {
+      let u = boxes[i], gmax = 0;
+      for (let j = i; j < Math.min(n, i + MAXK); j++) {
+        if (j > i) {
+          gmax = Math.max(gmax, boxGap(u, boxes[j])); if (gmax > GAPMAX * ref || pj[j - 1] < opts.prune) break;
+          u = ubox(u, boxes[j]);
+        }
+        yield [i, j, ids.slice(i, j + 1).join(',')];
+      }
+    }
+  }
+  // The groups a warm-up's first loop would classify if it ran now — those not in the cache and not already
+  // answered and waiting (ahead) — so that they can be classified somewhere else first (the worker pool,
+  // src/pool.js): {ref: the size a read would classify them at now, bucket: the cache's bucket for it, jobs:
+  // [{key, group}]}. It changes nothing a read can see: the size is not kept, the join cache is not written, nothing
+  // is classified; only the strokes are given their ids, as any read gives them. (A group listed twice — the same
+  // stroke object given twice — is asked for once: the warm-up finds the second in the cache.)
+  needs(input, options) {
+    const opts = optsOf(options);
+    const w = this._warmStart(input, opts, true);
+    if (!w) return { ref: 0, bucket: '', jobs: [] };
+    const jobs = [], asked = new Set();
+    for (const [i, j, key] of this._warmGroups(w, opts)) {
+      const k = key + w.bucket;
+      if (this.cache.has(k) || asked.has(key)) continue;
+      asked.add(key);
+      const group = w.strokes.slice(i, j + 1), a = this.ahead.get(k);
+      if (a && a.ref === w.cref && sameGroup(a.group, group)) continue;
+      jobs.push({ key, group });
+    }
+    return { ref: w.cref, bucket: w.bucket, jobs };
+  }
+  // A classification made somewhere else — e: what classifyGroup(group, ref) returns, the probabilities with
+  // .hidden — kept beside the cache (ahead) until a read asks for exactly that: probs takes it (_adopt) only for the
+  // same strokes, point for point, at the same size, where it would otherwise have called classifyGroup(group, ref)
+  // itself and got the same bits. So an answer can only ever stand in for the call it was made for: one that comes
+  // for ink that has since moved or grown, for another size, or under a key no longer in use, is never read. Not
+  // kept where the recognizer has classified that group itself meanwhile. Returns whether it was kept.
+  fill(key, bucket, ref, group, e) {
+    if (!(ref > 0) || bucket !== '|' + Math.round(Math.log(ref) * 40) || !Array.isArray(group) || !(e && e.hidden)) return false;
+    const k = key + bucket;
+    if (this.cache.has(k)) return false;
+    if (this.ahead.size > this.max) this.ahead.clear();
+    this.ahead.set(k, { ref, group, e });
+    return true;
+  }
+  // the answer waiting under this key for exactly this call, or null; whatever waited there is done with either way
+  // (an answer for other ink or another size will not be asked for again: the cache has the key from now on)
+  _adopt(k, group, ref) {
+    const a = this.ahead.get(k);
+    if (!a) return null;
+    this.ahead.delete(k);
+    return a.ref === ref && sameGroup(a.group, group) ? a.e : null;
   }
 
   // A stroke added later to a symbol written earlier (crossing the t at the end, finishing a 4 after the next

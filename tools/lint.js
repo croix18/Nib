@@ -19,7 +19,7 @@ const SRC = m[1].match(/[a-z]+\.js/g);
 // pieces: {name, code, at(line) -> 'file:line'}
 const pieces = [];
 {
-  const parts = ['(function (global) {'], map = [null];                    // map[bundle line - 1] = [file, line]
+  const parts = ['(function NibEngine(global) {'], map = [null];          // map[bundle line - 1] = [file, line] (the wrapper named as build.py names it)
   for (const f of SRC) {
     const lines = read('src/' + f).replace(/^'use strict';$/m, '').split('\n');
     lines.forEach((l, i) => { parts.push(l); map.push(['src/' + f, i + 1]); });

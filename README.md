@@ -77,6 +77,7 @@ pad.undo(); pad.clear(); pad.setStrokes(saved); pad.getStrokes();
 const r = Nib.recognize(strokes, { symbols: 'numbers' });   // strokes: [[ [x, y], [x, y], ... ], ...]
 const r2 = await Nib.recognizeAsync(strokes);                // same, without blocking the page
 Nib.kernel                                                   // 'simd' (the WebAssembly classifier) or 'js' where it cannot run
+Nib.workers                                                  // how many worker threads are reading for a big page now (0 most of the time)
 ```
 
 ### Inside another tool
@@ -247,6 +248,12 @@ Restricting the set is the single best way to raise accuracy in a given box.
   on a board every piece of writing, and every two pieces a gap had left apart, is classified inside those slices.
   A board of 60 expressions opened again is read after 1.5 s (1.6.7: 19 s), one of 120 after 2.9 s (47 s); a stroke
   written on that full page holds it for 20–40 ms at the end of its read (about 100 ms before).
+  Since 1.8.0 a big read — a saved board opened again, a large paste — hands most of its classifying to worker threads
+  started from the engine's own file, on every core but one (at most four; `Nib.workers` says how many are running),
+  and goes on while the writer writes; the page's thread only plans and puts the reading together. What is read is
+  exactly what the page's thread alone reads. Ordinary writing never starts a worker, and where workers cannot run (a
+  page whose Content-Security-Policy forbids them, node) the read is as before, said once in the console. On a two-core laptop a board of 120 expressions opened again is read in
+  2.6 s with the one worker it uses by itself (3.0 s without) and in 1.6 s with two; the pool is for four cores and more.
 - The typeset view uses the KaTeX fonts, embedded unchanged under the SIL Open Font License 1.1 (`licenses/OFL-KaTeX-fonts.txt`). `licenses/README.md` lists everything Nib carries that is not its own, and the terms of the data the recognizer was trained on (CROHME: research, not commercial use).
 
 `docs/HANDOFF.md` explains how it works and how to change it; `training/README.md` how to retrain it. From a fresh clone: `npm ci` (KaTeX, the page fonts, puppeteer-core, opentype.js), `npm run data` (the CROHME test sets and the Board writing the tests read), `npm run build` (`dist/nib.js` from `src/` and `model/nib-data.json`, then the three pages), `npm test` (the node suites; `npm run test:browser` for the ones in Chrome), `npm run lint` (the sources checked for names that do not exist and the like). GitHub runs the same on every push (`.github/workflows/test.yml`). `docs/reviews/` holds the audits.

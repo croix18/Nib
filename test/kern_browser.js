@@ -56,7 +56,7 @@ const written = (tex, x, y, h) => {
   ok(k.kernel === 'simd', `Nib.kernel is ${k.kernel}`);
   ok(k.parts.length === 2 && k.parts.map(flat).join(' ') === '3x+4=19 6+7=', `it reads ${JSON.stringify(k.parts)}`);
   ok(!k.infos.some(t => /JavaScript/.test(t)) && !k.errors.length, 'nothing said, no page error' + (k.errors.length ? ': ' + k.errors.join(' | ') : ''));
-  ok(k.line === 'Nib ' + Nib.version + ' · the fast reader is on', `Settings says so at its foot: ${JSON.stringify(k.line)}`);
+  ok(/^Nib \S+ · the fast reader is on · (\d worker threads?|no worker threads)$/.test(k.line) && k.line.startsWith('Nib ' + Nib.version + ' '), `Settings says so at its foot: ${JSON.stringify(k.line)}`);
 
   console.log('where WebAssembly cannot run');
   for (const [name, file, before] of [['a Content-Security-Policy without wasm-unsafe-eval', csp], ['WebAssembly deleted before the engine loads', BOARD, 'gone']]) {

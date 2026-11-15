@@ -592,9 +592,22 @@
   document.querySelectorAll('#settings .seg').forEach(g => g.addEventListener('click', e => {
     const b = e.target.closest('button'); if (b && b.dataset.v && SETTERS[g.dataset.set]) SETTERS[g.dataset.set](b.dataset.v);
   }));
+  // Which classifier this browser runs (Nib.kernel, 1.7.0), at the foot of Settings: on a panel there is no console
+  // to ask. The fast one is WebAssembly; a browser that cannot run it reads the same, about 16 times slower. And
+  // (1.8.0) how many worker threads a big read may use (the pool: every core but one, at most 4, fewer where the
+  // device says it has little memory; none once a worker has failed to start, as under a rule that forbids them) —
+  // the only way to learn what a classroom panel gives it. Written when the Board starts and each time Settings is
+  // opened: whether workers can start at all is known only once a big read has tried.
+  function engineLine() {
+    try {
+      const n = Nib._internals.poolSize ? Nib._internals.poolSize() : 0;
+      $('engineline').textContent = 'Nib ' + Nib.version + ' · ' + (Nib.kernel === 'simd' ? 'the fast reader is on' : 'this browser cannot run the fast reader: reading is slower') +
+        ' · ' + (n ? n + (n === 1 ? ' worker thread' : ' worker threads') : 'no worker threads');
+    } catch (e) { /* an engine without it */ }
+  }
   function openSettings(on) {
     if (!on) { closePops(); return; }
-    marks(); trainLine();
+    marks(); trainLine(); engineLine();
     for (const [id, k] of Object.entries(SWITCHES)) $(id).setAttribute('aria-checked', String(S[k]));
     openPop('settings');
   }
@@ -1770,9 +1783,7 @@
     // a drill under way when the page was closed comes back where it was
     if (D && D.active && !S.train) { D.active = false; saveDrill(); }
     drillLine(); drillShow();
-    // which classifier this browser runs (Nib.kernel, 1.7.0), at the foot of Settings: on a panel there is no console
-    // to ask. The fast one is WebAssembly; a browser that cannot run it reads the same, about 16 times slower.
-    try { $('engineline').textContent = 'Nib ' + Nib.version + ' · ' + (Nib.kernel === 'simd' ? 'the fast reader is on' : 'this browser cannot run the fast reader: reading is slower'); } catch (e) { /* an engine without it */ }
+    engineLine();
     if (newer) note('This board was saved by a newer Nib Board: it is shown as far as this one can, and nothing here is saved. Open the newer Board.', null, null, true);
     else setTimeout(tidyImages, 4000);
   });

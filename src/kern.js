@@ -8,7 +8,9 @@ const KERN_WASM = 'AGFzbQEAAAABLgRgCn9/f39/f39/f38AYAh/f39/f39/fwBgBn9/f39/fwBgC
 // module's memory once; the memory is laid out here and never grows. Each call below does one classification's part
 // in that memory and gives back new arrays, as the JS path does.
 function kernLoad(M) {
-  const say = why => { if (typeof console !== 'undefined' && console.info) console.info('Nib: the classifier runs in JavaScript (' + why + ')'); return null; };
+  // (the engine as a worker of the page's pool says nothing: the page has said it, or will, for the same browser)
+  const quiet = typeof self !== 'undefined' && self.__nibWorker === 1;
+  const say = why => { if (!quiet && typeof console !== 'undefined' && console.info) console.info('Nib: the classifier runs in JavaScript (' + why + ')'); return null; };
   const L = M.L, convs = ['c0', 'c1', 'c2', 'c3', 'c4'], onls = L.o0 ? ['o0', 'o1', 'o2'] : [];
   // the shapes the kernel takes: those of convFeatures, onlineJS and fcJS in src/core.js, every channel count a multiple of 4
   // (and no more than 2,048 inputs to one output: the kernel lists them in the first 16 KiB of its memory)

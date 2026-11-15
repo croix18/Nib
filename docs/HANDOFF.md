@@ -9,7 +9,11 @@ Nib turns live handwriting (pen, finger or mouse strokes) into LaTeX, in the bro
 the bit — a WebAssembly SIMD kernel of 1.2 KB carried in the engine, and the JavaScript it falls back to where
 WebAssembly cannot run. On a board the whole read now runs in slices (the pieces a gap had left apart were read with
 the page held), a page's pieces are found through a grid instead of every stroke against every other, and a read put
-off by a touch that wrote nothing starts again — see Speed (1.7.0).
+off by a touch that wrote nothing starts again — see Speed (1.7.0). 1.7.1 fixes two faults found on the way to the
+next release (a page gets every join; ink that is moved is read where it is — Two faults (1.7.1)). 1.8.0 reads a big
+page on every core: the classifying of a page that arrives all at once (a saved board opened again, a large paste)
+runs in worker threads started from the engine's own file, ahead of the read, which then runs as before and takes
+each answer where it would have called the classifier — the same reading, bit for bit — see The worker pool (1.8.0).
 
 It reads ink, not photos. A photo of paper is a different (much harder) problem and is out of scope.
 
@@ -29,8 +33,9 @@ It reads ink, not photos. A photo of paper is a different (much harder) problem 
 | `src/pad.js` | `Pad` (canvas writing surface, time-sliced reading, views and their animation, board clustering) and the `<nib-pad>` custom element. Input: a `Map` of pointerId → the stroke that pointer is making (`ptrs`), each with the mode it started in (draw or erase), so several fingers write at once and Erase switched mid-stroke cannot split a stroke. Touch is ignored while a pen is down and until `penUntil` (1 s after the pen's last event, hover included); a touch with `width` or `height` ≥ 28 px is a palm and draws nothing (0 or 1 means the browser does not say, and counts as a finger), also when it grows that wide while young; with the pad in erase mode a wide touch erases (radius half its width); a pen coming down drops a touch stroke under 350 ms or 6 points old, or one that has hardly moved (under 12 px) however long it has been down — a hand resting on the panel — (and puts back what it erased); a finger's tap (under 6 px) within 30 s of pen use (`penSeen`: a pen session) is the heel of the hand, not a dot; a brief touch stroke (under 400 ms) in a pen session waits 1.5 s in `pending` (drawn as ink, not yet in `strokes`): any pen event in that time drops it (`_brushed`: the hand brushing the glass on its way down — the tablet's third training file had 30 such strokes, 30–270 ms, read as 1, −, ) and i), otherwise it is committed (`_commit`); with no pen about, a finger's stroke is ink at once; `buttons & 32` (the pen's eraser end) erases for that stroke; a pointer quiet for 1.5 s is finished when the next one comes down (a lost pointerup). `why` says what the last pointerdown did. `mode` is 'draw', 'erase' or 'fix': in fix mode a tap (under 10 px, 400 ms) is sent as `nib:tap {x, y, pointerType}` and writes nothing, while anything longer writes as usual and puts the mode back to 'draw' — so a Fix left on never stops the pen (1.5.1; before, the Board's Fix was a layer over the canvas that swallowed every stroke until Fix was turned off). Board clustering (`clustersOf`, nearness by the median stroke size) is followed in `_readParts` by `joinOperands`: a piece whose single line only asks ("x =", "y <": one letter and a relation, `ASKS`) is joined to the nearest piece above it within 2.5 line heights (overlapping it or within a height to the side) — his "x =" dropped 66 px under 4x − 7 = 21 — a piece whose single line ends in an operator (+ − · × ÷ < > ≤ ≥ ≠ ±, not =) is joined to the nearest piece to its right on its row, and a piece beginning with one (= included, not −) to the one on its left, within 2.5 heights and sharing half the smaller height, then read again as one — "2 · 22 + 2 =" written with spaces (as a prompt shows it) is one expression, and "7 − 1 =" beside another problem stays its own. The eraser's radius is max(14, 0.2 × `refSize` of the strokes within 150 px, else of all, half the contact width); strokes are hit along their segments (`strokeNear` in neat.js); it redraws whenever anything goes and draws a faint ring. History steps (`_apply`): add, erase (+ `hide`), clear (with the corrections and shown answers it took), reveal, move (a fit); capped at 500. `reveal`: answers wait drawn out of focus where they go (`_drawBlurred`: a canvas `filter` blur of 0.12 of the writing's em, on strokes drawn three times as heavy so the blur keeps their shape; 12 faint offset copies where the canvas has no filter, `padBlurOK`), with a tap target each (`plan.chips`: the answer's box, at least 44 px each way, and 6 px more); `revealed` holds keys = the sids of the answer's line + the answer's LaTeX (`it.revealKey`; `groupKey`, the "=" strokes alone, would not change when the line is rewritten), so a changed line or answer hides it again; a tap (up within 10 px and 400 ms, on its target) reveals it: the blur eases away over 320 ms (`_focusing`; at once with `motion` off or reduced motion asked for); the eraser hides it again. `fit`: on a resize (or a page put back) ink that no longer fits is scaled about its top-left (never up) to sit 16 px inside; the same stroke objects are moved, so corrections follow, and the strokes keep the training-log ids they had (hashed before the move), so a board opened narrower does not keep all its writing again at the new size. `getState`/`setState` (strokes, corrections as indices, revealed as stroke indices + answer, `types`: each stroke's pointer type), `snapshot`/`restore` (live, with history), `image()` (the view drawn again at 2× on a background with the dot grid; no chips, ring or boxes). `strokeInfo(stroke or index)` → `{type: 'pen' \| 'touch' \| 'mouse' \| null, width}` (the largest contact width the browser reported, null when it says nothing; kept in a `WeakMap`, so strokes stay plain `[x, y, t]` arrays). `train` (attribute `train`): the training log, `pad.training` (see Training log below); `trainFlush()` keeps every piece read on the page now (`clear`, `setState`, `restore` and `setStrokes` call it first), `trainLoad(records)`, `trainForget()`; each record is sent as `nib:train`. `trainMeta` (also a `<nib-pad>` property): a plain object or null; while it is set, every record made gets its fields copied in (never over the record's own; the drill's are `expect`, `drill`, `item`, `how`, `note`). `trainKeep(strokes)` keeps the piece read from exactly those strokes now (again, replacing its record; whether or not `train` is on) and returns the record; `trainVerify(key, verified)` sets `verified: true/false` on the record with that key and sends `nib:train` again; `trainIgnore()` drops the records of the pieces on the page now and keeps them from being kept again until they change (sends `nib:train` with `{removed: [keys]}`) |
 | `src/kern.wat` | the classifier's kernel (1.7.0), WebAssembly text with SIMD: `$mac` (a list of the nonzero inputs, then 24 outputs at a time summed over it in registers, ReLU), `conv3`, `conv1`, `dense`, `pool`; see Speed (1.7.0) |
 | `src/kern.js` | written by `tools/build_kern.js` from `src/kern.wat`, committed: the assembled module as base64 (`KERN_WASM`) and its loader (`kernLoad`); build.py takes it as a source after `core.js` |
+| `src/pool.js` | the worker pool (1.8.0; see The worker pool (1.8.0)): `poolRun(jobs, each)` → `{done, drop}` (chunks of 8 groups that idle workers take from one queue; `done` a Promise of true, or of false — "not done" — when the pool cannot run or has died), `poolSize()` (every core but one, at most 4, no more than `floor(navigator.deviceMemory)`; 0 on a single core and where workers cannot run), `poolWorkers()` (`Nib.workers`), `poolUse(n)` (tests: 0 off, a count, `'auto'`), `poolNote(ms)` (`Recognizer.probs` tells it each classification made on this thread: a count and a running cost), `poolWorth(n)` (is a list of n groups worth asking for: 150 ms or more of this thread's classifying), `poolTest` (tests: counts, shorter limits, a worker that fails, never answers or answers wrongly), the limits (ready 4 s, a chunk 5 s, idle 30 s, work 150 ms) and the one place every failure ends (`poolDie`); and `poolWorkerMain`, what the engine does when it is started as a worker of the pool (`self.__nibWorker`; api.js calls it at the end) |
 | `src/api.js` | the public `Nib` object; `Nib.canvas` hands a page the canvas's parts (named colors and `color`, papers, shape kinds and `shapeFromDrag`, `pdf`, `pack`/`unpack`, `images`) |
-| `build.py` | writes `dist/nib.js` from `src/` and `model/nib-data.json` (sources wrapped in one IIFE, data inlined), standard library only; `python3 build.py path/to/model.npz` freezes that model first. Its `VERSION` is Nib's version; `package.json` must say the same |
+| `build.py` | writes `dist/nib.js` from `src/` and `model/nib-data.json` (sources wrapped in one IIFE, data inlined; since 1.8.0 the IIFE is named, `NibEngine`, so the engine can read its own source and start the pool's workers from it), standard library only; `python3 build.py path/to/model.npz` freezes that model first. Its `VERSION` is Nib's version; `package.json` must say the same |
 | `model/` | `nib-data.json`: the data in `dist/nib.js` (classes, the int8 classifier `model_v4s50`, the MLPs, the context model, the prior, the typeset fonts and metrics), committed so a clone builds; the float checkpoints behind it are on the `checkpoints` branch (`npm run checkpoints` → `training/scratch/work/`); see `model/README.md`. The float checkpoints it was frozen from are not in the repo |
 | `tools/freeze_model.py` | trained files (`training/scratch/work/`: the model, `ep/classes.txt`, `geo_models_v2.json`, `lm_v2.json`, `prior.json`) + KaTeX → `model/nib-data.json`: quantizes the classifier to int8. Needs numpy; stops when any input is missing and names every file it used |
 | `demo/` | `template.html` + `build_demo.py` (+ `sample.json`, one real expression) → `dist/Nib.html` (offline) and `dist/artifact/nib.html` (CDN fonts and KaTeX) |
@@ -44,17 +49,17 @@ It reads ink, not photos. A photo of paper is a different (much harder) problem 
 | `tools/lint.js` | `npm run lint`: the engine as built, the Board's script, the Replicator's core and the pages' own scripts checked with ESLint for names that do not exist, duplicate keys, unreachable code and the like (nothing about style); findings given by source file and line |
 | `.gitattributes` | LF line endings in every checkout (the build copies sources into `dist/` byte for byte; the build scripts read and write UTF-8 with LF on every platform) |
 | `docs/reviews/` | audits: `audit-2026-11-14.md` (1.6.6: what was checked and how, what was found, what 1.6.7 fixed, what was left and why); `found-2026-11-15.md` (two faults found while the worker pool was prepared, in 1.6.7 and 1.7.0 alike, fixed in 1.7.1: a page got eight joins and no more; a symbol whose strokes were moved apart was still read as what it had been — each with a probe in `tools/verify/`) |
-| `docs/plans/` | what is planned and not built, and the briefs the last releases were made from: `worker-pool.md` (**the next subsystem**, Nib 1.8.0: a full page read on every core — the design, why no reading can differ, what the prototype measured, the order to build it in, the checks before release), `briefs/` (`worker-pool-build.md`: that plan as a task; the briefs of 1.6.7 and 1.7.0, done), `README.md` (the index, and where the scratch files the old briefs name are now) |
+| `docs/plans/` | the plans and the briefs the last releases were made from: `worker-pool.md` (done, Nib 1.8.0: the design of the worker pool, why no reading can differ, what its prototype measured, the order it was built in, the checks), `briefs/` (`worker-pool-build.md`: that plan as a task; the briefs of 1.6.7 and 1.7.0; all done), `README.md` (the index, and where the scratch files the old briefs name are now) |
 | `tools/verify/` | one engine against another, which the suites cannot do: `readall.js` + `readings.sh` + `cmp.js` (every reading of a sample of 5,605 expressions, compared field by field), `session.js` + `sessions.sh` + `cmpsess.js` (eight scripted sessions on a board in Chrome, 640 steps, compared step by step), `engine.sh` (a released engine out of this repository's history), `gold-1.6.7/` (what 1.6.7 read and did: the reference, gzipped, with its SHA-256), `gold-1.7.1/` (two more sessions, on pages that need more joins than 1.6.7 made), `pages_probe.js` (which classifier runs on a site's pages under their own Content-Security-Policy), `file_probe.js` (the same for one file opened from `file://`: Deckhand's, a page in `dist/`), `joins_probe.js` and `moved_probe.js` (the two faults of `found-2026-11-15.md`: each exits 1 on an engine that has its fault), `deckhand/` (Deckhand's Playwright suite on the system's Chrome). `README.md` there: how a change to the reader is checked, and what these showed for 1.7.0 |
-| `tools/perf/` | where the time goes (they print, they assert nothing): the cold read and the classifier's layers in node (`prof.js`, `split.js`), the Board with 20 to 120 expressions and one more stroke (`live_perf.js`), the same under Chrome's profiler (`prof_live.js`), long strokes and reloads (`board_perf.js`). `README.md` there has the numbers of 1.7.0 |
+| `tools/perf/` | where the time goes (they print, they assert nothing): the cold read and the classifier's layers in node (`prof.js`, `split.js`), the Board with 20 to 120 expressions read cold — with the longest the page's thread was held, and `NIB_INIT` to set the pool first (1.8.0) — and one more stroke (`live_perf.js`), the same under Chrome's profiler (`prof_live.js`), long strokes and reloads (`board_perf.js`). `README.md` there has the numbers of 1.7.0 |
 | `tools/fuzz/` | the audit's probes, to make the sweep again after a large change: thousands of odd inputs to the solver and the API under a watchdog, the Board and the pages opened on damaged storage, garbage attribute values, how time grows with input, the mutation sample. `README.md` there says how to read their tallies |
-| `tools/pool/` | the worker pool's prototype against the released engine, unchanged: `lib.js` (`needs` and `fill` from outside, a worker from the engine's own source, a small pool), `exact.js` (node: a cache filled ahead reads bit for bit what a cold read reads), `proto.js` (Chrome: it starts, the same bits in a worker, a board read with 1 and 2 workers, under a Content-Security-Policy, from the files that carry the engine inline). Deleted when the pool is built |
 | `training/` | everything that produced the models; see `training/README.md` |
-| `test/` | `run.js` (`npm test`: the node suites `check`, `solve_check`, `neat_check`, `shapes_check`, `scribble_check`, `store_check`, `pdf_check`, `replicator_check`, `font_check`, `font_check.py`, `hardening_check`, `kern_check`, `readings_check`, `reading_check` and `verify_check` in turn, a line each and a summary (with what each skipped), logs in `test/shots/logs/`; `--browser` for the `*_browser.js` suites and `browser.js`, Chrome at `$CHROME` or `/usr/bin/google-chrome`; name suites to run only those), `data.js` (where the tests find the data sets, npm packages and Chrome; a missing data set stops a suite with "run npm run data"), `check.js` (the regression suite: run it before shipping; needs KaTeX, `NIB_NO_KATEX=1` skips the LaTeX check), `eval.js` (CROHME accuracy), `eval_synth.js` + `compose.js` (middle-school expressions composed from real handwriting), `stress.js` (the same expressions written messily: reversed and reordered strokes, late strokes, mouse, finger, slanted, drifting, mixed), `tune_all.js` / `tune.js` (weight search), `memcal.js` (memory calibration), `browser.js` (the tester page with timings), `pad_browser.js` + `pad_page.html` (the `<nib-pad>` element: two pads, undo, erase, palm, finger, a 4× slower CPU; the pointer rules with synthetic pointer events — palm by contact size, the pen's one-second window, a pen taking over a young touch, the eraser end, two fingers (synthetic and CDP touch), Erase toggled mid-stroke, a lost pointerup — the eraser's ring, radius and segment hit test, history capped at 500, getState/setState and Clear→Undo with corrections, `strokeInfo` for mouse, touch and pen strokes and the types kept by getState/setState), `replicator_browser.js`, `font_check.js` + `font_check.py` (Replicator fonts read back by opentype.js, fontTools and Chrome), `parity.js` + `np_forward_v2.py` (the int8 engine against the float model), `neat_check.js` (the views without a browser: every symbol drawn, lines level, read-back, odd input, which saved hand wins), `neat_view.js` (contact sheets of the views), `views_browser.js` + `views_page.html` (views in a pad: switching, animation, fonts, erase, undo, a 4× slower CPU), `fringe_browser.js` (views switched mid-animation, undo storms, corrections on a board, themes, reduced motion, dots, tiny/huge/off-edge ink, clear during a read, missing fonts, a 2× screen), `board_browser.js` (the Board end to end, including handwriting picked up from the Replicator, Fix, Solve, equations and x as a letter, and a crowded board on a 4× slower CPU; Ink by default, answers revealed by a tap (drawn out of focus where they go, the tap target, coming into focus, drag vs tap, reload, the eraser hiding it, a rewritten line), the eraser clearing at once, pages (arrows, Clear, reload, delete with confirm, the old save format), saving (pagehide, a hidden tab, storage refused), Save image (name, 2× size, background, dots), Settings (themes, pens, persistence) and the rail on every edge at 1920×1080, 1280×800 and 800×1280, ink brought in on a smaller board (and on a page taken out there), the pointer overlay, two fingers, the training log (nothing kept while off; on: one record after 4 s with its reading, strokes and types; a Fix replacing it; kept on a page change and on Clear, never twice; reload and the count line; Save training's file; the converter run on it; Forget), the training drill (Start from Settings: the bar with prompt 1 and "1 / 60" across the top on a new page; a composed expression that reads right turns the reading line gold; Right keeps one record with `expect`, `verified: true`, `item: 1`, clears the board and shows prompt 2; a mismatch in coral; Skip keeps nothing and is remembered; Stop and Continue "3 / 60", also after a reload; Fix from the bar, the reading following it and Right keeping it fixed; a finger prompt written with the mouse in coral; the summary after the last prompt, reached by setting the saved position before a reload; Save training from the summary and the converter's `gold` and `--verified-only` on that file; Start again), and the small CSS/meta items), `solve_check.js` (the arithmetic, the form of each answer, algebra, variables, what must give no answer, limits, real handwriting with its answers erased, where answers are drawn in every view, equations, the cases the 1.3 review found, and x as a letter), `solve_fuzz.py` (random arithmetic checked against Python's own exact fractions; `python3 test/solve_fuzz.py 4000 7`), `compose.js` (also a module: `compose(tex)` writes an expression with real writers' symbols), `replicator_check.js` (the Replicator's smoothing, hooks, even sizes and sentence learning without a browser: synthetic writers made from CROHME writers, sentences written with late dots and bars, letters left out, stray strokes, the wrong sentence), `embed_browser.js` + `embed_page.html` (Nib inside another tool, as Deckhand uses it: a fixed page shown whole and centred in frames of every shape, nothing moving it, two fingers writing, writing in a margin kept in view, page units for the pen and for `nib:tap`, `getState` without a camera, `answerAt` / `showAnswer` / `hideAnswer`, `symbolAt` and `relabel`; an answers layer over a host's canvas: `syncStrokes` by identity, the answer blurred then sharp, more ink, an "=" taken away and given back, a line moved by the host as new arrays keeping its shown answer, no input of its own), `fixtures/board_2026-11-04.json` (Croix's real board, taken back out of his screenshot; `solve_check.js` §19 reads it piece by piece and `board_browser.js` writes it onto the Board) |
+| `test/` | `run.js` (`npm test`: the node suites `check`, `solve_check`, `neat_check`, `shapes_check`, `scribble_check`, `store_check`, `pdf_check`, `replicator_check`, `font_check`, `font_check.py`, `hardening_check`, `kern_check`, `pool_check`, `readings_check`, `reading_check` and `verify_check` in turn, a line each and a summary (with what each skipped), logs in `test/shots/logs/`; `--browser` for the `*_browser.js` suites and `browser.js`, Chrome at `$CHROME` or `/usr/bin/google-chrome`; name suites to run only those), `data.js` (where the tests find the data sets, npm packages and Chrome; a missing data set stops a suite with "run npm run data"), `check.js` (the regression suite: run it before shipping; needs KaTeX, `NIB_NO_KATEX=1` skips the LaTeX check), `eval.js` (CROHME accuracy), `eval_synth.js` + `compose.js` (middle-school expressions composed from real handwriting), `stress.js` (the same expressions written messily: reversed and reordered strokes, late strokes, mouse, finger, slanted, drifting, mixed), `tune_all.js` / `tune.js` (weight search), `memcal.js` (memory calibration), `browser.js` (the tester page with timings), `pad_browser.js` + `pad_page.html` (the `<nib-pad>` element: two pads, undo, erase, palm, finger, a 4× slower CPU; the pointer rules with synthetic pointer events — palm by contact size, the pen's one-second window, a pen taking over a young touch, the eraser end, two fingers (synthetic and CDP touch), Erase toggled mid-stroke, a lost pointerup — the eraser's ring, radius and segment hit test, history capped at 500, getState/setState and Clear→Undo with corrections, `strokeInfo` for mouse, touch and pen strokes and the types kept by getState/setState), `replicator_browser.js`, `font_check.js` + `font_check.py` (Replicator fonts read back by opentype.js, fontTools and Chrome), `parity.js` + `np_forward_v2.py` (the int8 engine against the float model), `neat_check.js` (the views without a browser: every symbol drawn, lines level, read-back, odd input, which saved hand wins), `neat_view.js` (contact sheets of the views), `views_browser.js` + `views_page.html` (views in a pad: switching, animation, fonts, erase, undo, a 4× slower CPU), `fringe_browser.js` (views switched mid-animation, undo storms, corrections on a board, themes, reduced motion, dots, tiny/huge/off-edge ink, clear during a read, missing fonts, a 2× screen), `board_browser.js` (the Board end to end, including handwriting picked up from the Replicator, Fix, Solve, equations and x as a letter, and a crowded board on a 4× slower CPU; Ink by default, answers revealed by a tap (drawn out of focus where they go, the tap target, coming into focus, drag vs tap, reload, the eraser hiding it, a rewritten line), the eraser clearing at once, pages (arrows, Clear, reload, delete with confirm, the old save format), saving (pagehide, a hidden tab, storage refused), Save image (name, 2× size, background, dots), Settings (themes, pens, persistence) and the rail on every edge at 1920×1080, 1280×800 and 800×1280, ink brought in on a smaller board (and on a page taken out there), the pointer overlay, two fingers, the training log (nothing kept while off; on: one record after 4 s with its reading, strokes and types; a Fix replacing it; kept on a page change and on Clear, never twice; reload and the count line; Save training's file; the converter run on it; Forget), the training drill (Start from Settings: the bar with prompt 1 and "1 / 60" across the top on a new page; a composed expression that reads right turns the reading line gold; Right keeps one record with `expect`, `verified: true`, `item: 1`, clears the board and shows prompt 2; a mismatch in coral; Skip keeps nothing and is remembered; Stop and Continue "3 / 60", also after a reload; Fix from the bar, the reading following it and Right keeping it fixed; a finger prompt written with the mouse in coral; the summary after the last prompt, reached by setting the saved position before a reload; Save training from the summary and the converter's `gold` and `--verified-only` on that file; Start again), and the small CSS/meta items), `solve_check.js` (the arithmetic, the form of each answer, algebra, variables, what must give no answer, limits, real handwriting with its answers erased, where answers are drawn in every view, equations, the cases the 1.3 review found, and x as a letter), `solve_fuzz.py` (random arithmetic checked against Python's own exact fractions; `python3 test/solve_fuzz.py 4000 7`), `compose.js` (also a module: `compose(tex)` writes an expression with real writers' symbols), `replicator_check.js` (the Replicator's smoothing, hooks, even sizes and sentence learning without a browser: synthetic writers made from CROHME writers, sentences written with late dots and bars, letters left out, stray strokes, the wrong sentence), `embed_browser.js` + `embed_page.html` (Nib inside another tool, as Deckhand uses it: a fixed page shown whole and centred in frames of every shape, nothing moving it, two fingers writing, writing in a margin kept in view, page units for the pen and for `nib:tap`, `getState` without a camera, `answerAt` / `showAnswer` / `hideAnswer`, `symbolAt` and `relabel`; an answers layer over a host's canvas: `syncStrokes` by identity, the answer blurred then sharp, more ink, an "=" taken away and given back, a line moved by the host as new arrays keeping its shown answer, no input of its own), `fixtures/board_2026-11-04.json` (Croix's real board, taken back out of his screenshot; `solve_check.js` §19 reads it piece by piece and `board_browser.js` writes it onto the Board) |
 | `test/` (1.6.5) | `scribble_check.js` (node; Scribbled out, Testing), `scribble_browser.js` + `scribble_page.html` (the pad: rubbing out as one step of Undo, ink over clear paper, the highlighter, `scribble="false"`, the marker, touch and mouse, a scribble heard in pieces (and heard late, the page busy), a shown answer, a tidy view, a dot filled in on a number line; the Board: its note with Undo, and its switch, kept when the Board is opened again), `looks_browser.js` (an answer keeps its look: later answers take what Nib learned, the look is saved and put back with the pad and with the Board, another view draws anew) |
 | `test/` (1.6.7) | `hardening_check.js` (node; Hardening (1.6.7): input that is not strokes, points that are not two coordinates, options that are no numbers, NaN scores, symbol sets, the scribble bounds and their times, the detector compared with its 1.6.6 functions, the share at a scribble's edge, the Replicator's range, the small guards, the limits and rules a mutation sample showed untested, the runner's skip count) and `hardening_browser.js` (a piece that cannot be read, a malformed reading, an item that cannot be drawn, one expression, `symbols` that names no set; the Board with a camera of 1e308, a board file that cannot be read, a 16,000-point stroke; the Replicator with letters saved far outside their boxes) |
 | `test/` (1.7.0) | `kern_check.js` (node; the kernel: its size and source, the two paths bit for bit on 3,316 stroke groups, the fallback without WebAssembly or when it will not compile or instantiate, the speed ratio), `readings_check.js` (node; the 700 school problems read as 1.6.7 read them, by its fingerprint, and every 7th of them the same on the JS path), `kern_browser.js` (the Board from `file://` on the kernel; with a Content-Security-Policy that forbids WebAssembly, and with WebAssembly gone, the same reading on the JS path), `reading_check.js` (node; `clustersOf` against every pair tried, `joinOperands`' kept descriptors) and `reading_browser.js` with `reading_page.html` (a board's read as steps, a read put off by a touch, what changes under a read, and a 51-step session on a board whose every reading, answer and view is 1.6.7's, by its fingerprint) |
 | `test/` (1.7.1) | `reading_check.js` section 3 (node; ink that is moved: a whole piece moved is classified zero times and reads the same, near and 10 million units out; one stroke moved, put back, tilted, a point longer, its points in another order, a few of them bent; small writing 900 million units out; a stroke far away in the same writing; two sets of strokes read in turn; 318 moves over the school problems, each read as a new recognizer reads the ink) and `reading_browser.js` section 4 (more than eight joins on a page, at once and in slices; 400 pieces counted out at 187 rounds; the bar of a plus nudged on a board and on a pad of one expression, Undo, Redo, a host's `syncStrokes`); `verify_check.js` checks every reference folder |
+| `test/` (1.8.0) | `pool_check.js` (node; the worker pool's two methods on the recognizer: `needs()` changes nothing a read can see, on a new recognizer and on one that has read; a recognizer whose answers were made apart, through a structured clone, reads as a cold one and a warmed one, every field and every cache bit, over 350 school problems, with other options and on the JS path; an answer waits beside the cache and is taken once, for exactly its strokes and its size — never one for another size or for writing since moved; asked, and then a stroke added, moved, taken away, all of it moved or resized before the answers come, with and without a read before: the reading and the recognizer of one never asked; no pool in node) and `pool_browser.js` + `pool_page.html` (Chrome from `file://`: a worker from the engine's own source, the same bits there on either path; a group the classifier throws on; the size rule; idle workers go and come back; a page of 60 and of 120 expressions read with the pool and without, the same reading and cache bits, at least 90% of the classifying in workers; a page whose rule forbids workers, the site's rule with the engine inline, a worker that fails, never answers, answers wrongly or does not start in time, a group that cannot be sent, workers that classify nothing, `poolUse(0)`, the asking itself failing; during a cold read — strokes written below the page and into its expressions, the page replaced, read at once, tapped, an option changed, a stroke nudged and put back, moved and undone, Clear and Undo, a stroke resized, the smoothing changed, the pad destroyed; two pads at once; a one-expression pad; the Board on a saved page of 60 expressions and its Settings line, the same under a rule that forbids workers, `dist/Nib.html` and a small pad starting none) |
 | `test/` (1.6) | `canvas_browser.js` + `canvas_page.html` (the pad as a canvas: pan and zoom by wheel, hand, space, middle button and two fingers; pens, markers, highlighters and pressure; what Nib reads; select, move, handles, duplicate, delete, restyle, order, paste, nudge, box; text; pictures; the area eraser; the laser; state with looks, pressure and camera; export; 2,000 strokes), `board_canvas_browser.js` (the Board's canvas end to end: the tools and their keys, colors and sizes, what Nib reads, shapes with fill and dashes, a tap, number lines and their numbers, draw and hold, snapping; text; select and its bar, copy and paste across pages; the eraser sparing placed things; papers per page; zoom and pan; pictures pasted, dropped, kept and let go; storage v3 and a 1.5 board; PDFs of a page, of all pages, Letter, A4 and the writing's size, answer keys, plain white; pictures, the selection, the clipboard; the board file saved and opened in a fresh browser; the pages overview; and what the review of 1.6 found: a second tab saving nothing, text kept across a page change, tidied writing following a drag, dropped files, a crafted board file, an answer key's page size, a refused download; the laser), `paper_browser.js` + `paper_page.html` (every kind and tone, exact pixels, pans pixel-identical, crisp lines, labels; `node test/paper_browser.js sheet.png` draws a contact sheet), `shapes_check.js` (1,053 checks: drags, snapping, bounds, hits, recognition on synthetic shapes and on real symbols) + `shapes_browser.js` + `shapes_page.html` (drawn bounds checked pixel by pixel, a contact sheet), `pdf_check.js`, `store_check.js`, `store_browser.js` + `store_page.html` |
 | `tools/push.sh` | commit and push from a Claude session (token in the git-ignored `.github-token`) |
 | `tools/strokes_from_screenshot.py` | strokes back out of a screenshot of the Board (`pip install scikit-image skan`): the ink thinned to its center line, cut where lines meet or cross and joined again the straightest way through, each stroke started where a hand starts it and given back the half line-width thinning takes off its ends; out in page px, in the likely writing order. For when all there is of a problem is a picture of it |
@@ -305,12 +310,8 @@ The pad, the second half of 1.7.0 (`src/pad.js`; nothing below changes a reading
   page is held 21–40 ms at the end of its read (about 100 ms), 46–82 ms with the processor slowed 4× (470–570 ms).
 - **Not done, and why**: reading what is on screen first and showing it before the rest (a piece shown before its
   neighbors are read can show an answer that changes when they are: "+ 2 =" before the "13.999 +" to its left);
-  classifying on worker threads (planned as Nib 1.8.0, `docs/plans/worker-pool.md`: the workers only fill the
-  recognizers' caches ahead of the read, so the reading cannot differ; tried with a prototype that leaves the engine
-  as it is, `tools/pool/` — the same bits in a worker, 94 to 96% of a board's classifications off the page's thread,
-  120 expressions in 1.4 to 1.7 s with both cores of this machine against 3.1 s, and by arithmetic a third to two
-  fifths of today's time on four cores or more); keeping the readings with the saved board so that a reload reads
-  nothing.
+  classifying on worker threads (done since, as Nib 1.8.0: The worker pool (1.8.0), below); keeping the readings with
+  the saved board so that a reload reads nothing.
 
 ## Two faults (1.7.1)
 
@@ -345,6 +346,273 @@ both in full, with what was left.
 - The scripted sessions wait for `pad.busy` since this release (`tools/verify/session.js`): ink moved in place is
   the same strokes with a reading on the way, and on a page of 120 expressions a step was now and then recorded with
   the reading from before the move.
+
+## The worker pool (1.8.0)
+
+Since 1.7.0 nothing was classified with the page held, but a page that arrives all at once — the Board opening a saved
+board, a large paste, Undo of a Clear — still had every group of its strokes classified on the page's thread: 742
+classifications for 60 expressions, 1,828 for 120, 3 s on the two-core machine, and a stroke written meanwhile stopped
+the read until the pen rested again. 1.8.0 hands that work to worker threads, on every core but one, and reads
+exactly what the page's thread alone reads. Planned in `docs/plans/worker-pool.md` (with a prototype that ran against
+1.7.0 from outside), built from `docs/plans/briefs/worker-pool-build.md`; Croix, 15 November 2026: the two faults found
+on the way first (1.7.1), then this.
+
+**The pool classifies ahead of the read, and an answer stands in only for the very call it was made for.** A
+classification is a pure function of the strokes of a group and the size they are classified at
+(`classifyGroup(group, ref)`), and the warm-up's first loop — every candidate group of the segmentation — takes no
+classifier result to find. So that list is made first and classified elsewhere; each answer waits beside its
+recognizer's cache; and the read, which runs as it always has, takes an answer at the one place it would otherwise
+call the classifier — and only when it is about to make that same call: the same strokes, point for point, at the
+same size.
+
+- **What runs where.** The page's thread: the list (`Recognizer.needs`, sliced), handing it over, taking the answers
+  in, and then the read's steps as before — the rehearsals, the groups only a rehearsal asks for, the pieces
+  `joinOperands` puts together (known only once their parts are read), the reading and the announcement. The workers:
+  `classifyGroup` and nothing else.
+- **`Recognizer.needs(input, options)`** → `{ref, bucket, jobs: [{key, group}]}`: the groups the warm-up's first loop
+  would classify if it ran now — not in `this.cache`, and not answered already and waiting — with the size a read
+  would classify them at now and the cache's bucket for it. **It changes nothing a read can see**: the size is worked
+  out and not kept (`crefNow`: what `classRef` would give, without its `cref` and `lastIds`), the join model's
+  chances are worked out and not cached (`pjoin(…, peek)`), nothing is classified. Only the strokes are given their
+  ids, as any read gives them (`prepare`): an id is a name, and no reading depends on which name a stroke has. The
+  loop itself is one generator both go through (`_warmGroups`, after `_warmStart`), so the list and the warm-up cannot
+  drift apart. `warmup` is what it was.
+- **`Recognizer.fill(key, bucket, ref, group, entry)`** keeps an answer — what `classifyGroup(group, ref)` returns,
+  the probabilities with `.hidden` — beside the cache (`this.ahead`), unless the cache has that key already. `probs`,
+  on a miss and outside a rehearsal, asks `_adopt(key, group, ref)` before it classifies: an answer waiting under that
+  key is taken when its size is this size (`===`) and its strokes are these strokes, point for point
+  (`sameGroup`, `Object.is` on every coordinate), and is then the cache's entry by the same rule as one `probs` made;
+  whatever waited under the key is done with either way. So an answer that comes for ink that has since moved or
+  grown, for another size, or under a key that went out of use (a stroke moved is given a new id, 1.7.1) is never
+  read: the read classifies that group itself, as it would have. Once a warm-up's first loop is through, every group
+  of its ink is in the cache and what still waits is dropped. Nothing keyed by stroke ids is kept outside the
+  recognizer.
+- **The engine is its own worker.** `build.py` names the wrapper (`(function NibEngine(global) {…})(…)`, and
+  `tools/lint.js` names it as build.py does), so the engine reads its own source (`NibEngine.toString()`, the function
+  exactly as the file or the page holds it) and starts a worker from a Blob URL of
+  `'self.__nibWorker = 1;\n(' + source + ')(self);\n'`. One file still: no second download, from `file://` and offline,
+  and from the pages that carry the engine in their own HTML (the Board, the session pages). Started that way the
+  engine defines everything as usual (no custom element: there is no `document`; no storage is read: nothing at start
+  reads any) and then (`poolWorkerMain`, called at the end of api.js) answers `{id, jobs: [{g, ref}]}` with
+  `{id, out: [{p, h}]}` — each job's `classifyGroup(g, ref)`, the probabilities (`Float64Array`) and the hidden vector
+  (`Float32Array`), their buffers transferred (each array has its own today; a view would go as a copy), or `null`
+  for a group the classifier throws on: nothing is kept for it, and the read meets the same failure on the page's
+  thread, where it is said (`needs()` lists no such group today; one odd group is not the pool's end — eight in a
+  row are, `POOL_NULLS`: workers that can classify nothing would have every big read pay for the asking). Groups go
+  as they are: structured clone keeps every number exact. It says it is ready with `{ready: 1, version, kernel}`. The
+  kernel's fallback line is not said a second time in a worker (`tools/build_kern.js`, the loader's `say`).
+- **The pool** (`src/pool.js`; nothing of it runs when the engine starts):
+  - made on first use: `min(4, hardwareConcurrency − 1)` workers — every core but one, so none on a single core,
+    where a worker would only take the page's thread's turns (a browser that does not say: 2 cores) — and no more
+    than `floor(navigator.deviceMemory)` where that is a number: a device that says under 1 GB gets none; a worker
+    costs about 34 MB (its copy of the engine and the model, the kernel's 3 MB, a heap);
+  - `poolRun(jobs, each)` → `{done, drop}`: chunks of 8 groups that idle workers take from one queue, so a request
+    spreads over every worker and requests are served in the order they came (two pads on a page share it);
+    `each(job, entry)` as each answer comes; `done` a Promise of true once everything was answered or dropped, of
+    false ("not done") when the pool cannot run or has died; `drop(test)` takes queued jobs out (a chunk a worker
+    holds is finished);
+  - **every failure ends in one place, `poolDie`**: no `Worker`, `Blob` or `URL.createObjectURL` (node: no pool at
+    all); `new Worker` throws (a page with Trusted Types); a worker fires `error` (how a page whose rule forbids
+    workers shows in Chrome: no throw, an `error` event about 15 ms later) or is not ready within 4 s; a chunk is not
+    answered within 5 s (8 groups take some 10 ms on the kernel, a tenth of a second on the JavaScript path: a worker
+    that has gone quiet keeps the board unread no longer than that); an answer of the wrong shape (another id,
+    another count, arrays of another type or length) or one that cannot be read; a group that cannot be sent; eight
+    groups in a row that workers could not classify. Then the pool is dead for the page's life: every worker
+    terminated, every request "not done", one line —
+    `console.info('Nib: reading on the page's own thread only (…why…)')` (beside it the browser says in its own words
+    that the page's rule was broken, where that was the reason). Never tried again. A pool declared dead by mistake
+    (a device asleep through a limit) costs only speed until the page is opened again, so the limits are plain;
+  - a worker idle for 30 s is terminated; the next request starts one again;
+  - `Nib.workers`: how many are running now. `Nib._internals.poolUse(n)`: `0` off, a count, `'auto'` back (the
+    workers there are let go; a dead pool stays dead). `poolSize()`: how many it may use. `poolTest`: the counts
+    (workers started, groups sent, answered, answered with nothing, dropped, classified on this thread, each worker's
+    classifier), shorter limits (and `work`, below), a worker that throws on its next chunk (`'crash'`), one that
+    never answers (`'mute'`), one that answers wrongly (`'garble'`). No attribute, storage key or query string turns
+    the pool off: there is no engine-level switch.
+  - `Recognizer.probs` tells the pool each classification it makes (`poolNote`): a count, for the tests, and a running
+    cost. `poolWorth(n)`: whether a list of n groups is worth asking for — it would take this thread 150 ms or more
+    (`POOL_WORK_MS`; a group taken as 1.2 ms until one has been classified here). That limit is one of the pool's
+    (`poolTest('limits', {work: 0})` has every planned read ask), so no test's outcome hangs on the machine's speed.
+- **The pad asks ahead, then reads as before** (`_schedule` → `_ask` → `_steps`):
+  - when the pieces it has to read (clusters whose part is not in `this.parts` nor in `_badParts`) have fewer than
+    `POOL_MIN_STROKES` = 60 strokes between them (some hundred groups), or the pool cannot run, the steps begin at once:
+    an ordinary read is not even planned, and is what it was;
+  - what earlier reads asked for and is still queued is taken out of the queue where no read can use its answer any
+    more (`_askDrop`, as soon as a read is scheduled, when the pad is left with no ink, and on `destroy()`): a piece
+    whose strokes are no longer all on the pad (a page cleared or replaced does not make the next read wait for the
+    old one's groups), one whose recognizer the pad has replaced (ink resized), one asked with another smoothing
+    (every stroke is then another stroke); the rest is waited for;
+  - each piece's recognizer lists what it needs — `_recFor(st[0])` with `Object.assign({}, ro, {fix})`, the options
+    `_partsPass` gives `warmup` — in slices of 14 ms (it runs the stroke clean-up and the join model for every stroke:
+    19 ms for a page of 120 expressions; the parts' keys are made in the order the read makes them, so the pad's
+    stroke ids come out the same);
+  - when what is listed is not worth asking for (`poolWorth`: under 150 ms of this thread's own classifying), the
+    steps begin;
+  - otherwise `poolRun`, and each answer is handed to its recognizer (`fill`) if that recognizer is still the one the
+    pad holds for the piece's first stroke (`this.recs.get(first) === rec`, or `this.rec` for one expression: both are
+    replaced when ink is resized), whatever has become of the read meanwhile;
+  - once every request is answered, or the pool has died, the steps run exactly as they did: `_partsSteps` and
+    `_partsPass` are not changed;
+  - a read cut short (new ink, a pointer down: `gen` moves on) leaves its requests running and their answers wait;
+    the next read waits for them, then asks only for what is still missing — a page opened cold is classified on while
+    the writer writes;
+  - the asking is an extra, and whatever fails in it the steps begin (`stage`): a fault while finding what there is
+    to read or while listing a piece's groups leaves the read what it was;
+  - a pad of one expression (`separate` off) asks the same way when its read is big (`this.rec`, `_badWhole`);
+  - `recognize()`, the synchronous read, never waits: it classifies what is missing itself, and an answer that comes
+    later for a group it classified is not kept;
+  - `pad.busy` is true from `_schedule` to the announcement, the asking included, and `result.ms` covers the asking;
+    `_resume`, `destroy()`, a pad with no ink left, `read: false` and `auto: false` behave as before.
+- **The Board's line** at the foot of Settings: "Nib 1.8.0 · the fast reader is on · 3 worker threads" — how many
+  workers the pool may use here (`poolSize()`; "no worker threads" where it may use none). It is written when the
+  Board starts and again each time Settings is opened (`engineLine`): at the start it says what the device allows, and
+  whether the page's rule lets a worker start is known only once a big read has tried — after a start that failed
+  the pool is dead, `poolSize()` is 0, and the line says "no worker threads".
+
+**Why no reading can differ.** (1) A classification depends on the group's strokes and the size and nothing else, and
+a worker is the same engine on the same arithmetic: the kernel and the JavaScript path give the same bits
+(`test/kern_check.js`), and so do the workers, on either path against this thread on either. (2) The read asks for
+classifications through one door, `probs`, and an answer made elsewhere comes in through that door alone, in place of
+the call `classifyGroup(group, ref)` and only for that group and that size exactly: taking it is making the call.
+(3) The asking leaves nothing else behind: `needs()` keeps no size, writes no cache, and an answer is in no cache
+until a read takes it. (4) So with or without the pool a recognizer that is handed the same ink in the same order
+returns the same readings and ends with the same caches, bit for bit — whatever happened to the ink between the
+asking and the answers (`test/pool_check.js`, part 4: a stroke added, moved, taken away, all of it moved or resized).
+**What this does not claim**: when a read runs still depends on the clock, as it always has. A stroke that joins an
+expression already read is read at the size that expression is held at (`classRef`), and one that joins an expression
+not yet read, at its new size; which expressions a cold read has reached when the stroke comes is a matter of the
+machine's speed without the pool, and with it none has been reached until the workers have answered. Both are
+readings 1.7.1 gives. Where every read comes to rest before the next change — the scripted sessions, the suites — the
+pool gives the reference's readings step for step; and a page changed while the pool is still at work comes to rest
+read as a cold read of its final ink reads it (`test/pool_browser.js`, part 4).
+
+**Every fallback**, and what happens: no workers (node, an old browser, a single core, a worker of the pool itself, an
+engine whose wrapper has no name) — `poolSize()` is 0, nothing is planned, the read is 1.7.1's; a rule that forbids
+workers (`worker-src 'none'`, or no `blob:`) — the first big read waits about 15 ms for the `error`, the pool dies,
+the read goes on on this thread; a worker that fails, never answers or answers wrongly in the middle of a read — the
+pool dies (at once, or after 5 s), the read classifies what is missing on this thread; one that is not ready in 4 s
+— the same; `poolUse(0)` — no worker is ever started; a device that says it has under 1 GB — none either.
+
+**The review** (an independent one of the whole diff, before release, as for 1.7.0 and 1.7.1; its probes ran in
+Chrome and node). What it found, all changed before release and all pinned in the two suites:
+- As first built, `needs()` kept the size it worked out (`classRef`) and `fill` wrote into the cache. A stroke that
+  joined an expression while the page was still being read cold was then read at the size held from the asking,
+  where a cold read — and the pool off — reads the expression at its new size: other confidences and candidate
+  orders in three of four tries (the LaTeX the same). Hence the asking that leaves nothing behind and the answer
+  that stands in for one call only; `test/pool_check.js` part 4 fails 56 of 70 on the first build's rule.
+- Work no read could use stayed queued, and the next read waited for all of it: after a stroke was resized
+  (recognizers replaced) or the smoothing changed (every key another), 1,398 groups were classified where 696 were
+  needed. `_askDrop` takes such jobs out.
+- A worker gone quiet kept the board unread for the chunk limit, then 20 s: 5 s now.
+- One core got one worker; a worker whose classifier threw on everything would never have ended the pool; two
+  checks of `test/pool_browser.js` could not fail (rewritten to count what they meant); nothing tried a change made
+  during the wait, two pads, the start limit, a wrong answer, or a group that cannot be sent (all there now).
+- Tried and not broken: `recognize()`, `destroy()`, `poolUse()`, taps, an option changed, a stroke nudged and put
+  back or moved and undone, Clear and Undo — each during the wait, each read as the pool off reads the final ink;
+  strokes moved in place between the asking and the sending (`normStrokes` copies the points); a sandboxed iframe with
+  `allow-scripts` alone (workers start); the engine inside a host's own Worker; odd `hardwareConcurrency` and
+  `deviceMemory`; four workers starting at once on two cores (ready in 109–135 ms).
+- Not covered by it or by the suites: Firefox and Safari; a device short of memory or asleep in the middle of a read.
+
+**Checked.** `test/pool_check.js` (node; `npm test`) and `test/pool_browser.js` (Chrome; `npm run test:browser`), and
+the release's comparisons in `tools/verify/` (the numbers of this build: below):
+- `test/pool_check.js` (32 checks): over every 2nd school problem (350), every 7th with `times: false`, every 9th with
+  `symbols: 'all'` and smoothing, every 25th on the JavaScript path, corrections on every 9th: `needs()` leaves the
+  cache, the join cache, the held size and `lastIds` as they were, classifies nothing, lists 99.2% of a warm-up's
+  classifications (5,167 of 5,207) and the same asked twice, and nothing once every answer waits; a recognizer whose
+  answers were made apart reads as cold and as warmed, every field, and ends with the same caches, sizes and ids,
+  having classified only the rest. The same on a recognizer that has read (80 problems grown by two strokes). `fill`:
+  an answer waits beside the cache, a later one takes its place, the warm-up takes the very object, one for a group
+  the recognizer classified itself is not kept; answers for a size 1% larger (26 of 40 in the read's own bucket) and
+  for writing moved as a whole since (410, their keys still in use) are never read. **Asked, and then the ink changes
+  before the answers come** — a stroke added, one moved, all of it moved, one taken away, all of it a third larger,
+  two added, nothing — with a read of the first strokes before (a size held, a cache there) and without, 70 problems
+  each: the reading and the recognizer are, bit for bit, those of a recognizer never asked. (On the first build's
+  rule, a size kept by the asking, 56 of the 70 with a stroke added read otherwise; with an answer taken without
+  comparing its strokes, 3 of the 70 moved as a whole.) In node `Nib.workers` is 0 and `poolRun` says "not done".
+- `test/pool_browser.js` (55 checks, about 100 s): a worker from the engine's own source from `file://`, on the kernel,
+  0 of 696 groups differ, also with this thread on the JavaScript path; a group the classifier throws on, among 30,
+  answered with nothing and the pool going on; the size rule (2, 1, 4, 8, 16 cores; 8, 2, 1, 0.5 GB → 1, 0, 3, 4, 4,
+  2, 1, 0); idle workers go and come back; a page of 60 expressions read with the pool off, as it comes, with two
+  workers and with this thread on `'js'`, and one of 120 — the same reading and the same bits in every cache entry
+  (742 and 1,829 entries); **93.8% of the 60-expression page's classifications in workers** (696 of 742; the 46 left
+  are rehearsals' groups and joined pieces); a one-expression pad of 20 problems. Where the pool cannot help —
+  `worker-src 'none'`, the site's rule with the engine inline (workers start), a worker that fails after 40 answers,
+  one that never answers (its limit made 1.5 s), one that answers wrongly, one that does not start in time, a group
+  that cannot be sent, workers that classify nothing, `poolUse(0)`, the asking itself failing in either of its
+  stages — the pool-off reading and bits each time, and one line said where the pool died. During a cold read: 16
+  strokes written below the page (725 groups listed, none twice); three written into its expressions, moving their
+  sizes by 6.6, 4.8 and 13.2% (only those listed again, 31 groups) — each time the reading at rest is the cold
+  read's of the final page, every field; the page replaced after 48 of its 696 groups (16 more answered: the two
+  workers' chunks; 632 taken out of the queue); the host reading at once, the pool given two workers or none, taps,
+  a stroke nudged and put back, moved and undone, Clear and Undo — read as the pool off reads the page; the symbols
+  changed (the 696 answers serve the new read, nothing asked again); a stroke resized and the smoothing changed (648
+  groups taken out of the queue, and only what the new read listed sent after it); the pad destroyed (nothing left
+  waiting); two pads set at once (1,377 groups through the one queue, each read as alone). The Board on a saved page
+  of 60 expressions (694 groups in a worker, 66 pieces) and its line, and the same Board under `worker-src 'none'`
+  (read on its own thread; Settings opened afterwards says "no worker threads"); `dist/Nib.html` and a pad of 6
+  expressions start none.
+- `tools/verify` (15 November 2026): every reading of the sample, 5,605 of 5,605 as 1.6.7 read them (`latex 0,
+  symbols 0, answers 0, candidate lists 0`; the largest confidence difference 2.27e-7, as before); the ten scripted
+  sessions with the pool as it comes, off, and at two workers — `sessions: nothing differs` each time (752 steps);
+  `test/reading_browser.js`'s 51-step fingerprint unchanged with the pool on; `npm test` 16 of 16, `npm run
+  test:browser` 18 of 18, lint and `build_kern.js --check` clean; `file_probe.js` and `pages_probe.js` (which since
+  1.8.0 also ask a few groups of the pool under each page's own rule and compare the bits) on the built pages.
+
+**The numbers** (`tools/perf/live_perf.js`, the Board in Chrome on the two-core machine, `hardwareConcurrency` 2: the
+pool uses one worker by itself; "two" is `poolUse(2)`, both cores classifying while the page's thread waits): the
+cold read of a saved board, the read's own time (`result.ms`) and the longest the page's thread was held during it,
+the middle of three runs, each run on a new page, on the final build:
+
+| A board of | the pool off | as it comes (1 worker) | 2 workers | held at the longest (off / 1 / 2) |
+| --- | --- | --- | --- | --- |
+| 20 expressions (219 strokes, 372 groups) | 564 ms | 604 ms | 465 ms | 36–46 / 34–45 / 34–38 ms |
+| 60 expressions (507 strokes, 833 groups) | 1,280 ms | 1,225 ms | 874 ms | 36–41 / 34–41 / 33–36 ms |
+| 120 expressions (1,161 strokes, 1,960 groups) | 2,955 ms | 2,636 ms | 1,615 ms | 32–43 / 35–40 / 32–39 ms |
+
+All three runs: off 678, 554, 564 / 1,335, 1,280, 1,244 / 2,977, 2,955, 2,923; one worker 632, 604, 581 / 1,330, 1,225,
+1,169 / 2,583, 2,765, 2,636; two 545, 465, 438 / 906, 777, 874 / 1,931, 1,497, 1,615. (A set run straight after the
+suites, the machine not yet quiet, had everything a sixth slower and the same proportions: 3,466 / 2,834 / 1,708 for
+the 120. The first build, before the review's changes, measured 2,950 / 2,426 / 1,624: taking each answer in through
+`probs` costs the page's thread some 25 ms on the 120, within the spread.) The Board's page (no gaps in its lines, so
+few joins) gives the workers 99.3% of the 120's classifications (1,946 of 1,960). The prototype measured 3,102, 2,538
+and 1,664 ms for the 120 (today, one worker, two); the build agrees.
+- **Where the time goes** on the 120 (the test page's, 1,751 groups in workers): about 120 ms until the first
+  group is sent (listing what there is, 20 ms, and the first worker's start), the workers 1.9–2.1 s with one and
+  1.1–1.2 s with two (1.1 ms a group, as on the page's thread), then the read's own steps, 340–450 ms (the join
+  model, taking the answers in, the rehearsals and their 78 groups, the readings, the joins, the announcement).
+- **One worker gains little here**: nothing at 20 expressions (its start, 60 to 95 ms, eats what it gives), a twentieth
+  at 60, a tenth at 120 — one thread classifies either way. What it gives on two cores is the page's thread, free
+  while the board is read, and a read that goes on while the writer writes. **Two workers on the two cores**: a sixth
+  faster at 20, a third at 60, 45% at 120 (1.6 s for 3.0), and the page's thread held no longer. The gain the pool is
+  for is on four cores and more: by this arithmetic a board of 120 in about 1.2 s with three workers and 1.0 s with
+  four — two fifths and a third of the time — not measured here.
+- **The longest hold does not move**: about 35 to 45 ms at every size, with the pool or without — it is not
+  classifying (the read's slices are 14 ms) but the end of the read, putting the pieces together and laying out the
+  views and answers (16 ms at 120, Speed (1.7.0)) and the drawing after it. A new stroke on the full page costs what it
+  did (results 460–500 ms after the pen lifts, of which 450 is the pen's rest; held 17–37 ms).
+
+**Tried and dropped, and not done.**
+- `needs` from outside the engine (the prototype ran the warm-up with an oracle and a shadowed `probs`): replaced by
+  the shared enumeration, which is the same loop by construction rather than by a trick.
+- A worker "killed" for the tests by `terminate()`: a terminated worker sends nothing, so it is only noticed by the
+  chunk limit, which the never-answering worker already tries. A worker that throws on its next chunk fires `error`,
+  as a worker that fails does, and is what the tests use.
+- Answers written straight into the cache, with a size kept by the asking (the first build): see The review, above.
+- **Both cores of a two-core device** (not done): the rule gives it one worker, which gains a tenth; two gained 45%
+  here and did not hold the page's thread longer (the numbers above). To be tried on a real two-core device (the
+  Chromebox) before the rule is changed: the page's thread, the compositor and two workers then share two cores.
+- **Workers started while the pen's delay runs** (not done): the first worker's start, 60 to 95 ms, is waited for
+  after the read has begun; a pad that is scheduled to read a page it has read none of could start them at once.
+- **Joined pieces to the pool as well** (not done; the prototype tried it on 1.7.0): the pieces `joinOperands` puts
+  together, handed over round by round, would leave 12 of 1,828 groups on this thread instead of 77, at the cost of a
+  wait for the pool in the middle of the read, once a round. Since 1.7.1 a crowded page has more joins; measure such a
+  page first.
+- **A page that is set is read at once** (not done, and independent of the pool): `setState` waits out the pen's delay.
+- **A worker's 34 MB** (not done): a worker needs neither the JavaScript path's weights nor the engine's text once it
+  runs on the kernel.
+- **Memory on the panel** (open): up to four workers for the length of a big read and 30 s after. If the panel is short
+  of memory the cap comes down; its Settings line says what it may use.
 
 ## Pipeline
 
