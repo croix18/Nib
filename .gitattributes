@@ -7,6 +7,7 @@
 *.jpg binary
 *.npz binary
 *.ckpt binary
+*.gz binary
 # built files and data: one long line each, not worth diffing as text
 dist/** -diff linguist-generated
 model/nib-data.json -diff

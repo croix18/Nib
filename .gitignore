@@ -7,3 +7,7 @@ dist/artifact/
 test/shots/
 *.ckpt
 demo/node_modules
+
+# engines taken out of history and the outputs of the comparison tools (tools/verify)
+tools/verify/.engines/
+tools/verify/out/
