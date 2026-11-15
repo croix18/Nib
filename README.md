@@ -76,6 +76,7 @@ pad.undo(); pad.clear(); pad.setStrokes(saved); pad.getStrokes();
 ```js
 const r = Nib.recognize(strokes, { symbols: 'numbers' });   // strokes: [[ [x, y], [x, y], ... ], ...]
 const r2 = await Nib.recognizeAsync(strokes);                // same, without blocking the page
+Nib.kernel                                                   // 'simd' (the WebAssembly classifier) or 'js' where it cannot run
 ```
 
 ### Inside another tool
@@ -236,7 +237,13 @@ Restricting the set is the single best way to raise accuracy in a given box.
 - Writing that drifts uphill or downhill is levelled before it is laid out (`result.skew` says by how much); straight writing is left alone.
 - A stroke added later to an earlier symbol (crossing a t at the end, finishing a 4 after the next number) is joined back to it when the shapes overlap and the joined symbol reads clearly.
 - Multi-line work is read line by line.
-- The engine file is about 1 MB (the typeset fonts are 70 KB of it). A new stroke is read in roughly 0.1–0.3 s on a laptop; a whole expression handed over at once takes longer (about 0.05 s per stroke). The reading is done a few milliseconds at a time, so the page stays responsive throughout, even on a crowded board with the processor slowed four times.
+- The engine file is about 1.4 MB (the typeset fonts are 70 KB of it). Since 1.7.0 the symbol classifier runs as a
+  small WebAssembly kernel carried inside the file (`Nib.kernel` is `'simd'`), about 16 times as fast as before: a
+  whole expression handed over at once is read in about 2 ms per stroke (15 ms for an expression of eight strokes) on
+  a two-core machine, where 1.6.7 took 28 ms per stroke. Where WebAssembly cannot run (a page whose
+  Content-Security-Policy forbids it, an old browser) the same arithmetic runs in JavaScript, with the same readings,
+  at about 22 ms per stroke (`Nib.kernel` is `'js'`; said once in the console). The reading is done a few milliseconds
+  at a time, so the page stays responsive throughout, even on a crowded board with the processor slowed four times.
 - The typeset view uses the KaTeX fonts, embedded unchanged under the SIL Open Font License 1.1 (`licenses/OFL-KaTeX-fonts.txt`). `licenses/README.md` lists everything Nib carries that is not its own, and the terms of the data the recognizer was trained on (CROHME: research, not commercial use).
 
 `docs/HANDOFF.md` explains how it works and how to change it; `training/README.md` how to retrain it. From a fresh clone: `npm ci` (KaTeX, the page fonts, puppeteer-core, opentype.js), `npm run data` (the CROHME test sets and the Board writing the tests read), `npm run build` (`dist/nib.js` from `src/` and `model/nib-data.json`, then the three pages), `npm test` (the node suites; `npm run test:browser` for the ones in Chrome), `npm run lint` (the sources checked for names that do not exist and the like). GitHub runs the same on every push (`.github/workflows/test.yml`). `docs/reviews/` holds the audits.

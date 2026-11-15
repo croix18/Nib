@@ -212,7 +212,7 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   </main>
 </div>
 
-<script>/*! Nib 1.6.7 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+<script>/*! Nib 1.7.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -306,6 +306,7 @@ function model() {
 // ------------------------------------------------------------------ rasterizer (mirror of raster.py)
 const G = 32, MARGIN = 2, STEP = 0.5;
 
+const RASTER_ACC = new Float64Array(G * G * 4);   // rasterize's sums, kept from call to call (zeroed each time)
 function rasterize(strokes, ref) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of strokes) { const b = sbox(s); x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]); }
@@ -313,7 +314,7 @@ function rasterize(strokes, ref) {
   const size = Math.max(w, h, 0.3 * ref, 1e-9);
   const scale = (G - 2 * MARGIN) / size;
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  const acc = new Float64Array(G * G * 4); // HWC
+  const acc = RASTER_ACC.fill(0); // HWC
   const splat = (x, y, ch, wt) => {
     const px = x - 0.5, py = y - 0.5;
     const i0 = Math.floor(px), j0 = Math.floor(py);
@@ -372,28 +373,61 @@ function rasterize(strokes, ref) {
 }
 
 // ------------------------------------------------------------------ CNN
+// The classifier's arithmetic (1.7.0). Every product is a float32 multiply and every sum a float32 add, and each output
+// element is summed in one order: its bias first; then for a 3x3 conv the taps in order (ky, kx), within a tap the input
+// channels in order; for a 1-D conv the taps in order, within a tap the channels in order; for a dense layer the inputs
+// in order. A zero input is skipped. In JS a step is a = Math.fround(a + Math.fround(v * w)) (the product of two floats
+// is exact in double, so this rounds the product and then the sum, as float32 does). The kernel (src/kern.wat, SIMD,
+// loaded by src/kern.js) does the same operations in the same order, so the two give the same bits; test/kern_check.js
+// holds them to it. Up to 1.6.7 each product was added in double and only the sum rounded; no reading changed when that
+// went (docs/HANDOFF.md, Speed (1.7.0)). The second dense layer and the softmax stay in double, as before.
+//
+// The JS path is the reference, and the classifier wherever WebAssembly cannot run. It keeps the weights as doubles
+// (made the first time it runs) and, for each output pixel or step, first lists the inputs that are not zero with their
+// weight rows (cnnNz), then sums eight outputs at a time over that list in locals (cnnAxpys): V8 has no float32
+// arithmetic, and this is the form that does the fewest conversions.
+let CNN_ROWS = new Int32Array(256), CNN_VALS = new Float64Array(256), CNN_BUF = null;
+function cnnNz(n) { if (CNN_ROWS.length < n) { CNN_ROWS = new Int32Array(n); CNN_VALS = new Float64Array(n); } }
+function cnnW64(lay) { return lay.w64 || (lay.w64 = Float64Array.from(lay.w)); }
+// out[o + d] for d < co, plus (in order of k < n) vals[k] times row rows[k] of w, in the defined arithmetic
+function cnnAxpys(out, o, co, w, rows, vals, n) {
+  const fr = Math.fround;
+  let d = 0;
+  for (; d + 8 <= co; d += 8) {
+    const p = o + d;
+    let a0 = out[p], a1 = out[p + 1], a2 = out[p + 2], a3 = out[p + 3], a4 = out[p + 4], a5 = out[p + 5], a6 = out[p + 6], a7 = out[p + 7];
+    for (let k = 0; k < n; k++) {
+      const v = vals[k], r = rows[k] + d;
+      a0 = fr(a0 + fr(v * w[r])); a1 = fr(a1 + fr(v * w[r + 1])); a2 = fr(a2 + fr(v * w[r + 2])); a3 = fr(a3 + fr(v * w[r + 3]));
+      a4 = fr(a4 + fr(v * w[r + 4])); a5 = fr(a5 + fr(v * w[r + 5])); a6 = fr(a6 + fr(v * w[r + 6])); a7 = fr(a7 + fr(v * w[r + 7]));
+    }
+    out[p] = a0; out[p + 1] = a1; out[p + 2] = a2; out[p + 3] = a3; out[p + 4] = a4; out[p + 5] = a5; out[p + 6] = a6; out[p + 7] = a7;
+  }
+  for (; d < co; d++) { let a = out[o + d]; for (let k = 0; k < n; k++) a = fr(a + fr(vals[k] * w[rows[k] + d])); out[o + d] = a; }
+}
 function conv3(inp, H, Wd, ci, lay, out) {
-  // 3x3 SAME convolution (HWC), bias + ReLU; each tap's weight row is streamed once
-  const { w, b, co } = lay, HW = H * Wd;
+  // 3x3 SAME convolution (HWC), bias + ReLU
+  const { b, co } = lay, w = cnnW64(lay), HW = H * Wd;
+  cnnNz(ci);
+  const rows = CNN_ROWS, vals = CNN_VALS;
   for (let p = 0; p < HW; p++) out.set(b, p * co);
   for (let ky = 0; ky < 3; ky++) for (let kx = 0; kx < 3; kx++) {
     const y0 = Math.max(0, 1 - ky), y1 = Math.min(H, H + 1 - ky), x0 = Math.max(0, 1 - kx), x1 = Math.min(Wd, Wd + 1 - kx);
-    for (let c = 0; c < ci; c++) {
-      const wr = ((ky * 3 + kx) * ci + c) * co;
-      for (let y = y0; y < y1; y++) {
-        const iy = (y + ky - 1) * Wd;
-        for (let x = x0; x < x1; x++) {
-          const v = inp[(iy + x + kx - 1) * ci + c]; if (v === 0) continue;
-          const o = (y * Wd + x) * co;
-          for (let d = 0; d < co; d++) out[o + d] += v * w[wr + d];
-        }
+    const wt = (ky * 3 + kx) * ci * co;
+    for (let y = y0; y < y1; y++) {
+      const iy = (y + ky - 1) * Wd;
+      for (let x = x0; x < x1; x++) {
+        const ib = (iy + x + kx - 1) * ci;
+        let n = 0;
+        for (let c = 0; c < ci; c++) { const v = inp[ib + c]; if (v !== 0) { rows[n] = wt + c * co; vals[n++] = v; } }
+        if (n) cnnAxpys(out, (y * Wd + x) * co, co, w, rows, vals, n);
       }
     }
   }
   for (let i = 0; i < HW * co; i++) if (out[i] < 0) out[i] = 0;
 }
-function pool2(inp, H, Wd, c) {
-  const H2 = H >> 1, W2 = Wd >> 1, out = new Float32Array(H2 * W2 * c);
+function pool2(inp, H, Wd, c, out) {
+  const H2 = H >> 1, W2 = Wd >> 1;
   for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) for (let k = 0; k < c; k++) {
     const a = inp[((2 * y) * Wd + 2 * x) * c + k], b = inp[((2 * y) * Wd + 2 * x + 1) * c + k];
     const d = inp[((2 * y + 1) * Wd + 2 * x) * c + k], e = inp[((2 * y + 1) * Wd + 2 * x + 1) * c + k];
@@ -401,17 +435,23 @@ function pool2(inp, H, Wd, c) {
   }
   return out;
 }
-function convFeatures(img) {
+// five 3x3 conv layers, 2x2 max-pool after the 1st, 3rd and 5th: 32 -> 16 -> 8 -> 4 (4*4*C features)
+function convFeatures(img) { const K = kern(); return K ? K.conv(img) : convJS(img); }
+function convJS(img) {
   const { L } = model();
-  // five 3x3 conv layers, 2x2 max-pool after the 1st, 3rd and 5th: 32 -> 16 -> 8 -> 4
-  let h = img, H = 32, ci = 4;
+  if (!CNN_BUF) {                                     // two buffers for the activations, kept from call to call
+    let n = 0, H = 32;
+    for (let i = 0; i < 5; i++) { n = Math.max(n, H * H * L['c' + i].co); if (i === 0 || i === 2 || i === 4) H >>= 1; }
+    CNN_BUF = [new Float32Array(n), new Float32Array(n)];
+  }
+  let h = img, H = 32, ci = 4, nx = 0;
   for (let i = 0; i < 5; i++) {
-    const lay = L['c' + i], out = new Float32Array(H * H * lay.co);
+    const lay = L['c' + i], out = CNN_BUF[nx]; nx ^= 1;
     conv3(h, H, H, ci, lay, out);
     h = out; ci = lay.co;
-    if (i === 0 || i === 2 || i === 4) { h = pool2(h, H, H, ci); H >>= 1; }
+    if (i === 0 || i === 2 || i === 4) { h = pool2(h, H, H, ci, CNN_BUF[nx]); nx ^= 1; H >>= 1; }
   }
-  return h; // 4*4*C
+  return h.slice(0, H * H * ci);
 }
 
 // ------------------------------------------------------------------ trajectory branch (mirror of online.py)
@@ -452,40 +492,59 @@ function onlineFeatures(strokes, ref) {
   return out;
 }
 function conv1(inp, T, ci, lay, out) {
-  const { w, b, co, k } = lay, pad = (k - 1) >> 1;
+  const { b, co, k } = lay, w = cnnW64(lay), pad = (k - 1) >> 1;
+  cnnNz(k * ci);
+  const rows = CNN_ROWS, vals = CNN_VALS;
   for (let t = 0; t < T; t++) {
     const o = t * co;
-    for (let c = 0; c < co; c++) out[o + c] = b[c];
+    out.set(b, o);
+    let n = 0;
     for (let j = 0; j < k; j++) {
       const tt = t + j - pad; if (tt < 0 || tt >= T) continue;
       const ii = tt * ci, wo = j * ci * co;
-      for (let c = 0; c < ci; c++) { const v = inp[ii + c]; if (v === 0) continue; const wr = wo + c * co; for (let d = 0; d < co; d++) out[o + d] += v * w[wr + d]; }
+      for (let c = 0; c < ci; c++) { const v = inp[ii + c]; if (v !== 0) { rows[n] = wo + c * co; vals[n++] = v; } }
     }
+    cnnAxpys(out, o, co, w, rows, vals, n);
     for (let c = 0; c < co; c++) if (out[o + c] < 0) out[o + c] = 0;
   }
 }
+// the branch's last layer, max- and mean-pooled over its T steps (h from index at): the 2*ci numbers it gives
+function onlinePool(h, at, T, ci) {
+  const g = new Float32Array(2 * ci);
+  for (let c = 0; c < ci; c++) { let mx = -Infinity, sm = 0; for (let t = 0; t < T; t++) { const v = h[at + t * ci + c]; if (v > mx) mx = v; sm += v; } g[c] = mx; g[ci + c] = sm / T; }
+  return g;
+}
 function onlineBranch(f) {
+  if (!model().L.o0) return null;
+  const K = kern(); return K ? K.online(f) : onlineJS(f);
+}
+function onlineJS(f) {
   const { L } = model();
-  if (!L.o0) return null;
   let h = f, T = OK_, ci = ONF;
   for (let i = 0; i < 3; i++) {
     const lay = L['o' + i], out = new Float32Array(T * lay.co);
     conv1(h, T, ci, lay, out); h = out; ci = lay.co;
     if (i === 1) { const T2 = T >> 1, q = new Float32Array(T2 * ci); for (let t = 0; t < T2; t++) for (let c = 0; c < ci; c++) q[t * ci + c] = Math.max(h[2 * t * ci + c], h[(2 * t + 1) * ci + c]); h = q; T = T2; }
   }
-  const g = new Float32Array(2 * ci);
-  for (let c = 0; c < ci; c++) { let mx = -Infinity, sm = 0; for (let t = 0; t < T; t++) { const v = h[t * ci + c]; if (v > mx) mx = v; sm += v; } g[c] = mx; g[ci + c] = sm / T; }
-  return g;
+  return onlinePool(h, 0, T, ci);
 }
 
-function fcProbs(feat, scal, onl) {
-  const { L, C } = model();
-  const f1 = L.f1, n1 = f1.co, x = new Float32Array(feat.length + (onl ? onl.length : 0) + scal.length);
+function fcProbs(feat, scal, onl) { const K = kern(); return K ? K.fc(feat, scal, onl) : fcJS(feat, scal, onl); }
+function fcJS(feat, scal, onl) {
+  const f1 = model().L.f1, n1 = f1.co, x = new Float32Array(feat.length + (onl ? onl.length : 0) + scal.length);
   x.set(feat); if (onl) x.set(onl, feat.length); x.set(scal, feat.length + (onl ? onl.length : 0));
-  const h = new Float32Array(n1);
-  for (let j = 0; j < n1; j++) h[j] = f1.b[j];
-  for (let i = 0; i < x.length; i++) { const v = x[i]; if (v === 0) continue; const r = i * n1; for (let j = 0; j < n1; j++) h[j] += v * f1.w[r + j]; }
+  cnnNz(x.length);
+  const rows = CNN_ROWS, vals = CNN_VALS, h = new Float32Array(n1);
+  h.set(f1.b);
+  let n = 0;
+  for (let i = 0; i < x.length; i++) { const v = x[i]; if (v !== 0) { rows[n] = i * n1; vals[n++] = v; } }
+  cnnAxpys(h, 0, n1, cnnW64(f1), rows, vals, n);
   for (let j = 0; j < n1; j++) if (h[j] < 0) h[j] = 0;
+  return fcOut(h);
+}
+// the second dense layer (in double) and the softmax, from the first one's output h (kept as .hidden)
+function fcOut(h) {
+  const { L, C } = model(), n1 = h.length;
   const f2 = L.f2, z = new Float64Array(C);
   for (let j = 0; j < C; j++) z[j] = f2.b[j];
   for (let i = 0; i < n1; i++) { const v = h[i]; if (v === 0) continue; const r = i * C; for (let j = 0; j < C; j++) z[j] += v * f2.w[r + j]; }
@@ -495,11 +554,25 @@ function fcProbs(feat, scal, onl) {
   z.hidden = h; // the symbol's embedding, used by the personal memory
   return z;
 }
+// Which classifier runs: the kernel (src/kern.js) where WebAssembly with SIMD can be used, else the JS above. Decided
+// the first time it is needed (KERN: the kernel, or false for the JS); kernelUse ('js', 'simd', 'auto') is for tests:
+// 'simd' throws where the kernel cannot be loaded.
+let KERN = null, KERN_USE = 'auto';
+function kern() {
+  if (KERN === null) KERN = KERN_USE !== 'js' && kernLoad(model()) || false;
+  return KERN;
+}
+function kernelUse(mode) {
+  if (mode !== 'js' && mode !== 'simd' && mode !== 'auto') throw new Error("Nib: kernelUse takes 'js', 'simd' or 'auto'");
+  KERN_USE = mode; KERN = null;
+  if (mode === 'simd' && !kern()) throw new Error('Nib: the kernel cannot be used here');
+  return kern() ? 'simd' : 'js';
+}
 // class probabilities for a group of strokes (with .hidden = embedding)
 function classifyGroup(group, ref) {
-  const { img, scal } = rasterize(group, ref);
-  const onl = model().L.o0 ? onlineBranch(onlineFeatures(group, ref)) : null;
-  return flagSeven(group, fcProbs(convFeatures(img), scal, onl));
+  const { img, scal } = rasterize(group, ref), K = kern();
+  const f = model().L.o0 ? onlineFeatures(group, ref) : null;
+  return flagSeven(group, K ? K.classify(img, f, scal) : fcJS(convJS(img), scal, f && onlineJS(f)));
 }
 // A 1 with a long, nearly flat top — a stroke into its top at least 0.6 as long as the 1 is tall, rising at less than
 // about 27°, and no foot — is how many Europeans write a 1 (the writing the network learned from), and a 7 to an
@@ -695,6 +768,94 @@ function allowedMask(symbols, times) {
   if (times === false && '\\times' in model().idx) mask[model().idx['\\times']] = 0;
   mask[junk] = 1; mask[model().idx['-']] = 1;
   return mask;
+}
+
+// Written by tools/build_kern.js (npm run kern) from src/kern.wat: do not edit. The classifier's kernel, 1208 bytes of
+// WebAssembly with SIMD, and its loader (see "The classifier's arithmetic" in src/core.js, and docs/HANDOFF.md, Speed (1.7.0)).
+const KERN_WASM = 'AGFzbQEAAAABLgRgCn9/f39/f39/f38AYAh/f39/f39/fwBgBn9/f39/fwBgCX9/f39/f39/fwADBgUAAQECAwUDAQAwBykFBm1lbW9yeQIABWNvbnYzAAEFY29udjEAAgVkZW5zZQADBHBvb2wABArFCAW3BAMIfwF9CHsCQANAIAlFDQEgAyEOIBAhDyAEIQ0CQANAIA1FDQEgDioCACESIAsgEjgCACALIA82AgQgCyASQwAAAABcQQN0aiELIA5BBGohDiAPIAdqIQ8gDUEBayENDAALCyADIAVqIQMgECAIaiEQIAlBAWshCQwACwsgACABQQJ0aiEKAkADQCAAQeAAaiAKSw0BIAL9AAQAIRUgAv0ABBAhFiAC/QAEICEXIAL9AAQwIRggAv0ABEAhGSAC/QAEUCEaQQAhDAJAA0AgDCALTw0BIAz9CQIAIRMgBiAMKAIEaiERIBUgEyAR/QAEAP3mAf3kASEVIBYgEyAR/QAEEP3mAf3kASEWIBcgEyAR/QAEIP3mAf3kASEXIBggEyAR/QAEMP3mAf3kASEYIBkgEyAR/QAEQP3mAf3kASEZIBogEyAR/QAEUP3mAf3kASEaIAxBCGohDAwACwsgACAVIBT96wH9CwQAIAAgFiAU/esB/QsEECAAIBcgFP3rAf0LBCAgACAYIBT96wH9CwQwIAAgGSAU/esB/QsEQCAAIBogFP3rAf0LBFAgAEHgAGohACACQeAAaiECIAZB4ABqIQYMAAsLAkADQCAAIApPDQEgAv0ABAAhFUEAIQwCQANAIAwgC08NASAVIAz9CQIAIAYgDCgCBGr9AAQA/eYB/eQBIRUgDEEIaiEMDAALCyAAIBUgFP3rAf0LBAAgAEEQaiEAIAJBEGohAiAGQRBqIQYMAAsLC7wBAQh/IAZBAnQhDiADQQJ0IQ8CQANAIAggAU4NASAIRSEKQQMgCCABQQFrRmshC0EAIQkCQANAIAkgAk4NASAJRSEMQQMgCSACQQFrRmshDSAHIAYgBSAAIAggCmpBAWsgAmwgCSAMakEBa2ogD2xqIA0gDGsgA2wgAiAPbCAEIApBA2wgDGogA2wgDmxqIA5BAyADbCAObCALIAprEAAgByAOaiEHIAlBAWohCQwACwsgCEEBaiEIDAALCwuPAQEFfyAGQQFrQQF2IQggBUECdCEMAkADQCAJIAFODQEgCCAJayEKIApBACAKQQBKGyEKIAEgCGogCWshCyALIAYgCyAGSBshCyAHIAUgBCAAIAkgCmogCGsgAmxBAnRqIAsgCmsgAmxBACADIAogAmwgDGxqIAxBAEEBEAAgByAMaiEHIAlBAWohCQwACwsLGwAgBSAEIAMgACABQQAgAiAEQQJ0QQBBARAAC54BAQR/AkADQCAJIAFPDQFBACEKAkADQCAKIAJPDQEgACAJIAZsIAogBWxqaiELIAsgA0ECdGohDAJAA0AgCyAMTw0BIAQgC/0ABAAgCyAHav0ABAD96QEgCyAIav0ABAD96QEgCyAHaiAIav0ABAD96QH9CwQAIARBEGohBCALQRBqIQsMAAsLIApBAWohCgwACwsgCUEBaiEJDAALCws=';
+
+// The kernel for the model M, or null (said once with console.info) where it cannot be used: no WebAssembly, no SIMD,
+// a Content-Security-Policy that forbids it, a model whose layers it does not take. The weights are copied into the
+// module's memory once; the memory is laid out here and never grows. Each call below does one classification's part
+// in that memory and gives back new arrays, as the JS path does.
+function kernLoad(M) {
+  const say = why => { if (typeof console !== 'undefined' && console.info) console.info('Nib: the classifier runs in JavaScript (' + why + ')'); return null; };
+  const L = M.L, convs = ['c0', 'c1', 'c2', 'c3', 'c4'], onls = L.o0 ? ['o0', 'o1', 'o2'] : [];
+  // the shapes the kernel takes: those of convFeatures, onlineJS and fcJS in src/core.js, every channel count a multiple of 4
+  // (and no more than 2,048 inputs to one output: the kernel lists them in the first 16 KiB of its memory)
+  const LIST = 2048;
+  let ci = 4, H = 32, big = 32 * 32 * 4;
+  for (let i = 0; i < 5; i++) {
+    const l = L[convs[i]];
+    if (!l || l.co % 4 || l.w.length !== 9 * ci * l.co || 9 * ci > LIST) return say('a conv layer it does not take');
+    big = Math.max(big, H * H * l.co); ci = l.co;
+    if (i === 0 || i === 2 || i === 4) H >>= 1;
+  }
+  const nf = H * H * ci;
+  let oc = ONF, obig = OK_ * ONF;
+  for (const k of onls) {
+    const l = L[k];
+    if (!l || l.co % 4 || !(l.k % 2) || l.w.length !== l.k * oc * l.co || l.k * oc > LIST) return say('a trajectory layer it does not take');
+    obig = Math.max(obig, OK_ * l.co); oc = l.co;
+  }
+  const no = onls.length ? 2 * oc : 0, nx = nf + no + 5, f1 = L.f1;
+  if (!f1 || f1.co % 4 || f1.w.length !== nx * f1.co || nx > LIST) return say('a dense layer it does not take');
+  let inst;
+  try { inst = new WebAssembly.Instance(new WebAssembly.Module(b64bytes(KERN_WASM))); } catch (e) { return say(String(e && e.message || e)); }
+  const E = inst.exports;
+  // the memory, in floats (16-byte aligned), after the list: each layer's weights and bias, two activation buffers for
+  // each branch, the dense layer's input (features, trajectory, scalars) and its output
+  let top = 2 * LIST;
+  const at = n => { const p = top; top += (n + 3) & ~3; return p; };
+  const W = {}, B = {};
+  for (const k of convs.concat(onls, ['f1'])) { W[k] = at(L[k].w.length); B[k] = at(L[k].co); }
+  const A0 = at(big), A1 = at(big), O0 = at(obig), O1 = at(obig), X = at(nx), Y = at(f1.co);
+  if (top * 4 > E.memory.buffer.byteLength) return say('the model does not fit its memory');
+  const F = new Float32Array(E.memory.buffer);
+  for (const k in W) { F.set(L[k].w, W[k]); F.set(L[k].b, B[k]); }
+  // the conv stack from img, its features into X
+  const conv = img => {
+    F.set(img, A0);
+    let src = A0, dst = A1, H = 32, ci = 4;
+    for (let i = 0; i < 5; i++) {
+      const co = L[convs[i]].co;
+      E.conv3(src * 4, H, H, ci, W[convs[i]] * 4, B[convs[i]] * 4, co, dst * 4);
+      ci = co; [src, dst] = [dst, src];
+      if (i === 0 || i === 2 || i === 4) {
+        const to = i === 4 ? X : dst, cb = ci * 4;
+        E.pool(src * 4, H >> 1, H >> 1, ci, to * 4, 2 * cb, 2 * H * cb, cb, H * cb);
+        H >>= 1; dst = src; src = to;
+      }
+    }
+  };
+  // the trajectory branch from its features f, pooled; its 2 * ci numbers into X after the conv features
+  const online = f => {
+    F.set(f, O0);
+    let T = OK_, ci = ONF;
+    E.conv1(O0 * 4, T, ci, W.o0 * 4, B.o0 * 4, L.o0.co, L.o0.k, O1 * 4); ci = L.o0.co;
+    E.conv1(O1 * 4, T, ci, W.o1 * 4, B.o1 * 4, L.o1.co, L.o1.k, O0 * 4); ci = L.o1.co;
+    E.pool(O0 * 4, T >> 1, 1, ci, O1 * 4, 0, 2 * ci * 4, ci * 4, 0); T >>= 1;
+    E.conv1(O1 * 4, T, ci, W.o2 * 4, B.o2 * 4, L.o2.co, L.o2.k, O0 * 4); ci = L.o2.co;
+    const g = onlinePool(F, O0, T, ci);
+    F.set(g, X + nf);
+    return g;
+  };
+  // the first dense layer over X with the scalars put in, then the rest in JS (fcOut)
+  const dense = scal => {
+    F.set(scal, X + nf + no);
+    E.dense(X * 4, nx, W.f1 * 4, B.f1 * 4, f1.co, Y * 4);
+    return fcOut(F.slice(Y, Y + f1.co));
+  };
+  return {
+    conv(img) { conv(img); return F.slice(X, X + nf); },
+    online(f) { return online(f); },
+    fc(feat, scal, onl) {
+      if (feat.length !== nf || (onl ? onl.length : 0) !== no || scal.length !== 5) return fcJS(feat, scal, onl);
+      F.set(feat, X); if (onl) F.set(onl, X + nf);
+      return dense(scal);
+    },
+    classify(img, f, scal) { conv(img); if (no) online(f); return dense(scal); },
+  };
 }
 
 // ================================================================== recognition
@@ -5712,7 +5873,7 @@ function pdfMake(pages, meta) {
   if (title) info += ' /Title ' + pdfText(title);
   if (M.author) info += ' /Author ' + pdfText(M.author);
   if (M.subject) info += ' /Subject ' + pdfText(M.subject);
-  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.6.7) /CreationDate (' + pdfDate(date) + ') >>');
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.7.0) /CreationDate (' + pdfDate(date) + ') >>');
 
   for (let i = 0; i < pages.length; i++) {
     const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
@@ -9576,7 +9737,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.6.7',
+  version: '1.7.0',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },
@@ -9591,6 +9752,8 @@ const Nib = {
     get model() { return modelId(); },
   },
   classes() { return model().cls.filter(c => c !== 'junk'); },
+  // which classifier runs: 'simd' (the WebAssembly kernel) or 'js' (where WebAssembly cannot run); asking decides it
+  get kernel() { return kern() ? 'simd' : 'js'; },
   // In place: the writing laid out again where it was written, as the writer's own strokes tidied up ('tidy'),
   // in the writer's Replicator handwriting ('hand') or typeset ('typeset'). Returns {items, strokes, latex, ...}.
   neaten(strokes, options) { const o = options || {}; return inPlace(strokes, o.style === 'hand' ? 'hand' : 'tidy', o); },
@@ -9613,7 +9776,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven, scribbleOf: typeof scribbleOf === 'function' ? scribbleOf : null, scribbleErase: typeof scribbleErase === 'function' ? scribbleErase : null, SCR: typeof SCR !== 'undefined' ? SCR : null },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, kernelUse, convJS, onlineJS, fcJS, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven, scribbleOf: typeof scribbleOf === 'function' ? scribbleOf : null, scribbleErase: typeof scribbleErase === 'function' ? scribbleErase : null, SCR: typeof SCR !== 'undefined' ? SCR : null },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 // Scribbled out (scribble.js), for a tool with its own ink (Deckhand's pen over the slides): of(points, z) is a scribble

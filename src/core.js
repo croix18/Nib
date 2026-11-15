@@ -84,6 +84,7 @@ function model() {
 // ------------------------------------------------------------------ rasterizer (mirror of raster.py)
 const G = 32, MARGIN = 2, STEP = 0.5;
 
+const RASTER_ACC = new Float64Array(G * G * 4);   // rasterize's sums, kept from call to call (zeroed each time)
 function rasterize(strokes, ref) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of strokes) { const b = sbox(s); x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]); }
@@ -91,7 +92,7 @@ function rasterize(strokes, ref) {
   const size = Math.max(w, h, 0.3 * ref, 1e-9);
   const scale = (G - 2 * MARGIN) / size;
   const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  const acc = new Float64Array(G * G * 4); // HWC
+  const acc = RASTER_ACC.fill(0); // HWC
   const splat = (x, y, ch, wt) => {
     const px = x - 0.5, py = y - 0.5;
     const i0 = Math.floor(px), j0 = Math.floor(py);
@@ -150,28 +151,61 @@ function rasterize(strokes, ref) {
 }
 
 // ------------------------------------------------------------------ CNN
+// The classifier's arithmetic (1.7.0). Every product is a float32 multiply and every sum a float32 add, and each output
+// element is summed in one order: its bias first; then for a 3x3 conv the taps in order (ky, kx), within a tap the input
+// channels in order; for a 1-D conv the taps in order, within a tap the channels in order; for a dense layer the inputs
+// in order. A zero input is skipped. In JS a step is a = Math.fround(a + Math.fround(v * w)) (the product of two floats
+// is exact in double, so this rounds the product and then the sum, as float32 does). The kernel (src/kern.wat, SIMD,
+// loaded by src/kern.js) does the same operations in the same order, so the two give the same bits; test/kern_check.js
+// holds them to it. Up to 1.6.7 each product was added in double and only the sum rounded; no reading changed when that
+// went (docs/HANDOFF.md, Speed (1.7.0)). The second dense layer and the softmax stay in double, as before.
+//
+// The JS path is the reference, and the classifier wherever WebAssembly cannot run. It keeps the weights as doubles
+// (made the first time it runs) and, for each output pixel or step, first lists the inputs that are not zero with their
+// weight rows (cnnNz), then sums eight outputs at a time over that list in locals (cnnAxpys): V8 has no float32
+// arithmetic, and this is the form that does the fewest conversions.
+let CNN_ROWS = new Int32Array(256), CNN_VALS = new Float64Array(256), CNN_BUF = null;
+function cnnNz(n) { if (CNN_ROWS.length < n) { CNN_ROWS = new Int32Array(n); CNN_VALS = new Float64Array(n); } }
+function cnnW64(lay) { return lay.w64 || (lay.w64 = Float64Array.from(lay.w)); }
+// out[o + d] for d < co, plus (in order of k < n) vals[k] times row rows[k] of w, in the defined arithmetic
+function cnnAxpys(out, o, co, w, rows, vals, n) {
+  const fr = Math.fround;
+  let d = 0;
+  for (; d + 8 <= co; d += 8) {
+    const p = o + d;
+    let a0 = out[p], a1 = out[p + 1], a2 = out[p + 2], a3 = out[p + 3], a4 = out[p + 4], a5 = out[p + 5], a6 = out[p + 6], a7 = out[p + 7];
+    for (let k = 0; k < n; k++) {
+      const v = vals[k], r = rows[k] + d;
+      a0 = fr(a0 + fr(v * w[r])); a1 = fr(a1 + fr(v * w[r + 1])); a2 = fr(a2 + fr(v * w[r + 2])); a3 = fr(a3 + fr(v * w[r + 3]));
+      a4 = fr(a4 + fr(v * w[r + 4])); a5 = fr(a5 + fr(v * w[r + 5])); a6 = fr(a6 + fr(v * w[r + 6])); a7 = fr(a7 + fr(v * w[r + 7]));
+    }
+    out[p] = a0; out[p + 1] = a1; out[p + 2] = a2; out[p + 3] = a3; out[p + 4] = a4; out[p + 5] = a5; out[p + 6] = a6; out[p + 7] = a7;
+  }
+  for (; d < co; d++) { let a = out[o + d]; for (let k = 0; k < n; k++) a = fr(a + fr(vals[k] * w[rows[k] + d])); out[o + d] = a; }
+}
 function conv3(inp, H, Wd, ci, lay, out) {
-  // 3x3 SAME convolution (HWC), bias + ReLU; each tap's weight row is streamed once
-  const { w, b, co } = lay, HW = H * Wd;
+  // 3x3 SAME convolution (HWC), bias + ReLU
+  const { b, co } = lay, w = cnnW64(lay), HW = H * Wd;
+  cnnNz(ci);
+  const rows = CNN_ROWS, vals = CNN_VALS;
   for (let p = 0; p < HW; p++) out.set(b, p * co);
   for (let ky = 0; ky < 3; ky++) for (let kx = 0; kx < 3; kx++) {
     const y0 = Math.max(0, 1 - ky), y1 = Math.min(H, H + 1 - ky), x0 = Math.max(0, 1 - kx), x1 = Math.min(Wd, Wd + 1 - kx);
-    for (let c = 0; c < ci; c++) {
-      const wr = ((ky * 3 + kx) * ci + c) * co;
-      for (let y = y0; y < y1; y++) {
-        const iy = (y + ky - 1) * Wd;
-        for (let x = x0; x < x1; x++) {
-          const v = inp[(iy + x + kx - 1) * ci + c]; if (v === 0) continue;
-          const o = (y * Wd + x) * co;
-          for (let d = 0; d < co; d++) out[o + d] += v * w[wr + d];
-        }
+    const wt = (ky * 3 + kx) * ci * co;
+    for (let y = y0; y < y1; y++) {
+      const iy = (y + ky - 1) * Wd;
+      for (let x = x0; x < x1; x++) {
+        const ib = (iy + x + kx - 1) * ci;
+        let n = 0;
+        for (let c = 0; c < ci; c++) { const v = inp[ib + c]; if (v !== 0) { rows[n] = wt + c * co; vals[n++] = v; } }
+        if (n) cnnAxpys(out, (y * Wd + x) * co, co, w, rows, vals, n);
       }
     }
   }
   for (let i = 0; i < HW * co; i++) if (out[i] < 0) out[i] = 0;
 }
-function pool2(inp, H, Wd, c) {
-  const H2 = H >> 1, W2 = Wd >> 1, out = new Float32Array(H2 * W2 * c);
+function pool2(inp, H, Wd, c, out) {
+  const H2 = H >> 1, W2 = Wd >> 1;
   for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) for (let k = 0; k < c; k++) {
     const a = inp[((2 * y) * Wd + 2 * x) * c + k], b = inp[((2 * y) * Wd + 2 * x + 1) * c + k];
     const d = inp[((2 * y + 1) * Wd + 2 * x) * c + k], e = inp[((2 * y + 1) * Wd + 2 * x + 1) * c + k];
@@ -179,17 +213,23 @@ function pool2(inp, H, Wd, c) {
   }
   return out;
 }
-function convFeatures(img) {
+// five 3x3 conv layers, 2x2 max-pool after the 1st, 3rd and 5th: 32 -> 16 -> 8 -> 4 (4*4*C features)
+function convFeatures(img) { const K = kern(); return K ? K.conv(img) : convJS(img); }
+function convJS(img) {
   const { L } = model();
-  // five 3x3 conv layers, 2x2 max-pool after the 1st, 3rd and 5th: 32 -> 16 -> 8 -> 4
-  let h = img, H = 32, ci = 4;
+  if (!CNN_BUF) {                                     // two buffers for the activations, kept from call to call
+    let n = 0, H = 32;
+    for (let i = 0; i < 5; i++) { n = Math.max(n, H * H * L['c' + i].co); if (i === 0 || i === 2 || i === 4) H >>= 1; }
+    CNN_BUF = [new Float32Array(n), new Float32Array(n)];
+  }
+  let h = img, H = 32, ci = 4, nx = 0;
   for (let i = 0; i < 5; i++) {
-    const lay = L['c' + i], out = new Float32Array(H * H * lay.co);
+    const lay = L['c' + i], out = CNN_BUF[nx]; nx ^= 1;
     conv3(h, H, H, ci, lay, out);
     h = out; ci = lay.co;
-    if (i === 0 || i === 2 || i === 4) { h = pool2(h, H, H, ci); H >>= 1; }
+    if (i === 0 || i === 2 || i === 4) { h = pool2(h, H, H, ci, CNN_BUF[nx]); nx ^= 1; H >>= 1; }
   }
-  return h; // 4*4*C
+  return h.slice(0, H * H * ci);
 }
 
 // ------------------------------------------------------------------ trajectory branch (mirror of online.py)
@@ -230,40 +270,59 @@ function onlineFeatures(strokes, ref) {
   return out;
 }
 function conv1(inp, T, ci, lay, out) {
-  const { w, b, co, k } = lay, pad = (k - 1) >> 1;
+  const { b, co, k } = lay, w = cnnW64(lay), pad = (k - 1) >> 1;
+  cnnNz(k * ci);
+  const rows = CNN_ROWS, vals = CNN_VALS;
   for (let t = 0; t < T; t++) {
     const o = t * co;
-    for (let c = 0; c < co; c++) out[o + c] = b[c];
+    out.set(b, o);
+    let n = 0;
     for (let j = 0; j < k; j++) {
       const tt = t + j - pad; if (tt < 0 || tt >= T) continue;
       const ii = tt * ci, wo = j * ci * co;
-      for (let c = 0; c < ci; c++) { const v = inp[ii + c]; if (v === 0) continue; const wr = wo + c * co; for (let d = 0; d < co; d++) out[o + d] += v * w[wr + d]; }
+      for (let c = 0; c < ci; c++) { const v = inp[ii + c]; if (v !== 0) { rows[n] = wo + c * co; vals[n++] = v; } }
     }
+    cnnAxpys(out, o, co, w, rows, vals, n);
     for (let c = 0; c < co; c++) if (out[o + c] < 0) out[o + c] = 0;
   }
 }
+// the branch's last layer, max- and mean-pooled over its T steps (h from index at): the 2*ci numbers it gives
+function onlinePool(h, at, T, ci) {
+  const g = new Float32Array(2 * ci);
+  for (let c = 0; c < ci; c++) { let mx = -Infinity, sm = 0; for (let t = 0; t < T; t++) { const v = h[at + t * ci + c]; if (v > mx) mx = v; sm += v; } g[c] = mx; g[ci + c] = sm / T; }
+  return g;
+}
 function onlineBranch(f) {
+  if (!model().L.o0) return null;
+  const K = kern(); return K ? K.online(f) : onlineJS(f);
+}
+function onlineJS(f) {
   const { L } = model();
-  if (!L.o0) return null;
   let h = f, T = OK_, ci = ONF;
   for (let i = 0; i < 3; i++) {
     const lay = L['o' + i], out = new Float32Array(T * lay.co);
     conv1(h, T, ci, lay, out); h = out; ci = lay.co;
     if (i === 1) { const T2 = T >> 1, q = new Float32Array(T2 * ci); for (let t = 0; t < T2; t++) for (let c = 0; c < ci; c++) q[t * ci + c] = Math.max(h[2 * t * ci + c], h[(2 * t + 1) * ci + c]); h = q; T = T2; }
   }
-  const g = new Float32Array(2 * ci);
-  for (let c = 0; c < ci; c++) { let mx = -Infinity, sm = 0; for (let t = 0; t < T; t++) { const v = h[t * ci + c]; if (v > mx) mx = v; sm += v; } g[c] = mx; g[ci + c] = sm / T; }
-  return g;
+  return onlinePool(h, 0, T, ci);
 }
 
-function fcProbs(feat, scal, onl) {
-  const { L, C } = model();
-  const f1 = L.f1, n1 = f1.co, x = new Float32Array(feat.length + (onl ? onl.length : 0) + scal.length);
+function fcProbs(feat, scal, onl) { const K = kern(); return K ? K.fc(feat, scal, onl) : fcJS(feat, scal, onl); }
+function fcJS(feat, scal, onl) {
+  const f1 = model().L.f1, n1 = f1.co, x = new Float32Array(feat.length + (onl ? onl.length : 0) + scal.length);
   x.set(feat); if (onl) x.set(onl, feat.length); x.set(scal, feat.length + (onl ? onl.length : 0));
-  const h = new Float32Array(n1);
-  for (let j = 0; j < n1; j++) h[j] = f1.b[j];
-  for (let i = 0; i < x.length; i++) { const v = x[i]; if (v === 0) continue; const r = i * n1; for (let j = 0; j < n1; j++) h[j] += v * f1.w[r + j]; }
+  cnnNz(x.length);
+  const rows = CNN_ROWS, vals = CNN_VALS, h = new Float32Array(n1);
+  h.set(f1.b);
+  let n = 0;
+  for (let i = 0; i < x.length; i++) { const v = x[i]; if (v !== 0) { rows[n] = i * n1; vals[n++] = v; } }
+  cnnAxpys(h, 0, n1, cnnW64(f1), rows, vals, n);
   for (let j = 0; j < n1; j++) if (h[j] < 0) h[j] = 0;
+  return fcOut(h);
+}
+// the second dense layer (in double) and the softmax, from the first one's output h (kept as .hidden)
+function fcOut(h) {
+  const { L, C } = model(), n1 = h.length;
   const f2 = L.f2, z = new Float64Array(C);
   for (let j = 0; j < C; j++) z[j] = f2.b[j];
   for (let i = 0; i < n1; i++) { const v = h[i]; if (v === 0) continue; const r = i * C; for (let j = 0; j < C; j++) z[j] += v * f2.w[r + j]; }
@@ -273,11 +332,25 @@ function fcProbs(feat, scal, onl) {
   z.hidden = h; // the symbol's embedding, used by the personal memory
   return z;
 }
+// Which classifier runs: the kernel (src/kern.js) where WebAssembly with SIMD can be used, else the JS above. Decided
+// the first time it is needed (KERN: the kernel, or false for the JS); kernelUse ('js', 'simd', 'auto') is for tests:
+// 'simd' throws where the kernel cannot be loaded.
+let KERN = null, KERN_USE = 'auto';
+function kern() {
+  if (KERN === null) KERN = KERN_USE !== 'js' && kernLoad(model()) || false;
+  return KERN;
+}
+function kernelUse(mode) {
+  if (mode !== 'js' && mode !== 'simd' && mode !== 'auto') throw new Error("Nib: kernelUse takes 'js', 'simd' or 'auto'");
+  KERN_USE = mode; KERN = null;
+  if (mode === 'simd' && !kern()) throw new Error('Nib: the kernel cannot be used here');
+  return kern() ? 'simd' : 'js';
+}
 // class probabilities for a group of strokes (with .hidden = embedding)
 function classifyGroup(group, ref) {
-  const { img, scal } = rasterize(group, ref);
-  const onl = model().L.o0 ? onlineBranch(onlineFeatures(group, ref)) : null;
-  return flagSeven(group, fcProbs(convFeatures(img), scal, onl));
+  const { img, scal } = rasterize(group, ref), K = kern();
+  const f = model().L.o0 ? onlineFeatures(group, ref) : null;
+  return flagSeven(group, K ? K.classify(img, f, scal) : fcJS(convJS(img), scal, f && onlineJS(f)));
 }
 // A 1 with a long, nearly flat top — a stroke into its top at least 0.6 as long as the 1 is tall, rising at less than
 // about 27°, and no foot — is how many Europeans write a 1 (the writing the network learned from), and a 7 to an

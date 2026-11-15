@@ -437,7 +437,9 @@ const findX = tex => { for (let k = 0; k < 40; k++) { const e = compose(tex); if
   if (e1) {
     await use('pen'); await write(e1, [0.1, 0.2, 0.25, 0.12]);
     await shapeKind('arrow'); await drag([[500, 300], [700, 300]]);
-    await use('pen'); await wait(900);
+    await use('pen');
+    // saved half a second after the last change, and a reading that arrives is a change: wait for the save (up to 5 s)
+    await page.waitForFunction(() => { const s = JSON.parse(localStorage.getItem('nib-board-v3') || 'null'), p = s && s.pages[s.page]; return !!(p && p.meta && p.meta[p.meta.length - 1] && p.meta[p.meta.length - 1].sh === 'arrow'); }, { timeout: 5000 }).catch(() => {});
     const st = await P(() => { const s = JSON.parse(localStorage.getItem('nib-board-v3')), p = s.pages[s.page]; return { v: s.v, pk: p.pk, meta: p.meta, paper: p.paper, cam: p.cam, pts: document.getElementById('pad').pad.strokes.reduce((n, s) => n + s.length, 0) }; });
     ok(st.v === 3 && Array.isArray(st.pk) && st.pk.every(x => typeof x === 'string' && /^[AB]/.test(x)) && st.paper && st.paper.kind === 'dots' && st.cam && st.cam.z === 1,
       'kept as version 3: each element\'s points packed in a short string, the page\'s paper and view');

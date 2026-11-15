@@ -44,6 +44,8 @@ const Nib = {
     get model() { return modelId(); },
   },
   classes() { return model().cls.filter(c => c !== 'junk'); },
+  // which classifier runs: 'simd' (the WebAssembly kernel) or 'js' (where WebAssembly cannot run); asking decides it
+  get kernel() { return kern() ? 'simd' : 'js'; },
   // In place: the writing laid out again where it was written, as the writer's own strokes tidied up ('tidy'),
   // in the writer's Replicator handwriting ('hand') or typeset ('typeset'). Returns {items, strokes, latex, ...}.
   neaten(strokes, options) { const o = options || {}; return inPlace(strokes, o.style === 'hand' ? 'hand' : 'tidy', o); },
@@ -66,7 +68,7 @@ const Nib = {
     get name() { handLoad(); return HAND.name || ''; },
     has(label) { const g = handLoad(); const ch = HAND_CHAR[label] || label; return !!(g && g[ch]); },
   },
-  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven, scribbleOf: typeof scribbleOf === 'function' ? scribbleOf : null, scribbleErase: typeof scribbleErase === 'function' ? scribbleErase : null, SCR: typeof SCR !== 'undefined' ? SCR : null },
+  _internals: { rasterize, convFeatures, fcProbs, onlineFeatures, onlineBranch, classifyGroup, kernelUse, convJS, onlineJS, fcJS, mlp, joinFeatures, relFeatures, refSize, rowTokens, model, sbox, allowedMask, smoothPath, skewOf, lateOrder, inkDist, planOf, drawablesOf, pathsOf, tidyProvider, handProvider, typeProvider, typeMetrics, inkOf, NEAT, HAND, drawItems, typeFontsReady, solveRows, latexRows, tokensOf, solveParse, answerOf, DEFAULT_GLYPHS, sampleBook, unlevel, clustersOf, joinOperands, flagSeven, scribbleOf: typeof scribbleOf === 'function' ? scribbleOf : null, scribbleErase: typeof scribbleErase === 'function' ? scribbleErase : null, SCR: typeof SCR !== 'undefined' ? SCR : null },
 };
 if (typeof Pad !== 'undefined') { Nib.Pad = Pad; Nib.attach = (el, o) => new Pad(el, o); }
 // Scribbled out (scribble.js), for a tool with its own ink (Deckhand's pen over the slides): of(points, z) is a scribble
