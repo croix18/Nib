@@ -69,14 +69,17 @@ elsewhere, and put in the cache; the read then runs exactly as it does today and
 
 4. **The pad asks ahead, then reads as it does now.** In `_schedule`, when the read's timer fires and before the
    steps begin:
-   - *wait* for the pad's own requests still in flight from a read that was cancelled;
-   - *plan*: for every cluster whose reading is not kept (`this.parts`, `_badParts`), `needs()` on the recognizer
-     the pad keeps for it (`_recFor(st[0])`, with the options `_partsPass` gives `warmup`). In slices of 14 ms, as
-     the read is: planning runs the stroke clean-up and the join model for every stroke (70 ms for 120 expressions
-     here);
-   - *decide*: when the groups to classify are fewer than about 150 ms of work for this thread (it knows what its own
-     classifications have been costing), or the pool cannot run, go straight to the steps: an ordinary read is
-     untouched;
+   - *is it worth asking?* When the clusters whose reading is not kept (`this.parts`, `_badParts`) have few strokes
+     between them (under about 60: some hundred groups), or the pool cannot run, go straight to the steps. An
+     ordinary read — a stroke, an expression — is not even planned;
+   - *drop and wait*: requests of a cancelled read that are still queued are taken out when their strokes are no
+     longer on the pad (a page cleared or replaced while it was being read must not make the next one wait); for the
+     rest, wait until they are answered;
+   - *plan*: for every such cluster, `needs()` on the recognizer the pad keeps for it (`_recFor(st[0])`, with the
+     options `_partsPass` gives `warmup`). In slices of 14 ms, as the read is: planning runs the stroke clean-up and
+     the join model for every stroke (70 ms for 120 expressions here);
+   - *decide*: when what is listed is less than about 150 ms of work for this thread (it knows what its own
+     classifications have been costing), go to the steps;
    - *run*: `pool.run` all of it. As answers come they are filled in — if the recognizer is still the one the pad
      holds for that stroke (`this.recs.get(first) === rec`; the pad replaces its recognizers when ink is resized) —
      whatever has become of the read meanwhile;
@@ -120,9 +123,9 @@ kernel.
 new ink leaves its classifications behind, at the size the piece had then, and a later read at a size within the same
 2.5% bucket finds them. With the pool, a read cut short leaves *all* the classifications it asked for behind, not
 only those its slices had reached. Both are readings the engine gives for that ink; they can differ in a confidence's
-last digits, as a fast machine and a slow one can today. Where every read is let come to rest — the scripted
-sessions of `tools/verify`, and the suites — the pool must give 1.6.7's readings step for step, and that is the
-check.
+last digits and, for a symbol on the edge between two readings, in the symbol — as a fast machine and a slow one can
+today. Where every read is let come to rest — the scripted sessions of `tools/verify`, and the suites — the pool
+must give the reference's readings step for step, and that is the check.
 
 ## What the prototype showed
 
@@ -237,7 +240,8 @@ In this order; each step can be checked alone, and the build is not to go on whi
    page, at least 90% in workers.
 6. **Writing during a cold read**: strokes written while a page of 60 expressions is being read cold do not start
    its classification over (each group is asked of the pool once), and the reading when the pen rests is the right
-   one.
+   one. A page replaced while it is being read cold: the new page's read does not wait for the old page's groups
+   (counted: the pool classifies at most the chunks its workers already held).
 7. `npm test`, `npm run test:browser`, `npm run lint`, `node tools/build_kern.js --check`, the pages rebuilt;
    `test/reading_browser.js` (the 1.6.7 session fingerprint) unchanged, with the pool on.
 8. The times above measured again on the build, with the pool on, off and at two workers

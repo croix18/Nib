@@ -24,6 +24,9 @@ point at is in the repository now:
 | `/tmp/fuzz/` | `tools/fuzz/` |
 | `/tmp/speed/kern.wat`, `bench_kern.js` (the kernel's first sketch) | became `src/kern.wat`, `tools/build_kern.js` and `test/kern_check.js` |
 | `/tmp/speed/wtest.js` (WebAssembly in a worker from `file://`) | became `tools/pool/proto.js` |
+| `/tmp/speed/site/probe.js`, `dh_probe.js`, `dh.config.js` (the site's pages, Deckhand's file, Deckhand's suite) | `tools/verify/pages_probe.js`, `file_probe.js`, `deckhand/` |
+| `/tmp/speed/refsess.sh`, `refsess2.sh` (recording 1.6.7's sessions) | `tools/verify/sessions.sh` with the engine from `engine.sh` |
+| one-off probes (`arrow_probe.js`, `engineline.js`, `session_dbg.js`) | not kept: what they found is pinned by `test/board_canvas_browser.js`, `test/kern_browser.js` and `test/reading_browser.js` |
 | `/tmp/speed/variant/` (1.6.7 with the new arithmetic, to count what it moves) | not kept: its result is in Speed (1.7.0), "The arithmetic", and the kernel's own tests hold the arithmetic now |
 
 ## How a plan here is meant to be used

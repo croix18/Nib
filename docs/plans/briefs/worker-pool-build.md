@@ -67,19 +67,24 @@ reading that comes out is the one the page's thread alone gives; where workers c
      No `Worker`/`Blob`/`URL.createObjectURL`; `new Worker` throws; the worker fires `error` (how a forbidden worker
      shows in Chrome: no throw, an `error` event about 15 ms later) or is not ready within 4 s; a chunk is not
      answered within 20 s; an answer of the wrong shape. Then the pool is dead for the page's life, its workers
-     terminated, every pending request resolved as not done, one `console.info` line. Never retried;
+     terminated, every pending request resolved as not done, one `console.info` line. Never retried. (A pool
+     declared dead by mistake — the device slept through a limit — only costs speed until the page is opened again:
+     do not make the limits clever);
    - workers idle for 30 s are terminated; the next request starts them again;
    - `Nib.workers` (getter): how many are running now. `Nib._internals.poolUse(n)`: `0` off, a number sets the
      count, `'auto'` back; and what the tests need (a way to kill a worker mid-request, to make one never answer, a
      count of the groups each side classified).
 
 4. **The pad: ask ahead, then read as now.** In `_schedule`, when the timer fires and before the steps start:
-   - wait for the pad's requests still in flight (from a read that was cancelled);
-   - plan, in slices of 14 ms: for each cluster whose part is not in `this.parts` (nor in `_badParts`), `needs()`
-     on its recognizer (`_recFor(st[0])`, options as `_partsPass` gives `warmup`:
-     `Object.assign({}, ro, { fix: this._fixFor(st) })`);
+   - when the clusters whose part is not in `this.parts` (nor in `_badParts`) have fewer than about 60 strokes
+     between them, or the pool cannot run: go to the steps. A small read is not even planned;
+   - take out of the pool's queue the pad's requests (from a read that was cancelled) whose strokes are no longer on
+     the pad — `pool.run` therefore gives something to cancel by; a chunk a worker already holds finishes — and
+     wait for the rest;
+   - plan, in slices of 14 ms: for each such cluster, `needs()` on its recognizer (`_recFor(st[0])`, options as
+     `_partsPass` gives `warmup`: `Object.assign({}, ro, { fix: this._fixFor(st) })`);
    - when what is listed is less than about 150 ms of this thread's classifying (keep a running cost of a
-     classification), or the pool cannot run: go to the steps. A small read never touches the pool;
+     classification): go to the steps;
    - `pool.run` it; as answers come, `fill` them **only if that recognizer is still the one the pad holds for that
      stroke** (`this.recs.get(first) === rec`), whatever happened to the read meanwhile;
    - when every request is answered (or the pool died), the steps run as they do now. Nothing about
@@ -116,7 +121,8 @@ reading that comes out is the one the page's thread alone gives; where workers c
    least 90% in workers (the prototype has 93.8%).
 6. **Writing during a cold read**: strokes written while a 60-expression page is being read cold do not start its
    classification over (each first-loop group of the page is asked of the pool once), and the reading after the pen
-   rests is the right one.
+   rests is the right one. A page replaced (`setState`) while it is being read cold: the new page's read does not
+   wait for the old page's groups (the pool classifies no more of them than its workers already held).
 7. `npm test`, `npm run test:browser`, `npm run lint`, `node tools/build_kern.js --check`,
    `npm run build && git diff --stat dist` consistent with the sources. `test/reading_browser.js` passes unchanged,
    with the pool on.
