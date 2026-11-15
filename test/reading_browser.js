@@ -13,6 +13,11 @@
 //      moved, deleted, copied, a symbol corrected, options and views changed, the board put away and taken out, saved
 //      and opened): what the pad reads, answers and lays out after every step is what Nib 1.6.7 read, answered and
 //      laid out — a fingerprint of the session, taken with the 1.6.7 engine before the read was made of steps
+//   4. (1.7.1) a page gets every join, not eight: fourteen expressions each written with a gap after a sign are
+//      joined wherever the rule joins, read at once and in slices alike; on a page of hundreds of pieces the rounds are counted out
+//      (JOIN_WORK), and the read ends. Ink that is moved is read where it is: a stroke nudged away from the rest of
+//      its symbol, put back by Undo, moved again by Redo, moved by a host (syncStrokes) — on a board and on a pad of
+//      one expression, the reading a new recognizer gives; a whole piece nudged is not classified again
 //   node test/reading_browser.js            (--record: only the session, and print its fingerprint)
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), crypto = require('crypto');
@@ -322,6 +327,100 @@ function pageOf(list) {
       ok(lines.length >= 50 && ['load', 'write', 'move', 'undo', 'redo', 'correct', 'copy', 'options', 'delete', 'camera', 'clear', 'put away', 'reopen'].every(k => kinds.has(k)), `a session of ${lines.length} steps on a board (${[...kinds].join(', ')})`);
       ok(print === SESSION_167, `what the pad read, answered and laid out at every step is what Nib 1.6.7 did (${print.slice(0, 16)}…)`);
     }
+    ok(errors.length === 0, 'no page error: ' + errors.join(' | '));
+    await page.close();
+  }
+
+  // ---------------------------------------------------------------- 4. every join; ink moved (1.7.1)
+  if (!RECORD) {
+    const { page, errors } = await open();
+    // a plus and a digit of the sample's handwriting, for a page of hundreds of pairs
+    const src = rows.find(r => r.symbols.some(sy => sy.label === '+' && sy.strokes.length === 2) && r.symbols.some(sy => /^[0-9]$/.test(sy.label) && sy.strokes.length === 1));
+    const plusOf = src.symbols.find(sy => sy.label === '+' && sy.strokes.length === 2).strokes.map(i => src.strokes[i]), digitOf = src.symbols.find(sy => /^[0-9]$/.test(sy.label) && sy.strokes.length === 1).strokes.map(i => src.strokes[i]);
+    const r = await page.evaluate(async (ink, plusOf, digitOf) => {
+      const I = Nib._internals, sleep = ms => new Promise(r => setTimeout(r, ms));
+      const attrs = { view: 'ink', settle: '0', delay: '30', separate: '', times: 'false', solve: '' };
+      const undone = P => { let n = 0, now = P.result.parts.map(p => ({ idx: p.idx, strokes: p.strokes, result: p.result }));
+        for (; n < 600; n++) { const j = I.joinOperands(now); if (!j) break; const old = new Map(now.map(p => [p.idx, p])); now = j.map(g => old.get(g) || { idx: g, strokes: g.map(i => P.ink[i]), result: new Nib.Recognizer().recognize(g.map(i => P.ink[i]), P._ropts()) }); }
+        return n; };
+      const out = {};
+      // (a) fourteen expressions, each with a gap after a sign: at once
+      let el = window.makePad(Object.assign({ auto: 'false' }, attrs)), P = el.pad;
+      P.setState({ strokes: ink });
+      out.clusters = I.clustersOf(P.ink).length;
+      const res = P.recognize();
+      out.pieces = res.parts.length; out.undone = undone(P);
+      out.cold = res.parts.every(p => new Nib.Recognizer().recognize(p.strokes, P._ropts()).latex === p.result.latex);
+      const atOnce = res.parts.map(p => p.result.latex).join(' | ');
+      // … and in slices, by a pad that reads by itself
+      el = window.makePad(attrs); P = el.pad;
+      const done = new Promise(res => el.addEventListener('nib:result', function on() { if (P.result && (P.resultStrokes || []).length === P.ink.length) { el.removeEventListener('nib:result', on); res(); } }));
+      P.setState({ strokes: ink }); await done;
+      out.sliced = P.result.parts.map(p => p.result.latex).join(' | ') === atOnce; out.slicedPieces = P.result.parts.length;
+      // (b) 200 pairs of a plus and a digit a gap apart, far from each other: 400 pieces, each pair one join
+      const box = st => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const s of st) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); } return [x0, y0, x1, y1]; };
+      const pb = box(plusOf), db = box(digitOf), H = db[3] - db[1], many = [];
+      for (let k = 0; k < 200; k++) {
+        const ox = (k % 10) * (pb[2] - pb[0] + 14 * H), oy = Math.floor(k / 10) * 5 * H;
+        for (const s of plusOf) many.push(s.map(p => [p[0] - pb[0] + ox, p[1] - (pb[1] + pb[3]) / 2 + oy]));
+        for (const s of digitOf) many.push(s.map(p => [p[0] - db[0] + ox + (pb[2] - pb[0]) + 2 * H, p[1] - (db[1] + db[3]) / 2 + oy]));
+      }
+      el = window.makePad(Object.assign({ auto: 'false' }, attrs)); P = el.pad;
+      P.setState({ strokes: many });
+      out.manyClusters = I.clustersOf(P.ink).length;
+      const t0 = performance.now(), big = P.recognize();
+      out.manyMs = Math.round(performance.now() - t0); out.manyJoined = out.manyClusters - big.parts.length; out.manyUndone = undone(P);
+      out.manyRounds = Math.max(8, Math.min(out.manyClusters, Math.floor(3e7 / (out.manyClusters * out.manyClusters))));
+
+      // (c) ink moved: "2 + 3" with the plus a stem and a bar, on a board and on a pad of one expression
+      const line = (x0, y0, x1, y1, n) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n]);
+      const pathOf = pts => pts.flatMap((p, i, a) => (i ? line(a[i - 1][0], a[i - 1][1], p[0], p[1], 6).slice(1) : [p]));
+      const plus = () => [pathOf([[100, 110], [110, 100], [125, 100], [132, 110], [128, 125], [100, 150], [135, 150]]), line(190, 105, 190, 150, 12), line(168, 128, 212, 128, 12),
+        pathOf([[250, 102], [275, 100], [262, 122], [278, 135], [270, 150], [250, 150]])];
+      const fresh = P => new Nib.Recognizer().recognize(P.ink, P._ropts()).latex;
+      out.moved = [];
+      for (const board of [true, false]) {
+        el = window.makePad(Object.assign({ auto: 'false' }, attrs)); if (!board) el.removeAttribute('separate');
+        P = el.pad;
+        if (!board) { el = window.makePad({ view: 'ink', settle: '0', delay: '30', auto: 'false', times: 'false' }); P = el.pad; }
+        const seen = new Set(), orig = P._recFor; P._recFor = function (f) { const q = orig.call(this, f); seen.add(q); return q; };
+        const classified = () => { let n = P.rec ? P.rec.classified || 0 : 0; for (const q of seen) n += q.classified || 0; return n; };
+        P.setState({ strokes: plus() });
+        const m = { board, first: P.recognize().latex };
+        // the whole of it nudged: read again, nothing classified again
+        let c0 = classified();
+        P.select(P.ink.slice()); P.nudgeSelection(37, -12); P.clearSelection();
+        m.whole = P.recognize().latex; m.wholeAgain = classified() - c0;
+        // the bar alone, down: read as a new recognizer reads it; Undo; Redo
+        const bar = P.ink[2];
+        P.select([bar]); P.nudgeSelection(0, 40); P.clearSelection();
+        m.down = P.recognize().latex; m.downFresh = fresh(P);
+        P.undo(); m.undo = P.recognize().latex; m.undoFresh = fresh(P);
+        P.redo(); m.redo = P.recognize().latex; m.redoFresh = fresh(P);
+        P.undo(); m.back = P.recognize().latex;
+        out.moved.push(m);
+      }
+      // (d) a host's own strokes: one of them handed again as another array, moved
+      el = window.makePad({ view: 'ink', settle: '0', delay: '30', auto: 'false', times: 'false' }); P = el.pad;
+      const host = plus();
+      P.syncStrokes(host); out.hostFirst = P.recognize().latex;
+      const movedBar = host[2].map(p => [p[0], p[1] + 40]);
+      P.syncStrokes([host[0], host[1], movedBar, host[3]], [[movedBar, host[2]]]);
+      out.hostMoved = P.recognize().latex; out.hostFresh = fresh(P); out.hostSame = P.ink.length === 4;
+      await sleep(50);
+      return out;
+    }, pageOf(spaced(14)), plusOf, digitOf);
+    ok(r.clusters === 28 && r.clusters - r.pieces > 8 && r.undone === 0, `fourteen expressions written with a gap after a sign: ${r.clusters} pieces as they stand, ${r.pieces} once joined (${r.clusters - r.pieces} joins, more than the eight a page had until 1.7.1; ${r.undone} left undone)`);
+    ok(r.cold, 'each is read as a new recognizer reads its strokes');
+    ok(r.sliced && r.slicedPieces === r.pieces, `and the read in slices comes to the same ${r.pieces}`);
+    ok(r.manyClusters === 400 && r.manyRounds === 187 && r.manyJoined === 187 && r.manyUndone === 13, `200 pairs a gap apart, 400 pieces: the rounds are counted out at ${r.manyRounds} — ${r.manyJoined} joined, ${r.manyUndone} left (${r.manyMs} ms)`);
+    for (const m of r.moved) {
+      const what = m.board ? 'a board' : 'a pad of one expression';
+      ok(m.first === '2+3' && m.whole === '2+3' && m.wholeAgain === 0, `${what}: "${m.first}" nudged as a whole reads "${m.whole}", ${m.wholeAgain} groups classified again`);
+      ok(m.down === m.downFresh && m.down !== '2+3', `${what}: the bar of the plus nudged down reads "${m.down}", as a new recognizer reads it ("${m.downFresh}")`);
+      ok(m.undo === '2+3' && m.undoFresh === '2+3' && m.redo === m.redoFresh && m.redo === m.down && m.back === '2+3', `${what}: Undo "${m.undo}", Redo "${m.redo}", Undo "${m.back}"`);
+    }
+    ok(r.hostFirst === '2+3' && r.hostSame && r.hostMoved === r.hostFresh && r.hostMoved !== '2+3', `a host's stroke handed again where it was moved to (syncStrokes): "${r.hostMoved}", as new ("${r.hostFresh}")`);
     ok(errors.length === 0, 'no page error: ' + errors.join(' | '));
     await page.close();
   }

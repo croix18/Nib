@@ -1,6 +1,8 @@
 // A scripted session on a board pad, the same for any engine: what the pad reads, answers and lays out after every
 // step, one JSON line per step. Two engines that read alike give the same file (cmpsess.js).
 //   node tools/verify/session.js <engine.js> <out.jsonl> [seed=1] [exprs=40] [steps=40] [padAttrs=''] [script run in the page first]
+//   NIB_SESSION_STROKES=1: half of the session's moves take one stroke of a piece and not the piece (a stroke moved
+//   off its symbol: read again where it is since 1.7.1). Without it the session is the one 1.6.7 was recorded with.
 // The steps use only the pad's own methods (addElement, setState, undo, relabel, …), with points that carry no time,
 // and wait for the pad to come to rest after each one, so the order of the reads does not depend on how fast they are.
 'use strict';
@@ -8,7 +10,7 @@ const REPO = require('path').join(__dirname, '..', '..'), T = require(REPO + '/t
 const fs = require('fs'), path = require('path'), os = require('os');
 const puppeteer = require(T.npm('puppeteer-core'));
 const [engine, out, seedArg, exprArg, stepArg, attrArg, initArg] = process.argv.slice(2);
-const SEED = +(seedArg || 1), EXPRS = +(exprArg || 40), STEPS = +(stepArg || 40), ATTRS = attrArg || '';
+const SEED = +(seedArg || 1), EXPRS = +(exprArg || 40), STEPS = +(stepArg || 40), ATTRS = attrArg || '', STROKES = process.env.NIB_SESSION_STROKES === '1';
 const rows = fs.readFileSync(REPO + '/test/school_synth.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nibsess-'));
@@ -23,7 +25,7 @@ const rows = fs.readFileSync(REPO + '/test/school_synth.jsonl', 'utf8').trim().s
   await page.goto('file://' + html, { waitUntil: 'load' });
   if (initArg) await page.evaluate(initArg);              // a line of script run in the page first, e.g. "Nib._internals.poolUse(0)"
   const t0 = Date.now();
-  const lines = await page.evaluate(async (rows, SEED, EXPRS, STEPS) => {
+  const lines = await page.evaluate(async (rows, SEED, EXPRS, STEPS, STROKES) => {
     const el = document.getElementById('pad');
     for (let i = 0; i < 200 && !el.pad; i++) await new Promise(r => setTimeout(r, 20));
     const P = el.pad;
@@ -31,7 +33,10 @@ const rows = fs.readFileSync(REPO + '/test/school_synth.jsonl', 'utf8').trim().s
     const pick = a => a[Math.floor(rnd() * a.length)];
     let lastEmit = performance.now(), emits = 0, partials = 0;
     el.addEventListener('nib:result', e => { lastEmit = performance.now(); emits++; if (e.detail && e.detail.partial) partials++; });
-    const settled = () => { const ink = P.ink, rs = P.resultStrokes || []; return !ink.length ? !P.result || !rs.length : !!P.result && !P.result.partial && rs.length === ink.length && rs.every((s, k) => s === ink[k]); };
+    // at rest: the reading is of the ink that is there — and no reading is due (pad.busy, since 1.7.0: ink moved in
+    // place is the same strokes with a reading on the way; on a page of 120 expressions that read takes longer than
+    // the 400 ms of quiet waited for, and the step was recorded with the reading from before the move, now and then)
+    const settled = () => { const ink = P.ink, rs = P.resultStrokes || []; return !P.busy && (!ink.length ? !P.result || !rs.length : !!P.result && !P.result.partial && rs.length === ink.length && rs.every((s, k) => s === ink[k])); };
     const rest = async () => { const t = performance.now(); for (;;) { await new Promise(r => setTimeout(r, 40)); const now = performance.now(); if (settled() && now - lastEmit > 400 && now - t > 400) return; if (now - t > 600000) throw new Error('did not come to rest'); } };
     // an expression of the corpus, at a place on the board; every fifth with its right part pushed away (a gap in the line)
     const place = (k, col, row, gap) => {
@@ -77,7 +82,12 @@ const rows = fs.readFileSync(REPO + '/test/school_synth.jsonl', 'utf8').trim().s
         continue;
       } else if (r < 0.42) { const n = 1 + Math.floor(rnd() * 4); for (let i = 0; i < n; i++) P.undo(); name = 'undo ' + n; }
       else if (r < 0.48) { const n = 1 + Math.floor(rnd() * 4); for (let i = 0; i < n; i++) P.redo(); name = 'redo ' + n; }
-      else if (r < 0.56) { const ps = partsNow(); if (!ps.length) continue; const p = pick(ps); P.select(p.strokes); P.nudgeSelection(Math.round((rnd() - 0.5) * 400), Math.round((rnd() - 0.5) * 200)); P.clearSelection(); name = 'nudge'; }
+      else if (r < 0.56) {
+        const ps = partsNow(); if (!ps.length) continue; const p = pick(ps);
+        if (STROKES && rnd() < 0.5) { P.select([pick(p.strokes)]); P.nudgeSelection(Math.round((rnd() - 0.5) * 60), Math.round((rnd() - 0.5) * 60)); name = 'nudge a stroke'; }
+        else { P.select(p.strokes); P.nudgeSelection(Math.round((rnd() - 0.5) * 400), Math.round((rnd() - 0.5) * 200)); name = 'nudge'; }
+        P.clearSelection();
+      }
       else if (r < 0.62) { const ps = partsNow(); if (!ps.length) continue; const p = pick(ps); P.select(p.strokes); P.deleteSelection(); name = 'delete part'; }
       else if (r < 0.66) { const ps = partsNow(); if (!ps.length) continue; const p = pick(ps); P.select(p.strokes); P.duplicateSelection(); P.clearSelection(); name = 'duplicate part'; }
       else if (r < 0.74) { const res = P.result; if (!res || !res.symbols.length) continue; const s = pick(res.symbols); const c = (s.candidates || [])[1]; if (!c) continue; P.relabel(s, c[0]); name = 'relabel ' + s.label + '>' + c[0]; }
@@ -88,7 +98,7 @@ const rows = fs.readFileSync(REPO + '/test/school_synth.jsonl', 'utf8').trim().s
       await mark(name);
     }
     return { out, emits, partials, wrote };
-  }, rows, SEED, EXPRS, STEPS);
+  }, rows, SEED, EXPRS, STEPS, STROKES);
   fs.writeFileSync(out, lines.out.join('\n') + '\n');
   console.log(`${path.basename(engine)} seed ${SEED}: ${lines.out.length} steps recorded (${lines.wrote} expressions written), ${lines.emits} readings announced (${lines.partials} partial), ${((Date.now() - t0) / 1000).toFixed(1)} s${errors.length ? ' | page said: ' + errors.slice(0, 3).join(' ;; ') : ''}`);
   await browser.close(); fs.rmSync(dir, { recursive: true, force: true });

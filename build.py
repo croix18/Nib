@@ -9,7 +9,7 @@ import json, os, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, 'model', 'nib-data.json')
-VERSION = '1.7.0'
+VERSION = '1.7.1'
 
 pkg = os.path.join(HERE, 'package.json')
 pkg_version = json.load(open(pkg, encoding='utf-8')).get('version') if os.path.exists(pkg) else VERSION

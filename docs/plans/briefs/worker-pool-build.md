@@ -17,15 +17,23 @@ Do not commit and do not push.
 
 ## Before this
 
-`docs/reviews/found-2026-11-15.md` lists two faults that are not the pool's. If Croix has had them fixed (Nib 1.7.1),
-the reference to compare with is the one recorded for that release (`tools/verify/README.md` says how a reference is
-made and named), not `gold-1.6.7`. If not, compare with `gold-1.6.7`, and do not fix them here.
+Nib 1.7.1 fixed the two faults of `docs/reviews/found-2026-11-15.md` (read its two "The fix" parts: `_partsPass` now
+joins for as many rounds as there are pieces, and `Recognizer.idsOf` gives a stroke a new id when it has moved away
+from the strokes it is read with or has another shape). Two things follow for this build:
+
+- **Keys can go out of use between the asking and the answer.** `needs()` returns keys made of the ids the strokes
+  have now. If a stroke is moved before the answer comes, its next `prepare` gives it a new id and the old key is
+  never looked up again: `fill` may store the answer (it is the right classification of the strokes as they were) or
+  drop it; it must not try to translate it. Do not keep anything keyed by stroke id outside the recognizer.
+- **The reference** is `tools/verify/gold-1.6.7` (readings, and eight sessions) together with
+  `tools/verify/gold-1.7.1` (two sessions on pages with 13 and 14 joins and with single strokes moved);
+  `tools/verify/sessions.sh` runs all ten against the right one.
 
 ## What is there, and the goal
 
 Since 1.7.0 the classifier runs in a WebAssembly kernel (`Nib.kernel`), with a JavaScript path that gives the same
 bits, and a board's read is one run of steps (`_partsSteps`) in which every group is warmed (`Recognizer.warmup`)
-before it is read. Opening a full page still has nothing in the recognizers' caches: every group of strokes is
+before it is read (since 1.7.1 with a round of joining for every join the page needs). Opening a full page still has nothing in the recognizers' caches: every group of strokes is
 classified on the page's thread, 14 ms at a time; 120 expressions take 3 s on a two-core machine, the thread is busy
 for all of it, and a stroke written meanwhile stops the read until the pen rests again.
 
@@ -105,7 +113,7 @@ reading that comes out is the one the page's thread alone gives; where workers c
 ## What must hold (each will be checked again by whoever asked for this)
 
 1. **Readings, in node**: `tools/verify/readings.sh dist/nib.js tools/verify/out/readings`, then
-   `node tools/verify/cmp.js <the reference>/readings tools/verify/out/readings` → every count 0.
+   `node tools/verify/cmp.js tools/verify/gold-1.6.7/readings tools/verify/out/readings` → every count 0.
 2. **Sessions, in Chrome**, three times — as it comes, with `NIB_SESSION_INIT="Nib._internals.poolUse(0)"`, and with
    `NIB_SESSION_INIT="Nib._internals.poolUse(2)"`: `tools/verify/sessions.sh dist/nib.js tools/verify/out/s-<name>`
    → `sessions: nothing differs` each time. Add no engine-level switch (an attribute, a storage key, a query string)

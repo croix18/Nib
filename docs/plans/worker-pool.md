@@ -2,8 +2,9 @@
 
 **Planned for Nib 1.8.0. Not built**: nothing in `src/` or `dist/` knows of it. What is here is the design as
 decided, the measurements it rests on (`tools/pool/`, a prototype that runs against the released engine without
-changing it; 15 November 2026, Chrome 153 on a two-core machine), the order to build it in, and the checks it has to
-pass. The instruction to build from is `briefs/worker-pool-build.md`.
+changing it; 15 November 2026, Chrome 153 on a two-core machine, Nib 1.7.0), the order to build it in, and the checks
+it has to pass. The instruction to build from is `briefs/worker-pool-build.md`. Croix's word, 15 November: the two
+faults found on the way first (Nib 1.7.1, done), then this.
 
 ## Why
 
@@ -225,13 +226,14 @@ In this order; each step can be checked alone, and the build is not to go on whi
 ## The checks before it is released
 
 1. **Every reading of the sample**, node (no workers there: this shows `needs`/`fill` and the wrapper's name moved
-   nothing): `tools/verify/readings.sh dist/nib.js tools/verify/out/readings`, then `cmp.js` against the reference →
-   `latex 0, symbols 0, answers 0, candidate lists 0`.
+   nothing): `tools/verify/readings.sh dist/nib.js tools/verify/out/readings`, then `cmp.js` against
+   `tools/verify/gold-1.6.7/readings` → `latex 0, symbols 0, answers 0, candidate lists 0`.
 2. **Every step of the scripted sessions**, Chrome, three times: with the pool as it comes
    (`tools/verify/sessions.sh dist/nib.js tools/verify/out/s-auto`), off
    (`NIB_SESSION_INIT="Nib._internals.poolUse(0)" …`), and with two workers (`…poolUse(2)`: on a two-core machine
-   the pool has one by itself) → `sessions: nothing differs` each time. Each session opens with a page of 16 to 100
-   expressions, which is where the pool runs.
+   the pool has one by itself) → `sessions: nothing differs` each time. Each of the ten sessions opens with a page
+   of 16 to 120 expressions, which is where the pool runs; the two of `gold-1.7.1` have 13 and 14 joins on their
+   pages and single strokes moved off their symbols.
 3. **The bits of a pooled read**: on a page of 60 expressions or more, the entries a pooled read leaves in the
    recognizers equal, bit for bit, those a read on the page's thread leaves; also with this thread forced to the
    JavaScript path and the workers on the kernel.
@@ -252,23 +254,27 @@ In this order; each step can be checked alone, and the build is not to go on whi
 
 No test may assert a time: the suites run on slow machines. They count.
 
-## Open, for Croix
+## Settled, and open
 
-1. **The two faults found on the way** (`docs/reviews/found-2026-11-15.md`): a page gets at most eight joins, and a
-   symbol whose strokes were moved apart keeps its old reading. Neither is the pool's, but the first should be fixed
-   **before** the pool is built: the pool is judged against a recorded reference, that fix moves the reference on
-   crowded pages, and it makes joined pieces a larger share of a full page's work (which the pool could then take
-   too). Suggested: both as Nib 1.7.1, with a new reference, then the pool as 1.8.0.
-2. **Memory on the panel.** Up to four workers, 34 MB each, for the length of a big read and half a minute after. If
-   the panel is short of memory the cap comes down to 2 or 3; the Board's line will say what the panel reports once
-   the pool is there, and nothing needs deciding before then.
+1. **The two faults found on the way** (`docs/reviews/found-2026-11-15.md`) were fixed first, as Nib 1.7.1: a page
+   gets every join, and ink that is moved is read where it is. The reference the pool is judged against is therefore
+   1.6.7's readings and sessions (1.7.1 moved none of them) **and** the two sessions recorded with 1.7.1 on pages
+   that need more than eight joins and have single strokes moved (`tools/verify/gold-1.7.1/`): `sessions.sh` runs
+   all ten. Two things in 1.7.1 the build has to know: a stroke's id can change between two reads (`idsOf`: a stroke
+   moved away from its piece gets a new one), so answers are filled in by the keys they were asked under and a key
+   that no longer exists is simply never looked up; and a page can now have many joins, so the joined pieces are a
+   larger share of a crowded page's work than the 4% measured below.
+2. **Memory on the panel** (open). Up to four workers, 34 MB each, for the length of a big read and half a minute
+   after. If the panel is short of memory the cap comes down to 2 or 3; the Board's line will say what the panel
+   reports once the pool is there, and nothing needs deciding before then.
 
 ## After the first build
 
-- **Joined pieces to the pool as well.** Tried in the prototype: the pieces `joinOperands` puts together, handed
-  to the pool round by round as the read finds them, leave 12 of 1,828 groups on the page's thread instead of 77,
-  with the same reading and bits. It makes the read wait for the pool in its middle, once a round, for 4% of the work
-  as joins stand today. Worth it once a page can have more than eight joins.
+- **Joined pieces to the pool as well.** Tried in the prototype (on 1.7.0, where a page had eight joins at most): the
+  pieces `joinOperands` puts together, handed to the pool round by round as the read finds them, leave 12 of 1,828
+  groups on the page's thread instead of 77, with the same reading and bits. It makes the read wait for the pool in
+  its middle, once a round. Since 1.7.1 a page gets every join (about eight classifications each): measure a crowded
+  page on the build, and take this up if the joined pieces hold the page's thread for long.
 - **A page that is set is read at once.** `setState` waits out the pen's delay before it reads, as a stroke does;
   there is no pen to wait for. Independent of the pool.
 - **A worker's 34 MB.** A worker needs neither the JavaScript path's copy of the weights nor the engine's text once it

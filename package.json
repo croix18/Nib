@@ -1,6 +1,6 @@
 {
   "name": "nib",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "private": true,
   "description": "Handwriting to LaTeX in the browser, in one dependency-free file (dist/nib.js). The version is build.py's VERSION; build.py stops if this one differs.",
   "scripts": {

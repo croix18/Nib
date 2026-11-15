@@ -1,4 +1,4 @@
-/*! Nib 1.7.0 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
+/*! Nib 1.7.1 — handwritten maths to LaTeX in the browser. One file, no dependencies, works offline.
  *  <nib-pad> element · Nib.attach(el) · Nib.recognize(strokes) · Nib.neaten / Nib.typeset / Nib.solve (answers and equations) — see README.md / docs/HANDOFF.md
  *  Symbol models trained on CROHME (research data).
  *  Typeset view: the KaTeX_Main, KaTeX_Math and KaTeX_Size1 fonts, embedded unchanged.
@@ -646,6 +646,14 @@ function kernLoad(M) {
 
 // ================================================================== recognition
 const MAXK = 4, GAPMAX = 1.2;
+// how alike two moves, or two shapes, of a stroke must be to be the same (Recognizer.idsOf): 512 steps of the
+// floating-point grid at the coordinates in question
+const ID_TOL = 512 * Number.EPSILON;
+// a number's bits mixed (the last step of MurmurHash3), as a share of 1: the weights of a stroke's points in idsOf
+function idMix(h) {
+  h ^= h >>> 16; h = Math.imul(h, 0x85EBCA6B); h ^= h >>> 13; h = Math.imul(h, 0xC2B2AE35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
 const RELATIONS = new Set(['=', '<', '>', '\\le', '\\ge', '\\ne', '\\rightarrow']);
 const NO_SCRIPT = new Set(['+', '-', '=', '<', '>', '\\le', '\\ge', '\\ne', '\\times', '\\div', '\\pm', '\\cdot', '(', '[', '\\{',
   '/', ',', '.', '\\rightarrow', ':', '\\in']);
@@ -789,9 +797,91 @@ class Recognizer {
     if (!(same && this.cref > 0 && Math.abs(Math.log(ref / this.cref)) < 0.15)) this.cref = ref;
     return this.cref;
   }
-  idOf(o, pts) {
-    if (o && typeof o === 'object') { let id = this.ids.get(o); if (!id) { id = 'k' + this.next++; this.ids.set(o, id); } return id; }
-    return 'p' + pts.length + ':' + pts[0] + ':' + pts[pts.length - 1];
+  // The strokes' ids, for the caches' keys. What a cache keeps under a key is how a group of strokes looked, so a
+  // stroke may keep its id only while it is the same object, has the same shape, and stands where it stood among
+  // the strokes it is read with. Strokes given as objects (arrays of points: the pad's own) are moved in place — a
+  // selection dragged, Undo putting it back, a host handing other points for the same stroke — and until 1.7.1 a
+  // stroke kept its id through that: the bar of a plus dragged off its stem was still read with the stem as a plus.
+  // Kept with each stroke (this.ids): its id; its shape — the number of points, its box's size, the way from its
+  // first point to its last, and three sums of its points' offsets from the first, one plain and two weighted by
+  // the point's place in the stroke (so the same points in another order, or a few of them shifted against each
+  // other, are another shape; nothing short of comparing every point sees every change); (ax, ay), where its
+  // first point was when it got the id, less how far the strokes it was read with had moved by then; and m, the
+  // largest coordinate it has been seen at. Asked again:
+  //   - a stroke whose shape is another gets a new id;
+  //   - for the others, how far each has moved from (ax, ay). Moved alike (a piece dragged as a whole, or nothing
+  //     moved at all): every id stays, and nothing is classified again. Not alike: those that moved as most did keep
+  //     their ids, the rest get new ones — every group and pair with one of them in it is classified again, the rest
+  //     of the piece is not.
+  // Two strokes that both keep their ids are therefore where they were, one from the other, when anything kept under
+  // those ids was classified — to within ID_TOL, which is there because moving a stroke by w and taking the
+  // difference does not give w back to the last bit: 512 steps of the floating-point grid at the largest coordinate
+  // the two have been seen at (a ten-billionth of a unit for writing a thousand units from the origin; a move
+  // smaller than that is not seen, and is nothing a reading could turn on).
+  // A stroke read in turn with two sets of strokes that moved differently is given a new id each time: classified
+  // more often than it need be, never read as what it no longer is.
+  idsOf(input, n) {
+    const S = n.strokes, N = S.length, ids = new Array(N), now = new Array(N), kept = new Array(N);
+    for (let i = 0; i < N; i++) {
+      const o = input[n.src[i]], s = S[i];
+      if (!(o && typeof o === 'object')) { ids[i] = 'p' + s.length + ':' + s[0] + ':' + s[s.length - 1]; continue; }
+      const x0 = s[0][0], y0 = s[0][1], last = s[s.length - 1];
+      let bx0 = x0, bx1 = x0, by0 = y0, by1 = y0, sx = 0, sy = 0, px = 0, py = 0, qx = 0, qy = 0;
+      for (let k = 1; k < s.length; k++) {
+        const x = s[k][0], y = s[k][1], dx = x - x0, dy = y - y0;
+        if (x < bx0) bx0 = x; else if (x > bx1) bx1 = x;
+        if (y < by0) by0 = y; else if (y > by1) by1 = y;
+        // two weights in [1, 2) that go with the point's place k, the same every time, and scattered: each is k's
+        // bits mixed (weights that rise evenly with k let a bend of four points through, one up, two down, one up)
+        const u = 1 + idMix(k), v = 1 + idMix(k ^ 0x5bd1e995);
+        sx += dx; sy += dy; px += u * dx; py += u * dy; qx += v * dx; qy += v * dy;
+      }
+      now[i] = { o, x0, y0, n: s.length, w: bx1 - bx0, h: by1 - by0, ex: last[0] - x0, ey: last[1] - y0, sx, sy, px, py, qx, qy,
+        m: 1 + Math.max(Math.abs(bx0), Math.abs(bx1), Math.abs(by0), Math.abs(by1)), dx: 0, dy: 0 };
+    }
+    const near = (a, b, t) => a === b || Math.abs(a - b) <= t;
+    let D = null, alike = true, wide = 0;
+    for (let i = 0; i < N; i++) {
+      const c = now[i], e = c && this.ids.get(c.o);
+      if (!e || e.n !== c.n) continue;
+      const m = Math.max(e.m, c.m), t = ID_TOL * m, ts = 4 * c.n * t;
+      if (!near(e.w, c.w, t) || !near(e.h, c.h, t) || !near(e.ex, c.ex, t) || !near(e.ey, c.ey, t) || !near(e.sx, c.sx, ts) || !near(e.sy, c.sy, ts) ||
+        !near(e.px, c.px, ts) || !near(e.py, c.py, ts) || !near(e.qx, c.qx, ts) || !near(e.qy, c.qy, ts)) continue;
+      kept[i] = e; c.m = m; c.dx = c.x0 - e.ax; c.dy = c.y0 - e.ay;
+      if (m > wide) wide = m;
+      if (!D) D = c; else if (!near(c.dx, D.dx, ID_TOL * Math.max(m, D.m)) || !near(c.dy, D.dy, ID_TOL * Math.max(m, D.m))) alike = false;
+    }
+    if (!alike) {
+      // how most of them moved (counted in steps of 8 tolerances; the stroke that brought its count to the highest)
+      const count = new Map(), q = 8 * ID_TOL * wide;
+      let top = 0;
+      for (let i = 0; i < N; i++) {
+        if (!kept[i]) continue;
+        const k = Math.round(now[i].dx / q) + ',' + Math.round(now[i].dy / q), v = (count.get(k) || 0) + 1;
+        count.set(k, v);
+        if (v > top) { top = v; D = now[i]; }
+      }
+      for (let i = 0; i < N; i++) {
+        if (!kept[i]) continue;
+        const t = ID_TOL * Math.max(now[i].m, D.m);
+        if (!near(now[i].dx, D.dx, t) || !near(now[i].dy, D.dy, t)) kept[i] = null;
+      }
+    }
+    const dx = D ? D.dx : 0, dy = D ? D.dy : 0, made = new Map();
+    for (let i = 0; i < N; i++) {
+      const c = now[i];
+      if (!c) continue;
+      let e = kept[i] || made.get(c.o);                       // (the same object given twice is one stroke)
+      if (!e) {
+        // (m: the place it is kept at counts too — a piece read far away and brought home gives a new stroke beside
+        // it a place that is rounded as coarsely as far away)
+        e = { id: 'k' + this.next++, ax: c.x0 - dx, ay: c.y0 - dy, n: c.n, w: c.w, h: c.h, ex: c.ex, ey: c.ey, sx: c.sx, sy: c.sy, px: c.px, py: c.py, qx: c.qx, qy: c.qy,
+          m: Math.max(c.m, 1 + Math.abs(c.x0 - dx), 1 + Math.abs(c.y0 - dy)) };
+        this.ids.set(c.o, e); made.set(c.o, e);
+      } else if (c.m > e.m) e.m = c.m;
+      ids[i] = e.id;
+    }
+    return ids;
   }
   probs(group, ref, key, useMemory) {
     const k = key + '|' + Math.round(Math.log(ref) * 40);
@@ -826,7 +916,7 @@ class Recognizer {
   // clean points, stable stroke ids for the caches, and (opts.smooth > 0) the wobble of a fingertip taken out
   prepare(input, opts) {
     const n = normStrokes(input);
-    let ids = n.strokes.map((s, i) => this.idOf(input[n.src[i]], s));
+    let ids = this.idsOf(input, n);
     if (opts.smooth > 0 && n.strokes.length) {
       const sigma = opts.smooth * refSize(n.strokes);
       n.strokes = n.strokes.map(s => smoothPath(s, sigma));
@@ -5659,7 +5749,7 @@ function pdfMake(pages, meta) {
   if (title) info += ' /Title ' + pdfText(title);
   if (M.author) info += ' /Author ' + pdfText(M.author);
   if (M.subject) info += ' /Subject ' + pdfText(M.subject);
-  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.7.0) /CreationDate (' + pdfDate(date) + ') >>');
+  obj(3, info + ' /Creator (Nib Board) /Producer (Nib 1.7.1) /CreationDate (' + pdfDate(date) + ') >>');
 
   for (let i = 0; i < pages.length; i++) {
     const P = pages[i] || {}, n = 4 + 3 * i, jpeg = pdfBytes(P.jpeg), sof = jpeg && pdfJpegSize(jpeg);
@@ -6627,6 +6717,10 @@ function clusterNear(boxes, ref, link) {
   }
   return true;
 }
+// How many pairs of pieces a board's read may look at while it joins pieces (_partsPass; joinOperands looks at every
+// pair each time it is asked): 30 million, a third of a second on a slow laptop. Counted, not timed: what a page
+// reads may not depend on the machine. (Only the looking is counted: reading each joined piece comes on top.)
+const JOIN_WORK = 3e7;
 // Pieces of writing that belong together but were left apart by the spaces between them. A line of working that only
 // asks ("x =", "y <") under a piece is joined to that piece (an equation, or two of them), however far the writer
 // dropped it (within 2.5 line heights). Pieces of one line left apart by the spaces in it: a piece whose reading ends in + − · × ÷ < > ≤ ≥ ≠ ±
@@ -8915,8 +9009,10 @@ class Pad {
     // the ink is still that ink)
     const pass = this._pass = { mark: this._inkMark(ink), keys: [] };
     let bad = 0;                                          // strokes in groups that could not be read
-    // a group is the same array from round to round while nothing joined it: its key and its part are kept with it
-    const keys = new Map(), made = new Map();
+    // a group is the same array from round to round while nothing joined it: its key and its part are kept with it;
+    // and what this pass has read stays read for the pass (got), whatever this.parts has let go of since: it keeps
+    // 300 readings, and a page of more pieces would read them again every round
+    const keys = new Map(), made = new Map(), got = new Map();
     const read = function* (groups) {
       const out = [];
       for (const g of groups) {
@@ -8924,8 +9020,8 @@ class Pad {
         const was = made.get(g), st = was ? was.strokes : g.map(i => ink[i]);
         let key = keys.get(g);
         if (key === undefined) { key = self._partKey(st, ro); keys.set(g, key); }
-        let res = self.parts.get(key), part = null;
-        if (!res && self._badParts.has(key)) { res = padEmptyReading(); bad += st.length; }
+        let res = self.parts.get(key) || got.get(key), part = null, unread = false;
+        if (!res && self._badParts.has(key)) { res = padEmptyReading(); bad += st.length; unread = true; }
         else if (!res) {
           let gone = false;
           try {
@@ -8944,7 +9040,7 @@ class Pad {
             yield;
           }
         }
-        if (!part) part = was && was.result === res ? was : { idx: g, strokes: st, result: res };
+        if (!part) { part = was && was.result === res ? was : { idx: g, strokes: st, result: res }; if (!unread) got.set(key, res); }
         made.set(g, part); out.push(part);
       }
       return out;
@@ -8952,8 +9048,13 @@ class Pad {
     let parts = yield* read(clustersOf(ink));
     if (!parts) return null;
     // a piece that ends in an operator, or begins with one, continues the writing beside it: "2 ·  22 +  2 =" written
-    // with spaces (as a prompt shows it) is one expression, not three; read again as one (at most a few rounds)
-    for (let round = 0; round < 8; round++) {
+    // with spaces (as a prompt shows it) is one expression, not three; read again as one. joinOperands makes one join
+    // each time it is asked, and a join makes one piece of two: as many rounds as there are pieces is every join
+    // there can be (until 1.7.1 it was eight rounds: a page got eight joins, and the ninth pair that belonged
+    // together stayed two pieces). On a page of more than 310 pieces the rounds are fewer (JOIN_WORK), never under
+    // eight: each looks at every pair of pieces, and a page of thousands may not take minutes.
+    const rounds = Math.max(8, Math.min(parts.length, Math.floor(JOIN_WORK / (parts.length * parts.length))));
+    for (let round = 0; round < rounds; round++) {
       const joined = joinOperands(parts);
       if (!joined) break;
       const was = bad;
@@ -8962,6 +9063,7 @@ class Pad {
       if (!next) return null;
       if (bad > was) { bad = was; break; }                 // joined to writing that cannot be read: kept apart
       parts = next;
+      yield;                                               // (a round whose joined piece was read before has no step of its own)
     }
     return stale() ? null : joinParts(parts);
   }
@@ -9666,7 +9768,7 @@ Recognizer.prototype.recognizeAsync = function (strokes, options) {
 };
 
 const Nib = {
-  version: '1.7.0',
+  version: '1.7.1',
   recognize(strokes, options) { return defaultRecognizer().recognize(strokes, options); },
   recognizeAsync(strokes, options) { return defaultRecognizer().recognizeAsync(strokes, options); },
   classify(strokes, options) { return defaultRecognizer().classify(strokes, options); },

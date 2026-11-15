@@ -31,8 +31,8 @@ point at is in the repository now:
 
 ## How a plan here is meant to be used
 
-Before the pool: `docs/reviews/found-2026-11-15.md`, two faults found while it was prepared. They are not the
-pool's, and the plan says why the first should be fixed before the pool is built.
+Before the pool: `docs/reviews/found-2026-11-15.md`, two faults found while it was prepared, fixed first as Nib
+1.7.1 (Croix, 15 November 2026: "Go ahead in that order").
 
 A plan says what is decided and what is still open, and names the commands that judge the result. The rule the last
 two releases were held to, and the pool will be: **a change to how fast Nib reads may not change what it reads**, and

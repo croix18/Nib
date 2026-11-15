@@ -1,6 +1,6 @@
 // The comparison tools in tools/verify (they compare this engine with another one, so they are not a suite) still
 // work, and the 1.6.7 references they compare against are intact:
-//   1. every reference file (tools/verify/gold-1.6.7, gzipped) is what its SHA256 line says
+//   1. every reference file (tools/verify/gold-*, gzipped) is what its SHA256 line says
 //   2. readall.js reads a slice of two corpora with the engine in dist/ and cmp.js finds them the same as 1.6.7's
 //      readings (matched by each expression's place in its corpus); a reading doctored on purpose is found
 //   3. cmpsess.js: a recorded session against itself differs nowhere; a doctored reading is found; a confidence
@@ -16,18 +16,19 @@ const run = (file, args, env) => spawnSync(process.execPath, [path.join(V, file)
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nib-verify-'));
 
 // ------------------------------------------------------------------ 1. the references
-{
-  const lines = fs.readFileSync(path.join(GOLD, 'SHA256'), 'utf8').trim().split('\n');
+for (const gold of fs.readdirSync(V).filter(d => /^gold-/.test(d)).sort()) {
+  const G = path.join(V, gold), lines = fs.readFileSync(path.join(G, 'SHA256'), 'utf8').trim().split('\n');
   let bad = 0, rows = 0;
   for (const l of lines) {
     const [sum, name, n] = l.split(/\s+/);
-    const raw = zlib.gunzipSync(fs.readFileSync(path.join(GOLD, name + '.gz')));
+    const raw = zlib.gunzipSync(fs.readFileSync(path.join(G, name + '.gz')));
     if (crypto.createHash('sha256').update(raw).digest('hex') !== sum || raw.toString('utf8').trim().split('\n').length !== +n) bad++;
     rows += +n;
   }
-  const have = ['readings', 'sessions'].reduce((k, d) => k + fs.readdirSync(path.join(GOLD, d)).length, 0);
-  ok(bad === 0 && lines.length === have, `the 1.6.7 references: ${lines.length} files, ${rows} lines, each what its SHA256 line says (${bad} wrong, ${have} files there)`);
+  const have = ['readings', 'sessions'].reduce((k, d) => k + (fs.existsSync(path.join(G, d)) ? fs.readdirSync(path.join(G, d)).length : 0), 0);
+  ok(bad === 0 && lines.length === have, `the reference ${gold}: ${lines.length} files, ${rows} lines, each what its SHA256 line says (${bad} wrong, ${have} files there)`);
 }
+ok(fs.existsSync(path.join(GOLD, 'SHA256')), 'the 1.6.7 reference is there');
 
 // ------------------------------------------------------------------ 2. readall.js and cmp.js
 {
