@@ -6784,11 +6784,13 @@ function clustersOf(strokes) {
   const boxes = strokes.map(sbox), ref = refSize(strokes);
   const up = Array.from({ length: n }, (_, i) => i);
   const find = i => { while (up[i] !== i) { up[i] = up[up[i]]; i = up[i]; } return i; };
-  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+  // (a group's root is its lowest index whatever the order the pairs come in, so the groups do not depend on it)
+  const link = (i, j) => {
     const a = boxes[i], b = boxes[j];
     const gx = Math.max(0, b[0] - a[2], a[0] - b[2]), gy = Math.max(0, b[1] - a[3], a[1] - b[3]);
     if ((gx <= 1.5 * ref && gy <= 0.6 * ref) || (gx <= 0.3 * ref && gy <= 1.6 * ref)) { const ri = find(i), rj = find(j); if (ri !== rj) up[Math.max(ri, rj)] = Math.min(ri, rj); }
-  }
+  };
+  if (!clusterNear(boxes, ref, link)) for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) link(i, j);
   const groups = new Map();
   for (let i = 0; i < n; i++) { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); }
   const list = [...groups.values()].map(g => { let b = boxes[g[0]]; for (const i of g) b = ubox(b, boxes[i]); return { g, b }; });
@@ -6802,6 +6804,43 @@ function clustersOf(strokes) {
   }
   return [].concat(...rows.map(r => r.items.sort((p, q) => p.b[0] - q.b[0]).map(it => it.g)));
 }
+// The pairs of strokes clustersOf has to look at, found through a grid instead of every stroke against every other
+// (a full page is a thousand strokes: half a million pairs, at every read). Two strokes can only belong together
+// when their boxes come within 1.5 ref across and 1.6 ref up or down, so a stroke is tried against the earlier ones
+// in the cells its box reaches when grown by that much (and a little more than rounding could ever cost); a stroke
+// across many cells is tried against all. link(i, j) is called for every pair that can belong together, and decides.
+// false: not worth it, or not safe (few strokes, a box that is not finite) — the caller tries every pair.
+function clusterNear(boxes, ref, link) {
+  const n = boxes.length;
+  if (n < 64) return false;
+  let X0 = Infinity, Y0 = Infinity, X1 = -Infinity, Y1 = -Infinity, far = 0;
+  for (const b of boxes) {
+    if (!(isFinite(b[0]) && isFinite(b[1]) && isFinite(b[2]) && isFinite(b[3]))) return false;
+    if (b[0] < X0) X0 = b[0]; if (b[1] < Y0) Y0 = b[1]; if (b[2] > X1) X1 = b[2]; if (b[3] > Y1) Y1 = b[3];
+  }
+  far = Math.max(Math.abs(X0), Math.abs(Y0), Math.abs(X1), Math.abs(Y1));
+  const slack = 1e-9 * (far + 1), rx = 1.5 * ref + slack, ry = 1.6 * ref + slack;
+  // cells of 4 ref, or larger: a board is at most 2048 cells across and down, and a cell is never finer than the
+  // slack (writing a millionth of a unit tall a billion units from the origin: its reach is then all slack, and
+  // finer cells would be millions to look through for every stroke)
+  const G = Math.max(4 * ref, 4 * slack, (X1 - X0) / 2048, (Y1 - Y0) / 2048);
+  if (!(G > 0 && isFinite(G) && isFinite(rx) && isFinite(ry))) return false;
+  const cx = x => Math.floor((x - X0) / G), cy = y => Math.floor((y - Y0) / G);
+  const W = cy(Y1 + ry) - cy(Y0 - ry) + 3, y0 = cy(Y0 - ry) - 1;   // a cell's key: its column times W plus its row, counted from y0
+  const cells = new Map(), big = [], seen = new Int32Array(n).fill(-1);
+  for (let i = 0; i < n; i++) {
+    const b = boxes[i], ax0 = cx(b[0]), ax1 = cx(b[2]), ay0 = cy(b[1]), ay1 = cy(b[3]);
+    if ((ax1 - ax0 + 1) * (ay1 - ay0 + 1) > 48) { for (let j = 0; j < i; j++) link(j, i); big.push(i); continue; }
+    for (const j of big) link(j, i);
+    const qx0 = cx(b[0] - rx), qx1 = cx(b[2] + rx), qy0 = cy(b[1] - ry), qy1 = cy(b[3] + ry);
+    for (let x = qx0; x <= qx1; x++) for (let y = qy0; y <= qy1; y++) {
+      const list = cells.get(x * W + (y - y0));
+      if (list) for (const j of list) if (seen[j] !== i) { seen[j] = i; link(j, i); }
+    }
+    for (let x = ax0; x <= ax1; x++) for (let y = ay0; y <= ay1; y++) { const k = x * W + (y - y0), list = cells.get(k); if (list) list.push(i); else cells.set(k, [i]); }
+  }
+  return true;
+}
 // Pieces of writing that belong together but were left apart by the spaces between them. A line of working that only
 // asks ("x =", "y <") under a piece is joined to that piece (an equation, or two of them), however far the writer
 // dropped it (within 2.5 line heights). Pieces of one line left apart by the spaces in it: a piece whose reading ends in + − · × ÷ < > ≤ ≥ ≠ ±
@@ -6811,14 +6850,23 @@ function clustersOf(strokes) {
 // null when there is nothing to join.
 const ASKS = /^\s*[a-zA-Z]\s*(?:=|<|>|\\(?:le|ge|ne|leq|geq|neq)(?![a-zA-Z]))\s*$/;
 const OP_END = /(?:\\(?:cdot|times|div|le|ge|ne|pm|leq|geq|neq)|[+\-<>·×÷])\s*$/, OP_START = /^\s*(?:\\(?:cdot|times|div|le|ge|ne|pm|leq|geq|neq)(?![a-zA-Z])|[+<>=·×÷])/;
+// what joinOperands needs of a part: its box and how its reading begins and ends. Kept with the part (a board's read
+// asks again each round, for every part, and a part does not change once it is made: _partsSteps), and worked out
+// again should a caller have given the same object another reading or other strokes.
+const JOIN_DESC = new WeakMap();
+function joinDesc(p) {
+  let d = JOIN_DESC.get(p);
+  if (d && d.result === p.result && d.strokes === p.strokes && d.count === p.strokes.length) return d;
+  const r = p.result, lines = r && r.lines ? r.lines : [];
+  const last = lines.length ? lines[lines.length - 1].latex : '', first = lines.length ? lines[0].latex : '';
+  d = { box: p.strokes.map(sbox).reduce(ubox), n: Math.max(lines.length, 1), ends: lines.length === 1 && OP_END.test(last), begins: lines.length === 1 && OP_START.test(first) && !/^\s*-/.test(first),
+    asks: lines.length === 1 && ASKS.test(first), result: p.result, strokes: p.strokes, count: p.strokes.length };
+  if (p && typeof p === 'object') JOIN_DESC.set(p, d);
+  return d;
+}
 function joinOperands(parts) {
   if (parts.length < 2) return null;
-  const P = parts.map(p => {
-    const r = p.result, lines = r && r.lines ? r.lines : [];
-    const last = lines.length ? lines[lines.length - 1].latex : '', first = lines.length ? lines[0].latex : '';
-    return { box: p.strokes.map(sbox).reduce(ubox), n: Math.max(lines.length, 1), ends: lines.length === 1 && OP_END.test(last), begins: lines.length === 1 && OP_START.test(first) && !/^\s*-/.test(first),
-      asks: lines.length === 1 && ASKS.test(first) };
-  });
+  const P = parts.map(joinDesc);
   const h = b => Math.max(b[3] - b[1], 1), order = P.map((_, i) => i).sort((a, b) => P[a].box[0] - P[b].box[0]);
   // "x =" (a letter and a relation, nothing after) under a piece of writing asks about it: joined to the nearest piece
   // above it (within 2.5 line heights, overlapping it or within a height to the side), however the two were spaced
@@ -7014,7 +7062,7 @@ class Pad {
     this.pending = [];              // brief touch strokes waiting 1.5 s to see whether the pen follows (a hand brushing the board)
     this.why = '';                  // what the last pointerdown did (for a diagnostic overlay)
     this.revealed = new Set();      // answers shown by a tap on their chip (keys: the line's strokes and the answer)
-    this.timer = null; this.gen = 0; this._raf = 0;
+    this.timer = null; this.gen = 0; this._raf = 0; this._due = false; this._liveGen = 0;
     this.plan = null; this.anim = null; this.sid = new WeakMap(); this.nsid = 1;
     this.parts = new Map(); this.recs = new WeakMap(); this.optsVersion = 0;
     // what went wrong (the optional intelligence never breaks writing, erasing, undo or saving): the last 20 failures
@@ -7086,6 +7134,7 @@ class Pad {
     const ink = this.ink;
     if (reread && !ink.length && this.result) { this._emit(null); return; }   // reading turned off, or nothing left to read
     if (ink.length && this.o.auto && (reread || (this.resultStrokes || []).length !== ink.length)) this._schedule(0);
+    else this._resume();                                  // (a read a touch had put off: started again, or no longer due)
   }
   // symbols="…" that names no symbol set would stop every read: the school set instead, said once
   _symbolsOK() {
@@ -7231,10 +7280,23 @@ class Pad {
   _up(e) {
     if (e.pointerType === 'pen') { this.penUntil = performance.now() + 1000; this.penSeen = performance.now(); }
     this.touches.delete(e.pointerId);
-    if (this.gesture && this._gestureUp(e)) return;
+    if (this.gesture && this._gestureUp(e)) { this._resume(); return; }
     const P = this.ptrs.get(e.pointerId);
     if (P) this._finish(P, e);
+    this._resume();
   }
+  // A read put off by a touch (a pointer going down stops the read in progress) that then wrote nothing — a tap, the
+  // laser, a selection, an eraser that met nothing, two fingers that moved the board — is due all the same: it starts
+  // again once every pointer is up. (Until 1.7.0 it waited for the next change to the page: a board touched while it
+  // was being read after a reload stayed unread, with no answers, until something was written.)
+  _resume() {
+    if (!this._due || this._liveGen === this.gen || this.ptrs.size || this.gesture) return;
+    if (this.o.auto && this.ink.length) this._schedule(this.o.delay);
+    else this._due = false;                               // reading was turned off meanwhile, or the pad no longer reads by itself
+  }
+  // a reading is due: a read is waiting for the pen to rest, under way, or put off by a touch (false once the reading
+  // of the page as it is has been announced)
+  get busy() { return !!this._due; }
   // ---------------------------------------------------------------- panning and zooming
   // A drag that moves the board: the hand tool, a mouse's middle button or space + drag, or a finger when fingers move
   // the board. Two fingers put down together (within 0.3 s and a hand's width of each other) pan and zoom; the first
@@ -8945,22 +9007,35 @@ class Pad {
     this.redraw();
     if (this.o.onChange) this.o.onChange(this);
     this.el.dispatchEvent(new CustomEvent('nib:change', { detail: this, bubbles: true }));
-    if (!this.ink.length) { clearTimeout(this.timer); this.gen++; if (this.result || this.plan) this._emit(null); return; }  // nothing left to read
+    if (!this.ink.length) { clearTimeout(this.timer); this.gen++; this._due = false; if (this.result || this.plan) this._emit(null); return; }  // nothing left to read
     if (this.o.auto) this._schedule(this.o.delay);
   }
   // Read the ink without freezing the page: classify the new stroke groups a few milliseconds at a time,
   // then run the (cheap) final pass. New ink cancels a read in progress.
+  // A board's read is one run of steps (_partsSteps) from the first group to the reading itself: every group, and
+  // every group joined to another, is warmed and read inside the slices, so nothing is left to classify at the end
+  // (until 1.7.0 the groups joined by joinOperands were read cold in the final pass, with the page held).
   _schedule(ms) {
     clearTimeout(this.timer);
     const gen = ++this.gen;
+    this._due = true; this._liveGen = gen;
     this.timer = setTimeout(() => {
-      const it = this._warm(this._ropts()), start = performance.now();
+      const board = !!this.o.separate, it = board ? this._partsSteps(this._ropts()) : this._warm(this._ropts()), start = performance.now();
+      let last = null, failed = false;
       const step = () => {
         if (gen !== this.gen) return;
         const t0 = performance.now();
-        // (a failure in the warm-up is said by _warm; one outside a piece of writing ends it: the read itself copes)
-        const next = () => { try { return it.next().done; } catch (err) { this._fault('read', err); return true; } };
-        while (performance.now() - t0 < 14) if (next()) { this.recognize(start); return; }
+        // (a failure in the warm-up is said by _warm, one in a group of a board by its own read; one outside a piece
+        // of writing ends the steps: the read itself copes)
+        const next = () => { try { last = it.next(); return last.done; } catch (err) { failed = true; this._fault('read', err); return true; } };
+        while (performance.now() - t0 < 14) if (next()) {
+          // the reading the steps came to is the page's when the ink is still the ink they began from; ink changed
+          // under them (a second pointer still down: _inkMark) is read as it is now, at once, as the last pass
+          // always was — without what these steps kept, which may be of ink half moved
+          if (board && !failed && this.ink.length && !this._inkChanged(this._pass && this._pass.mark)) { clearTimeout(this.timer); this.gen++; this._announce(last.value, start); }
+          else { if (board && this._pass) for (const k of this._pass.keys) this.parts.delete(k); this.recognize(start); }
+          return;
+        }
         this.timer = setTimeout(step, 0);
       };
       step();
@@ -8969,6 +9044,7 @@ class Pad {
   // The reading is kept and announced whatever happens after it: a view, the answers or the training log that fails
   // leaves the ink as written (and is said once, _fault)
   _emit(res) {
+    this._due = false;
     this.result = res;
     this.resultStrokes = res ? this.ink : [];
     this._replan(true);
@@ -8994,6 +9070,10 @@ class Pad {
         }
       }
     } catch (err) { res = null; this._fault('read', err); }
+    return this._announce(res, start);
+  }
+  // a reading that is done: announced (start: when a read spread over slices began)
+  _announce(res, start) {
     if (!res) res = padEmptyReading();
     if (typeof start === 'number') res.ms = Math.round(performance.now() - start); // the whole read, not just its last pass
     this._emit(res);
@@ -9012,12 +9092,7 @@ class Pad {
       catch (err) { this._badWhole = key; this._fault('read', err); }
       return;
     }
-    for (const g of clustersOf(ink)) {
-      const st = g.map(i => ink[i]);
-      if (this._partCached(st, ro)) continue;
-      try { yield* this._recFor(st[0]).warmup(st, Object.assign({}, ro, { fix: this._fixFor(st) })); }
-      catch (err) { this._partBad(this._partKey(st, ro), err); }
-    }
+    yield* this._partsSteps(ro);                          // a board: its read, in steps (what it reads is kept)
   }
   // the corrections that apply to these strokes, as indices into them
   _fixFor(st) {
@@ -9026,22 +9101,70 @@ class Pad {
   // A board: each group of writing is read on its own (and kept while it does not change), then put together.
   // A group whose reading fails (an engine bug on some odd ink) reads as nothing and stays ink; the rest are read.
   _readParts(ro) {
-    const ink = this.ink;
+    const it = this._partsSteps(ro);
+    let r = it.next();
+    while (!r.done) r = it.next();
+    return r.value;
+  }
+  // The read of a board as steps — one classification, or one group read, at a time — so that a caller can spread it
+  // over frames (_schedule) or run it at once (_readParts); the last step returns the reading. A group not read yet
+  // is warmed first (Recognizer.warmup: the classifier work, a step each), then read from what the warm-up kept; so
+  // are the groups joinOperands puts together. What is read is the same either way, and the same as reading each
+  // group cold: the warm-up only fills the recognizer's cache with what the read asks for.
+  // A reading is of one set of options and one memory: when either changes while the steps are spread out (options
+  // set on a pad that does not read by itself, a correction made on another pad of the page), the pass under way ends
+  // without keeping anything more and the steps begin again, with the options as they are now.
+  *_partsSteps(ro) {
+    for (;;) {
+      const res = yield* this._partsPass(ro);
+      if (res) return res;
+      ro = this._ropts();
+    }
+  }
+  // one pass: the reading, or null when the options or the memory changed under it
+  *_partsPass(ro) {
+    const ink = this.ink, self = this, ov = this.optsVersion, mv = MEM.version;
+    const stale = () => self.optsVersion !== ov || MEM.version !== mv;
+    // the ink this pass reads, and what it keeps (for a read spread over slices: _schedule looks, when it ends, whether
+    // the ink is still that ink)
+    const pass = this._pass = { mark: this._inkMark(ink), keys: [] };
     let bad = 0;                                          // strokes in groups that could not be read
-    const read = groups => groups.map(g => {
-      const st = g.map(i => ink[i]);
-      const key = this._partKey(st, ro);
-      let res = this.parts.get(key);
-      if (!res && this._badParts.has(key)) { res = padEmptyReading(); bad += st.length; }
-      else if (!res) {
-        try { res = this._recFor(st[0]).recognize(st, Object.assign({}, ro, { fix: this._fixFor(st) })); if (!padReadingOK(res)) throw new Error('Nib: the reading came back malformed'); }
-        catch (err) { this._partBad(key, err); bad += st.length; return { idx: g, strokes: st, result: padEmptyReading() }; }
-        if (this.parts.size > 300) this.parts.clear();
-        this.parts.set(key, res);
+    // a group is the same array from round to round while nothing joined it: its key and its part are kept with it
+    const keys = new Map(), made = new Map();
+    const read = function* (groups) {
+      const out = [];
+      for (const g of groups) {
+        if (stale()) return null;
+        const was = made.get(g), st = was ? was.strokes : g.map(i => ink[i]);
+        let key = keys.get(g);
+        if (key === undefined) { key = self._partKey(st, ro); keys.set(g, key); }
+        let res = self.parts.get(key), part = null;
+        if (!res && self._badParts.has(key)) { res = padEmptyReading(); bad += st.length; }
+        else if (!res) {
+          let gone = false;
+          try {
+            const rec = self._recFor(st[0]);
+            yield* rec.warmup(st, Object.assign({}, ro, { fix: self._fixFor(st) }));
+            if (stale()) gone = true;                      // (nothing is read, or kept, with options that are no longer the pad's)
+            else {
+              res = rec.recognize(st, Object.assign({}, ro, { fix: self._fixFor(st) }));
+              if (!padReadingOK(res)) throw new Error('Nib: the reading came back malformed');
+            }
+          } catch (err) { self._partBad(key, err); bad += st.length; res = null; part = { idx: g, strokes: st, result: padEmptyReading() }; }
+          if (gone) return null;
+          if (res) {
+            if (self.parts.size > 300) self.parts.clear();
+            self.parts.set(key, res); pass.keys.push(key);
+            yield;
+          }
+        }
+        if (!part) part = was && was.result === res ? was : { idx: g, strokes: st, result: res };
+        made.set(g, part); out.push(part);
       }
-      return { idx: g, strokes: st, result: res };
-    });
-    let parts = read(clustersOf(ink));
+      return out;
+    };
+    let parts = yield* read(clustersOf(ink));
+    if (!parts) return null;
     // a piece that ends in an operator, or begins with one, continues the writing beside it: "2 ·  22 +  2 =" written
     // with spaces (as a prompt shows it) is one expression, not three; read again as one (at most a few rounds)
     for (let round = 0; round < 8; round++) {
@@ -9049,11 +9172,31 @@ class Pad {
       if (!joined) break;
       const was = bad;
       bad = 0;
-      const next = read(joined);
+      const next = yield* read(joined);
+      if (!next) return null;
       if (bad > was) { bad = was; break; }                 // joined to writing that cannot be read: kept apart
       parts = next;
     }
-    return joinParts(parts);
+    return stale() ? null : joinParts(parts);
+  }
+  // The ink as a read found it when it began: the strokes, and each one's length and two ends. Ink can change under a
+  // read spread over slices without the read being told: a second pointer still down that rubs strokes out, drags a
+  // selection (its points move in place) or is taken back as a palm. _inkChanged: is the ink no longer that ink?
+  _inkMark(ink) {
+    const m = new Float64Array(ink.length * 5);
+    for (let i = 0; i < ink.length; i++) {
+      const s = ink[i], a = s[0] || [], b = s[s.length - 1] || [];
+      m[i * 5] = s.length; m[i * 5 + 1] = a[0]; m[i * 5 + 2] = a[1]; m[i * 5 + 3] = b[0]; m[i * 5 + 4] = b[1];
+    }
+    return { ink, m };
+  }
+  _inkChanged(mark) {
+    const ink = this.ink;
+    if (!mark || ink.length !== mark.ink.length) return true;
+    for (let i = 0; i < ink.length; i++) if (ink[i] !== mark.ink[i]) return true;
+    const m = this._inkMark(ink).m;
+    for (let i = 0; i < m.length; i++) if (!Object.is(m[i], mark.m[i])) return true;   // (a stroke with no point marks as NaN: the same both times)
+    return false;
   }
   _partBad(key, err) {
     if (this._badParts.size > 300) this._badParts.clear();
@@ -9064,7 +9207,6 @@ class Pad {
     const fx = this.fixes.filter(f => f.strokes.every(x => st.includes(x))).map(f => f.strokes.map(x => this._sid(x)).join('.') + '=' + f.label).join(';');
     return st.map(x => this._sid(x)).join(',') + '|' + fx + '|' + this.optsVersion + '|' + MEM.version;
   }
-  _partCached(st, ro) { const k = this._partKey(st, ro); return this.parts.has(k) || this._badParts.has(k); }
   _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
   // re-label one recognized symbol (from result.symbols[i].candidates) and re-run
   // the reading's LaTeX with the answers written in after their "="
@@ -9564,7 +9706,7 @@ class Pad {
     for (const p of this._trainParts()) this._trainSkip.add(this._trainKey(p.strokes));
   }
   destroy() {
-    clearTimeout(this.timer); clearTimeout(this._trainTimer); clearTimeout(this._camTimer); this.gen++; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
+    clearTimeout(this.timer); clearTimeout(this._trainTimer); clearTimeout(this._camTimer); this.gen++; this._due = false; this.anim = null; this.ptrs.clear(); for (const q of this.pending) clearTimeout(q.timer); this.pending = [];
     if (this.editing) { this.editing.ta.remove(); this.editing = null; }
     if (this._raf) cancelAnimationFrame(this._raf);
     if (this._laserRaf) cancelAnimationFrame(this._laserRaf);
@@ -9646,6 +9788,7 @@ if (typeof customElements !== 'undefined' && typeof HTMLElement !== 'undefined' 
     }
     attributeChangedCallback() { if (this.pad) this.pad.setOptions(this._opts()); }
     get result() { return this.pad ? this.pad.result : null; }
+    get busy() { return !!(this.pad && this.pad.busy); }   // a reading is due (waiting for the pen to rest, under way, or put off by a touch)
     get latex() { return this.pad && this.pad.result ? this.pad.result.latex : ''; }
     get text() { return this.pad && this.pad.result ? this.pad.result.text : ''; }
     get strokes() { return this.pad ? this.pad.getStrokes() : []; }

@@ -13,11 +13,11 @@
 const fs = require('fs'), path = require('path'), { spawn } = require('child_process');
 
 const NODE = ['check', 'solve_check', 'neat_check', 'shapes_check', 'scribble_check', 'store_check', 'pdf_check', 'replicator_check',
-  'font_check', 'font_check.py', 'hardening_check', 'kern_check', 'readings_check'];
+  'font_check', 'font_check.py', 'hardening_check', 'kern_check', 'readings_check', 'reading_check'];
 // replicator_browser opens the fonts font_check writes, so font_check runs first when they are not there
 const BROWSER = ['browser', 'pad_browser', 'views_browser', 'fringe_browser', 'embed_browser', 'looks_browser', 'canvas_browser',
   'paper_browser', 'shapes_browser', 'store_browser', 'scribble_browser', 'board_browser', 'board_canvas_browser', 'replicator_browser',
-  'hardening_browser', 'kern_browser'];
+  'hardening_browser', 'kern_browser', 'reading_browser'];
 
 // a line a suite prints when it leaves something out
 const SKIP_LINE = /^\s*\((?:skipped\b|no\s)[^]*\)\s*$|^\s*\([^()]*;\s*skipped\)\s*$/;

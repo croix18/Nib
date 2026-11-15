@@ -46,7 +46,7 @@ const written = (tex, x, y, h) => {
     }, seed, before === 'gone');
     await page.goto('file://' + file, { waitUntil: 'load' });
     await page.waitForFunction(() => { const p = document.getElementById('pad'); return p && p.pad && p.pad.result && p.pad.result.parts && p.pad.strokes.length && p.pad.strokes.length === p.pad.resultStrokes.length; }, { timeout: 120000 });
-    const r = await page.evaluate(() => ({ kernel: Nib.kernel, wasm: typeof WebAssembly, parts: document.getElementById('pad').pad.result.parts.map(p => p.result.latex).sort() }));
+    const r = await page.evaluate(() => ({ kernel: Nib.kernel, wasm: typeof WebAssembly, parts: document.getElementById('pad').pad.result.parts.map(p => p.result.latex).sort(), line: (document.getElementById('engineline') || {}).textContent || '' }));
     await page.close();
     return Object.assign(r, { errors, infos });
   };
@@ -56,6 +56,7 @@ const written = (tex, x, y, h) => {
   ok(k.kernel === 'simd', `Nib.kernel is ${k.kernel}`);
   ok(k.parts.length === 2 && k.parts.map(flat).join(' ') === '3x+4=19 6+7=', `it reads ${JSON.stringify(k.parts)}`);
   ok(!k.infos.some(t => /JavaScript/.test(t)) && !k.errors.length, 'nothing said, no page error' + (k.errors.length ? ': ' + k.errors.join(' | ') : ''));
+  ok(k.line === 'Nib ' + Nib.version + ' · the fast reader is on', `Settings says so at its foot: ${JSON.stringify(k.line)}`);
 
   console.log('where WebAssembly cannot run');
   for (const [name, file, before] of [['a Content-Security-Policy without wasm-unsafe-eval', csp], ['WebAssembly deleted before the engine loads', BOARD, 'gone']]) {
@@ -64,6 +65,7 @@ const written = (tex, x, y, h) => {
     ok(JSON.stringify(j.parts) === JSON.stringify(k.parts), `the same reading on the JS path: ${JSON.stringify(j.parts)}`);
     const said = j.infos.filter(t => /^Nib: the classifier runs in JavaScript/.test(t));
     ok(said.length === 1 && !j.errors.length, `said once (${JSON.stringify(said[0] || '')}), no page error` + (j.errors.length ? ': ' + j.errors.join(' | ') : ''));
+    ok(/cannot run the fast reader/.test(j.line), `and Settings: ${JSON.stringify(j.line)}`);
   }
 
   await browser.close();

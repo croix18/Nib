@@ -1770,6 +1770,9 @@
     // a drill under way when the page was closed comes back where it was
     if (D && D.active && !S.train) { D.active = false; saveDrill(); }
     drillLine(); drillShow();
+    // which classifier this browser runs (Nib.kernel, 1.7.0), at the foot of Settings: on a panel there is no console
+    // to ask. The fast one is WebAssembly; a browser that cannot run it reads the same, about 16 times slower.
+    try { $('engineline').textContent = 'Nib ' + Nib.version + ' · ' + (Nib.kernel === 'simd' ? 'the fast reader is on' : 'this browser cannot run the fast reader: reading is slower'); } catch (e) { /* an engine without it */ }
     if (newer) note('This board was saved by a newer Nib Board: it is shown as far as this one can, and nothing here is saved. Open the newer Board.', null, null, true);
     else setTimeout(tidyImages, 4000);
   });

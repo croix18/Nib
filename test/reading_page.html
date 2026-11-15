@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nib reading test page</title>
+<style>html, body { margin: 0; height: 100%; } nib-pad { display: block; width: 1400px; height: 900px; }</style>
+</head>
+<body>
+<script src="../dist/nib.js"></script>
+<script>
+  // a board pad with these attributes, in place of the one before it
+  window.makePad = attrs => {
+    const old = document.getElementById('pad'); if (old) old.remove();
+    const el = document.createElement('nib-pad'); el.id = 'pad';
+    for (const k of Object.keys(attrs || {})) el.setAttribute(k, attrs[k]);
+    document.body.appendChild(el);
+    return el;
+  };
+</script>
+</body>
+</html>
