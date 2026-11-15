@@ -13,21 +13,25 @@
 //   rules     the same over http under a Content-Security-Policy: the site's rule for the Nib pages, the same with
 //             workers forbidden, a rule without WebAssembly, a rule without blob: — does the pool start, and how does
 //             it show when it cannot
-//   node tools/pool/proto.js [expressions = 120] [start,identity,read,rules = all of them]
+//   inline    the files that carry the engine inside their own HTML (dist/Board.html, dist/Replicator.html,
+//             dist/Nib.html, and Deckhand's when DECKHAND=path/to/Deckhand.html is given), from file://: a copy with
+//             the wrapper named starts a worker from the source the page itself holds, and the worker agrees
+//   node tools/pool/proto.js [expressions = 120] [start,identity,read,rules,inline = all of them]
 // Timings: run it alone, on a machine doing nothing else. Exit 1 when something that must hold does not.
 'use strict';
 const REPO = require('path').join(__dirname, '..', '..'), T = require(REPO + '/test/data');   // the repository, and where its tests find packages and Chrome
 const fs = require('fs'), path = require('path'), os = require('os'), http = require('http');
 const puppeteer = require(T.npm('puppeteer-core'));
 const EXPRS = +(process.argv[2] || 120);
-const WHAT = (process.argv[3] || 'start,identity,read,rules').split(',');
+const WHAT = (process.argv[3] || 'start,identity,read,rules,inline').split(',');
 const rows = fs.readFileSync(REPO + '/test/school_synth.jsonl', 'utf8').trim().split('\n').map(JSON.parse).map(r => ({ strokes: r.strokes }));
 
 // the engine with its wrapper named, and a way to its source: the one change build.py will make
 const SRC = fs.readFileSync(REPO + '/dist/nib.js', 'utf8'), HEAD = "(function (global) {\n'use strict';\n";
 if (SRC.split(HEAD).length !== 2) { console.log('dist/nib.js does not begin as build.py writes it'); process.exit(1); }
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nibpool-'));
-fs.writeFileSync(path.join(dir, 'nib-probe.js'), SRC.replace(HEAD, "(function NibEngine(global) {\n'use strict';\nglobal.__nibSource = function () { return NibEngine.toString(); };\n"));
+const NAMED = "(function NibEngine(global) {\n'use strict';\nglobal.__nibSource = function () { return NibEngine.toString(); };\n";
+fs.writeFileSync(path.join(dir, 'nib-probe.js'), SRC.replace(HEAD, NAMED));
 fs.copyFileSync(path.join(__dirname, 'lib.js'), path.join(dir, 'lib.js'));
 fs.writeFileSync(path.join(dir, 'page.js'), '(' + pageMain.toString() + ')();\n');
 const html = (rule, attrs) => `<!doctype html><meta charset="utf-8">${rule ? `<meta http-equiv="Content-Security-Policy" content="${rule}">` : ''}
@@ -331,6 +335,35 @@ const wait = t => new Promise(r => setTimeout(r, t));
       await page.close();
     }
     server.close();
+  }
+
+  if (WHAT.includes('inline')) {
+    console.log('\n— inline: the files that carry the engine in their own HTML, from file://');
+    const files = ['Board.html', 'Replicator.html', 'Nib.html'].map(f => path.join(REPO, 'dist', f)).concat(process.env.DECKHAND ? [path.resolve(process.env.DECKHAND)] : []);
+    const lib = fs.readFileSync(path.join(__dirname, 'lib.js'), 'utf8');
+    for (let i = 0; i < files.length; i++) {
+      const text = fs.readFileSync(files[i], 'utf8'), name = path.basename(files[i]);
+      if (text.split(HEAD).length !== 2) { say(false, `${name}: the engine's wrapper is not in it once`); continue; }
+      const copy = path.join(dir, `inline${i}.html`); fs.writeFileSync(copy, text.replace(HEAD, NAMED));
+      const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 800 });
+      const errors = []; page.on('pageerror', e => errors.push(e.message));
+      await page.goto('file://' + copy, { waitUntil: 'load' }); await wait(1200);
+      await page.addScriptTag({ content: lib });
+      const r = await page.evaluate(async rows => {
+        const L = NibPoolProto(Nib), I = Nib._internals;
+        // the groups of a few school problems, as a recognizer's warm-up would ask for them
+        const jobs = []; for (const row of rows) jobs.push(...L.needs(new Nib.Recognizer(), row.strokes, {}));
+        const src = window.__nibSource(), pool = L.makePool(1, L.workerSource(src));
+        try {
+          const st = await pool.start(), got = await pool.run(jobs);
+          let diff = 0; jobs.forEach((j, k) => { if (!L.same(I.classifyGroup(j.g, j.ref), got[k])) diff++; });
+          pool.stop();
+          return { ok: true, nib: Nib.version, main: Nib.kernel, worker: st[0].kernel, startMs: st[0].startMs, jobs: jobs.length, diff, chars: src.length };
+        } catch (e) { return { ok: false, why: e.message }; }
+      }, rows.slice(0, 12));
+      say(r.ok && r.diff === 0 && r.worker === r.main && errors.length === 0, `${name}${process.env.DECKHAND && i === files.length - 1 ? ' (Deckhand)' : ''}: ` + (r.ok ? `Nib ${r.nib}; a worker from the source in the page (${r.chars} characters) is ready in ${ms(r.startMs)}, on ${r.worker}; ${r.jobs} groups, ${r.diff} differ` : 'no worker: ' + r.why) + (errors.length ? ' | page error: ' + errors[0] : ''));
+      await page.close();
+    }
   }
 
   await browser.close();

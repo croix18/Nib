@@ -129,13 +129,15 @@ must give the reference's readings step for step, and that is the check.
 
 ## What the prototype showed
 
-`node tools/pool/proto.js` (four parts; it exits 1 when something that must hold does not) and
+`node tools/pool/proto.js` (five parts; it exits 1 when something that must hold does not) and
 `node tools/pool/exact.js`.
 
 **It starts.** A worker made from the engine's own source through a Blob URL starts from a `file://` page with no
 flags. The engine loads there as it is (no `document`, no custom element, nothing thrown), on the kernel.
 `Function.toString()` gives the wrapper function exactly as the file has it (1.43 MB) in a tenth of a millisecond.
-Two workers are ready 90 ms after they are asked for (50 ms each once the page has made one before).
+Two workers are ready 90 ms after they are asked for (50 ms each once the page has made one before). The same holds
+where the engine sits inside a page's own HTML — the Board, the Replicator, the demo page, and Deckhand's file: a
+worker from the source the page itself holds starts in 55 to 60 ms and agrees with the page bit for bit.
 
 **It takes nearly all of the work.** Of a cold read's classifications, the warm-up's first loop — the pool's share —
 is 99.2% for an expression alone (10,414 of 10,494 over the school problems) and 94 to 96% on a board:
@@ -216,7 +218,8 @@ In this order; each step can be checked alone, and the build is not to go on whi
 5. The Board's line, `Nib.workers` in the README beside `Nib.kernel`, a part on the pool in `docs/HANDOFF.md`,
    version 1.8.0.
 6. The checks below, then the release as 1.7.0 went: Windmill's kit (`nib/`), Deckhand (a public deploy), the site
-   (`tools/sync.py`; its rule already allows the pool).
+   (`tools/sync.py`; its rule for the Nib pages already allows the pool, and its own check, `tools/test_site.mjs`
+   section I, should then also insist that a Nib page keeps `blob:`).
 7. `tools/pool/` is deleted: its checks are the suites' by then.
 
 ## The checks before it is released

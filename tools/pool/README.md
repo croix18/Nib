@@ -8,7 +8,7 @@ here. When the pool is built these checks become the suites' and this folder is 
 | --- | --- |
 | `lib.js` | the pool's parts, done from outside the engine: `needs(rec, strokes, options)` — the groups a recognizer's warm-up would classify first, without classifying them (the engine's own first loop, reached through its `oracle` option and a shadowed `probs`); `fill` — a classification put in the cache where `probs` would put it; the text a worker is started from (the engine's source, then a message handler); a small pool that runs jobs in chunks of 8 over `n` workers. Loads in node and in a page |
 | `exact.js` | node: over the school problems, a recognizer whose cache was filled ahead from classifications made apart (through a structured clone both ways, as a worker's are) reads exactly what a cold one and a warmed one read — every field, every cache key, every bit — and how much of the work `needs()` lists. `node tools/pool/exact.js [every n-th] [options JSON]`, `KERNEL=js` for the JavaScript path |
-| `proto.js` | Chrome, in four parts: **start** (a worker from the engine's own source through a Blob URL, from `file://` with no flags; how long, how much memory), **identity** (a full page's groups classified in workers and on the page's thread, on either path: the same bits), **read** (a board read as today, at once, and after a prefetch by 1 and 2 workers: the same reading and cache bits, what the pool takes, the times), **rules** (the same under a Content-Security-Policy over http). `node tools/pool/proto.js [expressions = 120] [start,identity,read,rules]` |
+| `proto.js` | Chrome, in five parts: **start** (a worker from the engine's own source through a Blob URL, from `file://` with no flags; how long, how much memory), **identity** (a full page's groups classified in workers and on the page's thread, on either path: the same bits), **read** (a board read as today, at once, and after a prefetch by 1 and 2 workers: the same reading and cache bits, what the pool takes, the times), **rules** (the same under a Content-Security-Policy over http), **inline** (the files that carry the engine inside their own HTML — the pages in `dist/`, and Deckhand's with `DECKHAND=path/to/Deckhand.html`: a worker from the source the page itself holds). `node tools/pool/proto.js [expressions = 120] [start,identity,read,rules,inline]` |
 
 `proto.js` makes one change to a copy of the engine, in a temporary folder: the wrapper function gets a name, and a
 way to read its own source (what `build.py` will do). `dist/nib.js` is not touched.
@@ -61,6 +61,12 @@ ok   the site's rule for the two Nib pages: a worker started, on simd; 168 group
 ok   that rule with workers forbidden (worker-src 'none'): no worker — worker error event, known after 13.3 ms
 ok   the site's rule for its other pages (no WebAssembly): this thread on js; a worker started, on js; 0 differ
 ok   a rule without blob:: no worker — worker error event, known after 16.0 ms
+
+— inline: the files that carry the engine in their own HTML, from file://
+ok   Board.html: Nib 1.7.0; a worker from the source in the page is ready in 60.8 ms, on simd; 172 groups, 0 differ
+ok   Replicator.html: … 54.7 ms, on simd; 172 groups, 0 differ
+ok   Nib.html: … 53.8 ms, on simd; 172 groups, 0 differ
+ok   Deckhand.html (Deckhand): … 53.8 ms, on simd; 172 groups, 0 differ
 ```
 
 (lines shortened). With 20 and 60 expressions: `docs/plans/worker-pool.md`, "What the prototype showed".
