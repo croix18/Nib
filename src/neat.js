@@ -39,12 +39,14 @@ function median2(a) { const b = a.slice().sort((x, y) => x - y); const n = b.len
 function pathLen(s) { let t = 0; for (let i = 1; i < s.length; i++) t += Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]); return t; }
 
 // the strokes exactly as recognize() saw them, index for index ([] where a stroke had no usable point)
+// (the same rule as normStrokes: anything that is not an array of strokes is none, a point is two coordinates, coordOf)
 function inkOf(input) {
-  return (input || []).map(s => {
-    const pts = Array.isArray(s) ? s : (s && (s.points || s.pts)) || [];
+  return (Array.isArray(input) ? input : []).map(s => {
+    const pts = Array.isArray(s) ? s : s && typeof s === 'object' ? (Array.isArray(s.points) ? s.points : Array.isArray(s.pts) ? s.pts : []) : [];
     const q = [];
     for (const p of pts) {
-      const x = Array.isArray(p) ? +p[0] : p ? +p.x : NaN, y = Array.isArray(p) ? +p[1] : p ? +p.y : NaN;
+      const arr = Array.isArray(p), obj = !arr && !!p && typeof p === 'object';
+      const x = arr ? coordOf(p[0]) : obj ? coordOf(p.x) : NaN, y = arr ? coordOf(p[1]) : obj ? coordOf(p.y) : NaN;
       if (isFinite(x) && isFinite(y)) q.push([x, y]);
     }
     return q;
@@ -717,6 +719,9 @@ const HAND_CHAR = { '\\times': '×', '\\div': '÷', '\\pm': '±', '\\ne': '≠',
   '\\infty': '∞', '\\sqrt': '√', '\\circ': '°', '\\{': '{', '\\}': '}', '\\prime': "'", '\\cdot': '.', '\\rightarrow': '→' };
 const HAND_KEY = 'nib-hand-v1';
 const HAND = { glyphs: null, name: '', loaded: false };
+// A glyph is drawn in a unit box (0..1 across and down, a descender a little below): a point more than HAND_SLACK boxes
+// outside it is no part of a letter, and is left out (a glyph of 1e308 drew NaN strokes in the hand view).
+const HAND_SLACK = 10;
 function handClean(g) {
   const out = {};
   if (!g || typeof g !== 'object' || Array.isArray(g)) return out;
@@ -725,7 +730,8 @@ function handClean(g) {
     const st = [];
     for (const s of Array.isArray(g[ch]) ? g[ch] : []) {
       if (!Array.isArray(s)) continue;
-      const q = s.filter(p => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1]) && p[0] !== null && p[1] !== null).map(p => [+p[0], +p[1]]);
+      const near = v => v >= -HAND_SLACK && v <= 1 + HAND_SLACK;
+      const q = s.filter(Array.isArray).map(p => [coordOf(p[0]), coordOf(p[1])]).filter(p => near(p[0]) && near(p[1]));
       if (q.length) st.push(q);
     }
     if (st.length) out[ch] = st;

@@ -5,10 +5,11 @@ function defaultRecognizer() { if (!DEFAULT_R) DEFAULT_R = new Recognizer(); ret
 Recognizer.prototype.classify = function (strokes, options) {
   const { strokes: s } = normStrokes(strokes);
   if (!s.length) return [];
-  const opts = Object.assign({}, DEFAULTS, options || {});
-  const ref = opts.ref || refSize(s), mask = allowedMask(opts.symbols, opts.times), M = model();
+  const opts = optsOf(options);
+  const ref = opts.ref > 0 && opts.ref < Infinity ? opts.ref : refSize(s), mask = allowedMask(opts.symbols, opts.times), M = model();
   const p = foldTimes(this.probs(s, ref, 'c' + Math.random()), opts.times === false);
   let tot = 0; for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) tot += p[c];
+  if (!(tot > 0 && tot < Infinity)) return [];                      // nothing it can say (never NaN probabilities)
   const list = [];
   for (let c = 0; c < p.length; c++) if (mask[c] && c !== M.junk) list.push([M.cls[c], p[c] / tot]);
   return list.sort((a, b) => b[1] - a[1]).slice(0, opts.top || 6);

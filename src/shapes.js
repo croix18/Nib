@@ -61,6 +61,7 @@ function shapeSnap(p, spacing) {
 // 4°, z: zoom (optional: scales the tap threshold and default sizes to the screen), opt: numberline / plane options
 // over the defaults }. Returns { shape, pts, opt } (opt only for numberline and plane).
 function shapeFromDrag(kind, a, b, o) {
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return null;   // not points
   o = o || {};
   const g = o.snap > 0 ? +o.snap : 0, z = o.z > 0 ? +o.z : 1;
   const shape = kind === 'square' ? 'rect' : kind === 'circle' ? 'ellipse' : kind;

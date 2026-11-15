@@ -1601,7 +1601,7 @@
       $('openask').hidden = false;
       if ($('exportpop').hidden) { exportMarks(); openPop('exportpop'); }
       placePop($('exportpop'), popAnchor);
-    });
+    }, () => note('That file could not be read.'));         // gone, moved, or not allowed to be read
   }
   $('openadd').onclick = () => putBoard('add');
   $('openreplace').onclick = () => putBoard('replace');

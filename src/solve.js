@@ -1080,7 +1080,7 @@ const tokLetters = (toks, out) => {
 function solveRows(rows, options, above) {
   const env = new Map(), kinds = [];
   const eqs = (above || []).map(e => Object.assign({}, e, { src: 1 }));
-  const out = (rows || []).map((row, line) => {
+  const out = (Array.isArray(rows) ? rows : []).map((row, line) => {
     kinds[line] = null;
     let toks = null;
     try {
@@ -1132,12 +1132,15 @@ function solveRows(rows, options, above) {
       eqs.push(rec);
       return null;
     } catch (e) {
-      if (!(e instanceof SolveError || e instanceof RangeError)) throw e;
+      // a row that is not a reading's (a malformed tree from outside: a null in it, a tree inside itself) is no answer
+      if (!(e instanceof SolveError || e instanceof RangeError)) return null;
       // a line with a relation and letters that cannot be worked out stands between an "x =" and the lines above it
       if (kinds[line] !== 'ask') {
-        const vs = toks ? tokLetters(toks, new Set()) : rowLetters(row, new Set());
-        const hasRel = toks ? toks.some(t => t.t === 'rel') : (row || []).some(u => u.k === 's' && SOLVE_REL.has(u.label));
-        if (vs.size && hasRel) eqs.push({ block: true, vars: vs, line, src: 0 });
+        try {
+          const vs = toks ? tokLetters(toks, new Set()) : rowLetters(row, new Set());
+          const hasRel = toks ? toks.some(t => t.t === 'rel') : (row || []).some(u => u.k === 's' && SOLVE_REL.has(u.label));
+          if (vs.size && hasRel) eqs.push({ block: true, vars: vs, line, src: 0 });
+        } catch (e2) { /* a row that cannot even be looked at */ }
       }
       return null;
     }

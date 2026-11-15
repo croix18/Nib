@@ -7,13 +7,30 @@ const CIRCLES = new Set(['o', '0', 'O']);
 const DOTTED = new Set(['i', 'j', '\\div', '!', '\\ldots', ':', ';', '?']);
 const DEFAULTS = { symbols: 'school', lines: true, degrees: true, wJunk: 2.0, wClass: 1.0, wJoin: 0.2, beta: 0.5, lm: 0.35, size: 0, maxGap: 1.6, prune: 0.03, barH: 1.1, barW: 0.15, prior: 0.5, dotPen: 3, parenPen: 3, parenH: 1.0, lmSeg: 0, delayed: true, delayGain: 0.3, lateTol: 0.08, deskew: 3, skewW: 2.5, skewAgree: 0.5, smooth: 0 };
 
+// The options over the defaults. A number option given as no number (NaN, Infinity, undefined, an object, a word) is
+// its default: one NaN weight leaves every score of the segmentation NaN. null and true / false are kept (prior: null
+// turns the prior off, as 0 does).
+function optsOf(options) {
+  const o = Object.assign({}, DEFAULTS, options || {});
+  for (const k of Object.keys(DEFAULTS)) {
+    if (typeof DEFAULTS[k] !== 'number') continue;
+    const v = o[k];
+    const ok = typeof v === 'number' ? isFinite(v) : v === null || typeof v === 'boolean' || (typeof v === 'string' && v.trim() !== '' && isFinite(+v));
+    if (!ok) o[k] = DEFAULTS[k];
+  }
+  return o;
+}
+// Strokes as given: an array of strokes, each an array of [x, y] or {x, y} points or a {points} / {pts} object. Anything
+// else reads as nothing, and a point that is not two coordinates (coordOf) is left out — bad and odd input never throws.
 function normStrokes(input) {
   const out = [], src = [];
-  (input || []).forEach((s, i) => {
-    const pts = Array.isArray(s) ? s : (s && (s.points || s.pts)) || [];
+  if (!Array.isArray(input)) return { strokes: out, src };
+  input.forEach((s, i) => {
+    const pts = Array.isArray(s) ? s : s && typeof s === 'object' ? (Array.isArray(s.points) ? s.points : Array.isArray(s.pts) ? s.pts : []) : [];
     const q = [];
     for (const p of pts) {
-      const x = Array.isArray(p) ? +p[0] : +p.x, y = Array.isArray(p) ? +p[1] : +p.y;
+      const arr = Array.isArray(p), obj = !arr && !!p && typeof p === 'object';
+      const x = arr ? coordOf(p[0]) : obj ? coordOf(p.x) : NaN, y = arr ? coordOf(p[1]) : obj ? coordOf(p.y) : NaN;
       if (!isFinite(x) || !isFinite(y)) continue;
       if (q.length && q[q.length - 1][0] === x && q[q.length - 1][1] === y) continue;
       q.push([x, y]);
@@ -177,7 +194,7 @@ class Recognizer {
 
   recognize(input, options) {
     const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
-    const opts = Object.assign({}, DEFAULTS, options || {});
+    const opts = optsOf(options);
     const { strokes, src, ids } = this.prepare(input, opts);
     const empty = { latex: '', text: '', lines: [], symbols: [], tree: [], confidence: 0 };
     if (!strokes.length) return Object.assign(empty, { skew: 0, ms: 0 });
@@ -224,7 +241,7 @@ class Recognizer {
   // First the segmentation's groups (newest ink first), then the reading is rehearsed against the cache to find the
   // rest — a stroke added later to an earlier symbol is scored together with it — until a rehearsal needs nothing new.
   *warmup(input, options) {
-    const opts = Object.assign({}, DEFAULTS, options || {});
+    const opts = optsOf(options);
     const { strokes, src, ids } = this.prepare(input, opts);
     if (!strokes.length) return;
     const ref = refSize(strokes), cref = this.classRef(ref, ids), n = strokes.length, boxes = strokes.map(sbox);
@@ -410,7 +427,8 @@ class Recognizer {
         for (const [L, q] of labels) {
           const ls = forced ? 0 : opts.wClass * Math.log(Math.max(q, 1e-6));
           for (const [pl, st] of states[i]) {
-            const v = st.s + base + ls + (opts.lmSeg > 0 ? opts.lmSeg * lmLogp(lmTok(pl), lmTok(L)) : 0);
+            let v = st.s + base + ls + (opts.lmSeg > 0 ? opts.lmSeg * lmLogp(lmTok(pl), lmTok(L)) : 0);
+            if (Number.isNaN(v)) v = -Infinity;            // a score that is no number (NaN) is the worst score, never no path
             const cur = states[j + 1].get(L);
             if (!cur || v > cur.s) states[j + 1].set(L, { s: v, pos: i, lab: pl, c });
           }
@@ -421,7 +439,7 @@ class Recognizer {
     let endLab = null, endS = -Infinity;
     for (const [L, st] of states[n]) {
       const v = st.s + (opts.lmSeg > 0 ? opts.lmSeg * lmLogp(lmTok(L), '</s>') : 0);
-      if (v > endS) { endS = v; endLab = L; }
+      if (v > endS || endLab === null) { endS = v; endLab = L; }       // (the first end state when every score is -Infinity)
     }
     const syms = [];
     for (let j = n, L = endLab; j > 0;) {
@@ -503,7 +521,8 @@ function withPrior(p, f) {
   let before = 0, after = 0;
   const q = new Float64Array(p.length);
   for (let c = 0; c < p.length; c++) { if (c === junk) { q[c] = p[c]; continue; } q[c] = p[c] * f[c]; before += p[c]; after += q[c]; }
-  const k = after > 0 ? before / after : 1;
+  if (!(after > 0 && after < Infinity && before < Infinity)) return p;    // a prior so strong it says nothing a number can hold
+  const k = before / after;
   for (let c = 0; c < p.length; c++) if (c !== junk) q[c] *= k;
   q.hidden = p.hidden;
   return q;

@@ -54,7 +54,10 @@ function pdfJpegSize(bytes) {
 // where a picture of iw × ih px goes to fill a pw × ph pt page without distortion, centered inside a margin (pt):
 // [x, y, w, h] in pt from the page's top-left
 function pdfFit(iw, ih, pw, ph, margin) {
-  const mg = Math.max(0, +margin || 0), aw = Math.max(1e-3, pw - 2 * mg), ah = Math.max(1e-3, ph - 2 * mg);
+  // a size that is no positive number (0, NaN, a word) is none: the place is still finite
+  const n = v => { const x = typeof v === 'number' || typeof v === 'string' ? +v : NaN; return x > 0 && x < Infinity ? x : 0; };
+  iw = n(iw) || 1; ih = n(ih) || 1; pw = n(pw); ph = n(ph);
+  const mg = n(margin), aw = Math.max(1e-3, pw - 2 * mg), ah = Math.max(1e-3, ph - 2 * mg);
   const k = Math.min(aw / iw, ah / ih), w = iw * k, h = ih * k;
   return [(pw - w) / 2, (ph - h) / 2, w, h];
 }

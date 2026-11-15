@@ -221,8 +221,9 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
     const glyphs = {}, samples = {};
     const S = d.samples && typeof d.samples === 'object' && !Array.isArray(d.samples) ? d.samples : {};
     for (const sec of R.SECTIONS) for (const ch of sec.chars) {
-      const st = R.cleanStrokes(d.glyphs[ch]); if (st.length) glyphs[ch] = st;
-      const list = (Array.isArray(S[ch]) ? S[ch] : []).map(R.cleanStrokes).filter(x => x.length).slice(-MAX_SAMPLES);
+      // (held to the box and BOX_SLACK around it, as a box's strokes are when they are drawn: R.boxStrokes)
+      const st = R.boxStrokes(d.glyphs[ch]); if (st.length) glyphs[ch] = st;
+      const list = (Array.isArray(S[ch]) ? S[ch] : []).map(R.boxStrokes).filter(x => x.length).slice(-MAX_SAMPLES);
       if (list.length) samples[ch] = list;
     }
     state.glyphs = glyphs; state.samples = samples;
@@ -397,7 +398,10 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   }
   function attach(b) {
     let cur = null, gone = null, last = null;
-    const at = e => { const r = b.canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
+    // (the pointer stays captured when the pen slides off the box: what it draws is kept to the box and BOX_SLACK of a
+    // box around it, as saved work is — a letter dragged across the screen once made the font take minutes to build)
+    const lim = v => Math.max(-R.BOX_SLACK, Math.min(1 + R.BOX_SLACK, v));
+    const at = e => { const r = b.canvas.getBoundingClientRect(); return [lim((e.clientX - r.left) / r.width), lim((e.clientY - r.top) / r.height)]; };
     const rubAt = p => {
       const st = state.glyphs[b.ch] || [], hit = rubbed(st, last || p, p, 0.07);
       last = p;
@@ -504,7 +508,9 @@ input[type="range"] { width: 150px; accent-color: var(--gold); }
   }
   {
     const c = $('strip').querySelector('canvas');
-    const at = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) / strip.rowH, (e.clientY - r.top - 4) / strip.rowH]; };
+    // (kept to the strip and BOX_SLACK of a line around it, as a box's strokes are)
+    const lim = (v, hi) => Math.max(-R.BOX_SLACK, Math.min(hi + R.BOX_SLACK, v));
+    const at = e => { const r = c.getBoundingClientRect(); return [lim((e.clientX - r.left) / strip.rowH, r.width / strip.rowH), lim((e.clientY - r.top - 4) / strip.rowH, r.height / strip.rowH)]; };
     let gone = null, last = null;
     const rubAt = p => {
       const hit = rubbed(strip.strokes, last || p, p, 0.09);

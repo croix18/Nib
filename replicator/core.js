@@ -36,12 +36,28 @@ function cleanStrokes(raw) {
   }
   return out;
 }
+// How far outside its box a glyph's strokes are kept: a box each way (box space is held to -1 .. 2). Every glyph
+// written inside its box is inside it (the box takes in the descenders and the tallest strokes), ink a little past the
+// edge stays as it was (test/font_check.js's "ink far outside the box" reaches 0.7 of a box out), and a pen that slides
+// off a box while it writes is kept to it. Without it a letter dragged across the screen held coordinates 10 to 25
+// boxes out, and tracing it took seconds to minutes (or ran out of memory) at every change and every load.
+const BOX_SLACK = 1;
+const boxClip = v => (v < -BOX_SLACK ? -BOX_SLACK : v > 1 + BOX_SLACK ? 1 + BOX_SLACK : v);
+// a glyph's strokes (box space) as cleanStrokes keeps them, held to the box and BOX_SLACK around it
+function boxStrokes(raw) { return cleanStrokes(raw).map(s => s.map(p => [boxClip(p[0]), boxClip(p[1])])); }
 // box strokes ([[x, y], ...] in 0..1) -> font units
 function toUnits(stroke) { return stroke.map(p => [p[0] * BOX.w, BOX.top - p[1] * BOX.h]); }
 
-// even out the pen's sampling: a point every `spacing` font units along the stroke
+// even out the pen's sampling: a point every `spacing` font units along the stroke (never more than RESAMPLE_MAX points:
+// a longer stroke is sampled more sparsely, so the work is bounded whatever comes in; the longest stroke
+// test/font_check.js draws, a 6,000-point scribble, takes 52,000)
+const RESAMPLE_MAX = 100000;
 function resample(stroke, spacing) {
-  if (stroke.length < 3) return stroke.map(p => p.slice());
+  if (stroke.length < 3 || !(spacing > 0)) return stroke.map(p => p.slice());
+  let L = 0;
+  for (let i = 1; i < stroke.length; i++) L += Math.hypot(stroke[i][0] - stroke[i - 1][0], stroke[i][1] - stroke[i - 1][1]);
+  if (!isFinite(L)) return stroke.map(p => p.slice());
+  if (L / spacing > RESAMPLE_MAX) spacing = L / RESAMPLE_MAX;
   const out = [stroke[0].slice()];
   let acc = 0;
   for (let i = 1; i < stroke.length; i++) {
@@ -127,10 +143,11 @@ function cornersOf(pts, m) {
 }
 // Gaussian smoothing (sigma in points) with both ends held: the path is mirrored through each end, so a straight run
 // stays straight up to its end and the end point does not move
+// (the window reaches at most 4,096 points each way: a smoothing far past any the page uses still ends)
 function gaussPath(pts, s) {
   const n = pts.length;
   if (n < 3 || !(s > 0)) return pts.map(p => p.slice());
-  const r = Math.ceil(3 * s), w = [];
+  const r = Math.min(Math.ceil(3 * s), 4096), w = [];
   let tot = 0;
   for (let k = -r; k <= r; k++) { const v = Math.exp(-k * k / (2 * s * s)); w.push(v); tot += v; }
   const at = i => {
@@ -151,12 +168,16 @@ function gaussPath(pts, s) {
 // ------------------------------------------------------------------ ink: strokes -> coverage raster
 // Each pixel's coverage is how far it lies inside the pen's reach of the nearest stroke segment
 // (1 inside, 0 outside, a one-pixel ramp at the edge), so the 0.5 contour is exactly the pen outline.
+// A raster past RASTER_MAX cells (about 3,000 px a side; a glyph held to its box needs under a million) is refused:
+// null.
+const RASTER_MAX = 1e7;
 function rasterize(strokes, weight, unit) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of strokes) for (const p of s) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
   const r = weight / 2, pad = r + 3 * unit;
   x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
   const W = Math.ceil((x1 - x0) / unit) + 2, H = Math.ceil((y1 - y0) / unit) + 2;
+  if (!(W > 0 && H > 0 && W * H <= RASTER_MAX)) return null;
   const a = new Float32Array(W * H);
   const rp = r / unit, lim = rp + 0.5, lim2 = lim * lim;
   for (const s of strokes) {
@@ -290,10 +311,11 @@ function fitToGuides(S, ch) {
 function outline(strokes, o) {
   const opts = Object.assign({ weight: 80, smoothing: 5 }, o || {});
   const unit = opts.unit || Math.max(3, opts.weight / 27);           // finer raster for thin pens
-  let S = cleanStrokes(strokes).map(s => smooth(toUnits(s), 6, opts.smoothing));
+  let S = boxStrokes(strokes).map(s => smooth(toUnits(s), 6, opts.smoothing));
   if (!S.length) return null;
   if (opts.even && opts.ch) S = fitToGuides(S, opts.ch) || S;
   const R = rasterize(S, opts.weight, unit);
+  if (!R) return null;
   const loops = trace(R)
     .map(l => simplify(l, 0.35))
     .filter(l => l.length >= 3 && Math.abs(area(l)) > 2)
@@ -488,11 +510,11 @@ function cachedOutline(ch, st, opts) {
 function* warm(glyphs, o) {
   const opts = Object.assign({}, FONT_DEFAULTS, o || {});
   for (const sec of SECTIONS) for (const ch of sec.chars) {
-    const st = cleanStrokes(glyphs && glyphs[ch]);
+    const st = boxStrokes(glyphs && glyphs[ch]);
     if (!st.length) continue;
     const key = JSON.stringify([st, opts.weight, opts.smoothing, fits(ch, opts)]), ol = opts.cache && opts.cache.get(ch);
     if (ol && ol.key === key) continue;
-    cachedOutline(ch, st, opts);
+    try { cachedOutline(ch, st, opts); } catch (e) { /* left out: buildFont says it is missing */ }
     yield ch;
   }
 }
@@ -507,8 +529,9 @@ function buildFont(glyphs, o) {
   const built = [], missing = [];
   let yMax = GUIDE.cap, yMin = GUIDE.desc;
   for (const sec of SECTIONS) for (const ch of sec.chars) {
-    const st = cleanStrokes(glyphs && glyphs[ch]);
-    const g = st.length ? cachedOutline(ch, st, opts) : null;
+    const st = boxStrokes(glyphs && glyphs[ch]);
+    let g = null;
+    try { g = st.length ? cachedOutline(ch, st, opts) : null; } catch (e) { g = null; }   // a glyph it cannot trace is left out
     if (!g) { missing.push(ch); continue; }
     const dy = fits(ch, opts) ? 0 : tidyShift(ch, g.bbox, opts), dx = opts.spacing - g.bbox[0];
     const contours = g.contours.map(l => toContour(l, dx, dy)).filter(Boolean);
@@ -776,6 +799,6 @@ function averageGlyph(samples, o) {
   return toBox(acc.map(s => s.map(p => [p[0] / keep.length, p[1] / keep.length])));
 }
 
-const Replicator = { UPM, BOX, GUIDE, GUIDE_FRAC, SECTIONS, ALTS, DESCENDERS, FIT, LU, cleanStrokes, smooth, dehook, rasterize, trace, simplify, outline, toContour, writeTTF, warm, buildFont, tidyShift, fitToGuides, toLine, toBox, cloud, cloudDist, alignSentence, averageGlyph };
+const Replicator = { UPM, BOX, BOX_SLACK, GUIDE, GUIDE_FRAC, SECTIONS, ALTS, DESCENDERS, FIT, LU, cleanStrokes, boxStrokes, smooth, dehook, rasterize, trace, simplify, outline, toContour, writeTTF, warm, buildFont, tidyShift, fitToGuides, toLine, toBox, cloud, cloudDist, alignSentence, averageGlyph };
 if (typeof module !== 'undefined' && module.exports) module.exports = Replicator;
 if (typeof window !== 'undefined') window.Replicator = Replicator;

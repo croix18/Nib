@@ -163,7 +163,7 @@ const PAD_COLORS = {
   '@hl-blue': ['#7cc8ff', '#7cc8ff'], '@hl-orange': ['#ffb347', '#ffb347'],
 };
 function padColor(c, dark, ink) {
-  if (!c || c === '@ink') return ink;
+  if (!c || typeof c !== 'string' || c === '@ink') return ink;          // a color that is not a string is the ink's
   const k = PAD_COLORS[c];
   return k ? (k[dark ? 1 : 0] || ink) : c;
 }
@@ -192,6 +192,25 @@ function padLum(color) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 const PAD_ZMIN = 0.1, PAD_ZMAX = 8;
+// The camera's x and y are held within ±PAD_CAM_MAX (world units) wherever it is set or moved (a saved camera of 1e308
+// opened the board in empty space, where what was written could not be read or saved): 1e9 less a million units, more
+// than any screen shows at the smallest zoom, so everything in view, and everything written there, is inside
+// COORD_MAX (1e9), the farthest a coordinate can come in from outside and be kept.
+const PAD_CAM_MAX = COORD_MAX - 1e6;
+function padCamXY(v) { v = +v; return isFinite(v) ? Math.max(-PAD_CAM_MAX, Math.min(PAD_CAM_MAX, v)) : 0; }
+// What a reading that failed reads as: nothing (the ink stays, as written)
+function padEmptyReading() { return { latex: '', text: '', lines: [], symbols: [], tree: [], confidence: 0, skew: 0, ms: 0 }; }
+// A reading has the shape the pad uses (an engine bug must not reach the views, the answers and the training log)
+function padReadingOK(r) { return !!r && typeof r === 'object' && typeof r.latex === 'string' && Array.isArray(r.lines) && Array.isArray(r.symbols) && Array.isArray(r.tree); }
+// what each kind of failure is said as (Pad._fault)
+const PAD_FAULTS = {
+  read: 'a piece of writing could not be read; it is left as ink',
+  plan: 'the view could not be laid out; the ink is shown as written',
+  answers: 'the answers could not be worked out',
+  paint: 'something on the board could not be drawn; the rest is drawn',
+  scribble: 'the pen lift could not be checked for a scribble or a shape; the stroke is kept as ink',
+  train: 'the training log could not be kept',
+};
 // Does this browser's canvas blur (ctx.filter)? Without it a hidden answer is smeared instead: never drawn sharp.
 let PAD_BLUR = null;
 let PAD_BLUR_EM = 0.12;      // how far out of focus a hidden answer is: its blur, as a share of the writing's em
@@ -270,6 +289,11 @@ class Pad {
     this.timer = null; this.gen = 0; this._raf = 0;
     this.plan = null; this.anim = null; this.sid = new WeakMap(); this.nsid = 1;
     this.parts = new Map(); this.recs = new WeakMap(); this.optsVersion = 0;
+    // what went wrong (the optional intelligence never breaks writing, erasing, undo or saving): the last 20 failures
+    // ({where, message, time}), each distinct one said once (_fault); and the readings that failed, by their part key
+    // (a piece of writing that cannot be read is not tried again until its strokes, corrections, options or memory change)
+    this.faults = []; this._faultSaid = new Set(); this._badParts = new Set(); this._badWhole = null;
+    this._symbolsOK();
     this._handChanged = () => { if (this.o.view === 'hand' || this.o.solve) this._replan(true); };
     this.answers = [];
     this.info = new WeakMap();      // stroke -> {type, width}: the pointer that wrote it
@@ -321,6 +345,7 @@ class Pad {
     const before = this.o.view, hb = this.o.hand, sb = !!this.o.solve, rb = !!this.o.reveal, rk = this._readKey(), tb = !!this.o.train;
     const pageB = JSON.stringify(this.o.page);
     Object.assign(this.o, o || {});
+    this._symbolsOK();
     if (this.o.page) this.o.infinite = true;
     if (JSON.stringify(this.o.page) !== pageB && this.o.page && this._pageCam()) this._camMoved(true);
     if (!!this.o.train !== tb) { if (this.o.train) this._trainSee(); else { clearTimeout(this._trainTimer); this._trainTimer = null; this._seen.clear(); } }
@@ -334,6 +359,32 @@ class Pad {
     if (reread && !ink.length && this.result) { this._emit(null); return; }   // reading turned off, or nothing left to read
     if (ink.length && this.o.auto && (reread || (this.resultStrokes || []).length !== ink.length)) this._schedule(0);
   }
+  // symbols="…" that names no symbol set would stop every read: the school set instead, said once
+  _symbolsOK() {
+    if (typeof symbolSpec !== 'function' || symbolSpec(this.o.symbols) !== undefined) return;
+    const was = typeof this.o.symbols === 'string' ? this.o.symbols : typeof this.o.symbols;
+    this.o.symbols = 'school';
+    if (this._symbolsSaid === was) return;
+    this._symbolsSaid = was;
+    try { console.warn('Nib: unknown symbol set ' + was + '; reading with the school set'); } catch (e) { /* no console */ }
+  }
+  // Something optional failed (reading, the views, the answers, drawing, scribble or shape detection at pen lift, the
+  // training log): kept in this.faults (the last 20), said once with console.warn and as a nib:fault event {where,
+  // error}; the same failure again is not said again. Never throws.
+  _fault(where, error) {
+    let message = '';
+    try { message = String(error && error.message !== undefined ? error.message : error); } catch (e) { message = '?'; }
+    const key = where + '|' + message;
+    if (this._faultSaid.has(key)) return;
+    if (this._faultSaid.size > 200) this._faultSaid.clear();
+    this._faultSaid.add(key);
+    this.faults.push({ where, message, time: Date.now() });
+    if (this.faults.length > 20) this.faults.splice(0, this.faults.length - 20);
+    try { console.warn('Nib: ' + (PAD_FAULTS[where] || where), error); } catch (e) { /* no console */ }
+    try { this.el.dispatchEvent(new CustomEvent('nib:fault', { detail: { where, error }, bubbles: true })); } catch (e) { /* no events */ }
+  }
+  // f(), and a failure in it said as a fault of that kind (true when it ran through)
+  _safe(where, f) { try { f(); return true; } catch (err) { this._fault(where, err); return false; } }
   _readKey() {
     const skip = new Set(['view', 'motion', 'hand', 'ink', 'width', 'boxes', 'penOnly', 'delay', 'settle', 'auto', 'solve', 'reveal', 'fit', 'train', 'onResult', 'onChange',
       'infinite', 'paper', 'fingers', 'pinch', 'pressure', 'eraser', 'snap', 'hold', 'page', 'layer', 'palm', 'single', 'scribble']);
@@ -521,10 +572,10 @@ class Pad {
       if (G.kind === 'pinch' && pts.length > 1) z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, c0.z * Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) / G.d0));
       // the world point that was under the fingers' middle stays under it
       const wx = c0.x + G.mid0[0] / c0.z, wy = c0.y + G.mid0[1] / c0.z;
-      this.cam = { x: wx - mid[0] / z, y: wy - mid[1] / z, z };
+      this.cam = { x: padCamXY(wx - mid[0] / z), y: padCamXY(wy - mid[1] / z), z };
     } else {
       const sp = this._spt(e);
-      this.cam = { x: G.cam0.x - (sp[0] - G.s0[0]) / G.cam0.z, y: G.cam0.y - (sp[1] - G.s0[1]) / G.cam0.z, z: G.cam0.z };
+      this.cam = { x: padCamXY(G.cam0.x - (sp[0] - G.s0[0]) / G.cam0.z), y: padCamXY(G.cam0.y - (sp[1] - G.s0[1]) / G.cam0.z), z: G.cam0.z };
     }
     this._camMoved();
     return true;
@@ -554,11 +605,11 @@ class Pad {
   setCamera(c) {
     if (!c || this.o.page) return;
     const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, +c.z || 1));
-    this.cam = { x: isFinite(+c.x) ? +c.x : 0, y: isFinite(+c.y) ? +c.y : 0, z };
+    this.cam = { x: padCamXY(c.x), y: padCamXY(c.y), z };
     this._camMoved(true);
   }
   getCamera() { return Object.assign({}, this.cam); }
-  panBy(dx, dy) { if (!this.o.infinite || this.o.page) return; this.cam = { x: this.cam.x - dx / this.cam.z, y: this.cam.y - dy / this.cam.z, z: this.cam.z }; this._camMoved(); }
+  panBy(dx, dy) { if (!this.o.infinite || this.o.page) return; this.cam = { x: padCamXY(this.cam.x - dx / this.cam.z), y: padCamXY(this.cam.y - dy / this.cam.z), z: this.cam.z }; this._camMoved(); }
   // zoom by f about a point on screen (default: the middle), keeping what is under it where it is
   zoomAt(f, sx, sy) {
     if (!this.o.infinite || this.o.page) return;
@@ -567,7 +618,7 @@ class Pad {
     const z0 = this.cam.z, z1 = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, z0 * f));
     if (z1 === z0) return;
     const wx = this.cam.x + sx / z0, wy = this.cam.y + sy / z0;
-    this.cam = { x: wx - sx / z1, y: wy - sy / z1, z: z1 };
+    this.cam = { x: padCamXY(wx - sx / z1), y: padCamXY(wy - sy / z1), z: z1 };
     this._camMoved();
   }
   zoomTo(z) { this.zoomAt(z / this.cam.z); }
@@ -598,7 +649,7 @@ class Pad {
     const m = 8 / w.z, rw = Math.min(w.r[2] - w.r[0], ex - w.r[0] + m), rh = Math.min(w.r[3] - w.r[1], ey - w.r[1] + m);
     const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, w.z, ex > w.r[0] ? W / rw : Infinity, ey > w.r[1] ? H / rh : Infinity));
     if (z === this.cam.z && w.r[0] === this.cam.x && w.r[1] === this.cam.y) return false;
-    this.cam = { x: w.r[0], y: w.r[1], z };
+    this.cam = { x: padCamXY(w.r[0]), y: padCamXY(w.r[1]), z };
     return true;
   }
   _camQuiet(f) { this._quietCam = true; try { f(); } finally { this._quietCam = false; } }
@@ -612,7 +663,7 @@ class Pad {
     let hx = cx, hy = cy;
     for (const s of this.strokes) { const b = this._bounds(s); hx = Math.max(hx, cx - b[0] + 6, b[2] - cx + 6); hy = Math.max(hy, cy - b[1] + 6, b[3] - cy + 6); }
     const z = Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, W / (2 * hx), H / (2 * hy)));
-    const cam = { x: cx - W / z / 2, y: cy - H / z / 2, z };
+    const cam = { x: padCamXY(cx - W / z / 2), y: padCamXY(cy - H / z / 2), z };
     if (Math.abs(cam.x - this.cam.x) < 1e-9 && Math.abs(cam.y - this.cam.y) < 1e-9 && cam.z === this.cam.z) return false;
     this.cam = cam;
     return true;
@@ -700,7 +751,11 @@ class Pad {
     // own, or with the strokes it broke off from a moment ago (a pen that left the glass at a turn, a touch frame that lost
     // a fast finger)
     const scribbly = !P.snap && this.o.scribble !== false && (!T.kind || T.kind === 'pen' || T.kind === 'marker');
-    if (scribbly && (this._scribbleOut(el, info) || this._scribbleJoin(el, info, P, T))) return;
+    // (a failure in the detection keeps the stroke as ink: _scribbleOut changes nothing until it has decided)
+    let gone = false;
+    this._scribbled = false;
+    if (scribbly) { try { gone = this._scribbleOut(el, info) || this._scribbleJoin(el, info, P, T); } catch (err) { gone = this._scribbled; this._fault('scribble', err); } }
+    if (gone) return;
     if (scribbly) this._lifted.set(el, { t0: P.te != null ? P.te : P.t0, t1: evTime(e, now), type: P.type, kind: T.kind || 'pen', color: T.color || null, size: T.size || null });
     this.strokes.push(el);
     this._push({ add: el });
@@ -853,6 +908,7 @@ class Pad {
     }
     this.why = 'scribble: ' + er.why + (take.size ? ' (' + take.size + ')' : '') + (piece.size ? ' (joined ' + (piece.size + 1) + ')' : '');
     if (!take.size && !hid.length) return false;
+    this._scribbled = true;                               // from here on the board changes: the stroke is not ink
     // the pieces it broke into go, and the steps that kept them (they are the last strokes and the last steps:
     // _scribbleJoin), so one Undo puts back the board as it was before the scribble began
     // (they fade with it: s is all of them)
@@ -1191,8 +1247,11 @@ class Pad {
   // Everything on the pad, on this.ctx (already in world units). image: true leaves out what is only for the writer at
   // the board (chips, the eraser's ring, the selection, the laser); X: {rect, paper, answers: 'shown' | 'all' | 'none',
   // only: a Set of elements} when exporting.
+  // One element or planned item that cannot be drawn is left out (said once) and the canvas put back as it was before
+  // it, so the rest of the board is drawn (_unpaint).
   _paint(image, X) {
-    const ctx = this.ctx;
+    const ctx = this.ctx, base = ctx.getTransform();
+    const bad = err => { this._unpaint(base); this._fault('paint', err); };
     this._ink();
     const ink = this._inkC, live = new Set(this.strokes), shown = new Set();
     const A = this.anim, e = A ? A.e : 1, view = (X && X.rect) || this.viewRect, only = X && X.only;
@@ -1206,14 +1265,14 @@ class Pad {
     const layer = this.o.layer === 'answers';            // only the answers (the strokes are the host's)
     // the paper, under everything
     if (this.o.paper && !layer && (!X || X.paper !== false) && typeof drawPaper === 'function') {
-      try { drawPaper(ctx, this.o.paper, view, this.cam.z, this._themeDark); } catch (err) { /* no paper then */ }
+      try { drawPaper(ctx, this.o.paper, view, this.cam.z, this._themeDark); } catch (err) { bad(err); }   // no paper then
     }
     // which read ink its view draws (tidied, in the writer's hand, typeset), and which is changing back to ink
     const items = this.plan && !only ? this.plan.items : [];
-    for (const it of items) if (!it.answer && it.from.every(s => live.has(s))) for (const s of it.from) shown.add(s);
+    for (const it of items) if (!it.answer && Array.isArray(it.from) && it.from.every(s => live.has(s))) for (const s of it.from) shown.add(s);
     const leaving = [];
     if (A && e < 1 && !only) for (const g of A.leaving) {
-      if (g.answer || !g.from.every(s => live.has(s))) continue;
+      if (g.answer || !Array.isArray(g.from) || !g.from.every(s => live.has(s))) continue;
       const rest = g.from.filter(s => !shown.has(s));
       if (rest.length) { leaving.push({ g, rest }); for (const s of rest) shown.add(s); }
     }
@@ -1222,63 +1281,69 @@ class Pad {
     for (let pass = 0; pass < 3 && !layer; pass++) for (const s of this.strokes) {
       if (only && !only.has(s)) continue;
       const t = this._tool(s), k = t === 'image' ? 0 : t === 'highlighter' ? 1 : 2;
-      if (k !== pass || shown.has(s) || !vis(s)) continue;
-      this._drawEl(s);
+      try { if (k !== pass || shown.has(s) || !vis(s)) continue; this._drawEl(s); } catch (err) { bad(err); }
     }
     // the read ink in its view; strokes still moving into it are drawn by the animation
     const colOf = it => padColor((this.info.get(it.from[0]) || {}).color, this._darkP, ink), widthOf = it => (it.from[0] ? this._size(it.from[0]) : this.o.width);
     const F = this._focusing, fk = F ? Math.max(0, 1 - (performance.now() - F.t0) / F.ms) : 0;
-    for (const it of items) {
+    const drawItem = it => {
       if (it.answer) {
-        if (answers === 'none') continue;
+        if (answers === 'none') return;
         answerSetup();
-        if (!this._answerShown(it, live, fresh)) continue;
+        if (!this._answerShown(it, live, fresh)) return;
         // waiting for a tap: out of focus at the board; a picture of the board leaves it out (no one can tap a picture,
         // and a blur is no lock), and an answer key (answers 'all') draws it sharp
-        if (it.hidden && !(image && answers === 'all')) { if (!image) this._drawBlurred(ctx, it, ans); continue; }
+        if (it.hidden && !(image && answers === 'all')) { if (!image) this._drawBlurred(ctx, it, ans); return; }
         // just tapped: the blur eases away
-        if (F && fk > 0 && !image && it.revealKey === F.key) { this._drawBlurred(ctx, it, ans, fk * fk); continue; }
+        if (F && fk > 0 && !image && it.revealKey === F.key) { this._drawBlurred(ctx, it, ans, fk * fk); return; }
         const was = A && A.from.get(it);
         if (was && e < 1) morphDraw(ctx, was, it, e, ans, this.o.width);
         else drawItems(ctx, [it], { ink: ans, width: this.o.width });
-        continue;
+        return;
       }
-      if (layer || !it.from.every(s => live.has(s))) continue;
+      if (layer || !it.from.every(s => live.has(s))) return;
       const was = A && A.from.get(it);
       if (was && e < 1) morphDraw(ctx, was, it, e, colOf(it), widthOf(it));
       else drawItems(ctx, [it], { ink: colOf(it), width: widthOf(it) });
-    }
+    };
+    for (const it of items) { try { drawItem(it); } catch (err) { bad(err); } }
     // views being left behind (back to ink, or symbols that no longer exist) fade out
     if (A && e < 1 && !only) {
       for (const g of A.leaving) {
-        if (!g.answer || g.hidden || answers === 'none') continue;
-        answerSetup(); if (this._answerShown(g, live, fresh)) drawItems(ctx, [g], { ink: ans, width: this.o.width, alpha: 1 - e });
+        try {
+          if (!g.answer || g.hidden || answers === 'none') continue;
+          answerSetup(); if (this._answerShown(g, live, fresh)) drawItems(ctx, [g], { ink: ans, width: this.o.width, alpha: 1 - e });
+        } catch (err) { bad(err); }
       }
       for (const { g, rest } of leaving) {
-        const raw = rawVisual(rest);
-        if (raw.parts[0].paths.length) morphDraw(ctx, g, raw, e, colOf(g), widthOf(g));
+        try {
+          const raw = rawVisual(rest);
+          if (raw.parts[0].paths.length) morphDraw(ctx, g, raw, e, colOf(g), widthOf(g));
+        } catch (err) { bad(err); }
       }
     }
     if (F && !image) { if (fk > 0) this._frame(); else this._focusing = null; }     // the next frame of an answer coming into focus
     if (image || layer) return;
     // what is being made right now: strokes (in their pen), shapes being dragged out, brief touches waiting for the pen
     for (const P of this.ptrs.values()) {
-      if (P.mode === 'draw' && P.cur) {
-        const T = P.tool || {};
-        if (P.snap) { this._drawEl(P.snap.pts, Object.assign({ tool: T.kind === 'highlighter' ? 'highlighter' : 'shape', shape: P.snap.shape, size: this._toolWidth(T) }, T.color ? { color: T.color } : {})); continue; }
-        this._drawEl(P.cur, Object.assign({ tool: T.kind || 'pen', size: this._toolWidth(T) }, T.color ? { color: T.color } : {}));
-      } else if (P.mode === 'shape' && P.prev) {
-        const S = this.shapeTool;
-        const axes = P.prev.shape === 'numberline' || P.prev.shape === 'plane';
-        this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill && !axes ? { fill: S.fill } : {}, S.dash && !axes ? { dash: true } : {}));
-      }
+      try {
+        if (P.mode === 'draw' && P.cur) {
+          const T = P.tool || {};
+          if (P.snap) { this._drawEl(P.snap.pts, Object.assign({ tool: T.kind === 'highlighter' ? 'highlighter' : 'shape', shape: P.snap.shape, size: this._toolWidth(T) }, T.color ? { color: T.color } : {})); continue; }
+          this._drawEl(P.cur, Object.assign({ tool: T.kind || 'pen', size: this._toolWidth(T) }, T.color ? { color: T.color } : {}));
+        } else if (P.mode === 'shape' && P.prev) {
+          const S = this.shapeTool;
+          const axes = P.prev.shape === 'numberline' || P.prev.shape === 'plane';
+          this._drawEl(P.prev.pts, Object.assign({ tool: 'shape', shape: P.prev.shape, size: S.size || 3, opt: P.prev.opt }, S.color ? { color: S.color } : {}, S.fill && !axes ? { fill: S.fill } : {}, S.dash && !axes ? { dash: true } : {}));
+        }
+      } catch (err) { bad(err); }
     }
-    for (const q of this.pending) this._drawEl(q.s);       // brief touches waiting to see whether the pen follows
+    for (const q of this.pending) { try { this._drawEl(q.s); } catch (err) { bad(err); } }   // brief touches waiting to see whether the pen follows
     // what a scribble just rubbed out, and the scribble, fading away
     const G = this._fade;
     if (G) {
       const k = 1 - (performance.now() - G.t0) / G.ms;
-      if (k > 0) { ctx.save(); ctx.globalAlpha = 0.6 * k * k; for (const g of G.list) this._drawEl(g.s, g.E); ctx.restore(); this._frame(); }
+      if (k > 0) { try { ctx.save(); ctx.globalAlpha = 0.6 * k * k; for (const g of G.list) this._drawEl(g.s, g.E); ctx.restore(); } catch (err) { bad(err); } this._frame(); }
       else this._fade = null;
     }
     // the eraser: a faint ring where it is
@@ -1287,9 +1352,18 @@ class Pad {
       ctx.save(); ctx.globalAlpha = 0.45; ctx.lineWidth = 1.5 / this.cam.z; ctx.strokeStyle = ink;
       ctx.beginPath(); ctx.arc(P.at[0], P.at[1], P.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     }
-    this._drawSel();
-    this._drawLasers();
-    if (this.o.boxes && this.result) this._boxes();
+    try { this._drawSel(); } catch (err) { bad(err); }
+    try { this._drawLasers(); } catch (err) { bad(err); }
+    if (this.o.boxes && this.result) { try { this._boxes(); } catch (err) { bad(err); } }
+  }
+  // After a drawing that threw: every save() it left open is closed (_paint draws at the bottom of the canvas's stack:
+  // a restore() with nothing saved does nothing) and the frame's transform and plain drawing state come back.
+  _unpaint(base) {
+    const ctx = this.ctx;
+    for (let i = 0; i < 64; i++) ctx.restore();
+    ctx.setTransform(base);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none'; ctx.shadowBlur = 0; ctx.shadowColor = 'rgba(0,0,0,0)';
+    ctx.setLineDash([]); ctx.lineDashOffset = 0;
   }
   // The board as a picture: the ink as the view shows it (answers that are showing included), at `scale` times its
   // size in CSS px, on `background` with an optional dot grid ({color, spacing, offset, radius}). Returns a canvas.
@@ -1349,8 +1423,17 @@ class Pad {
     finally { this.ctx = keep.ctx; this.anim = keep.anim; this.cam = keep.cam; this.o.paper = keep.paper; this._ink(); }
     return c;
   }
-  // Lays the latest reading out in the pad's view and starts the animation from what was on screen.
+  // Lays the latest reading out in the pad's view and starts the animation from what was on screen. A failure while
+  // doing it leaves the ink as written (no view, no answers), and is said once.
   _replan(animate) {
+    try { this._replanNow(animate); }
+    catch (err) {
+      this.plan = null; this.anim = null; this.answers = []; this._answered = new WeakMap();
+      this._fault('plan', err);
+      this.redraw();
+    }
+  }
+  _replanNow(animate) {
     const old = this.plan, style = this.o.view;
     const res = this.result, at = this.resultStrokes || [];
     let plan = null;
@@ -1408,7 +1491,7 @@ class Pad {
             const gy = box[1] - d.box[3], gx = Math.max(0, d.box[0] - box[2], box[0] - d.box[2]);
             if (gy > -0.5 * R && gy <= 4 * R && gx <= R && gy < gap) { above = d; gap = gy; }
           }
-          try { answers = solveRows(rows, this.o, above && above.eqs); } catch (err) { answers = null; }
+          try { answers = solveRows(rows, this.o, above && above.eqs); } catch (err) { answers = null; this._fault('answers', err); }
           const lastRow = rows[rows.length - 1];
           done.push({ box, eqs: (answers && answers.eqs) || [], lastRow, lastBox: rowBox(pr.tree[pr.tree.length - 1]),
             endsOp: ['+', '-', '\\times', '\\div', '\\cdot', '\\pm'].includes(lab(lastRow[lastRow.length - 1])) });
@@ -1445,7 +1528,7 @@ class Pad {
             return L.glyphs.get(label).pts;
           };
         };
-        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample: near, sampleFor }); } catch (err) { out = null; }
+        try { out = inPlace(part.strokes, style, { result: pr, hand: this.o.hand || undefined, answers: answers ? answers.map(a => a && a.nodes) : null, sample: near, sampleFor }); } catch (err) { out = null; this._fault('plan', err); }
         if (!out) continue;
         const groups = new Map();
         for (const it of out.items) {
@@ -1629,14 +1712,16 @@ class Pad {
       if (this.ptrs.get(P.id) !== P || P.snap || !P.cur || P.cur.length < 6) return;
       const b = sbox(P.cur), big = Math.max(b[2] - b[0], b[3] - b[1]);
       let r = null;
-      try { r = shapeRecognize(P.cur, { z: this.cam.z }); } catch (e) { r = null; }
-      if (!r || !r.pts || (P.tool.kind === 'highlighter' && r.shape !== 'line')) return;
-      // Only something bigger than the writing is meant as a shape: a 1, a 0 or a fraction bar held still a moment
-      // stays writing (and is read). A line at least 80 px on screen and 4 times the board's typical stroke, anything
-      // else 48 px and 2.5 times (with fewer than three strokes of writing on the board, the pixel sizes alone).
-      const ink = this.ink, line = r.shape === 'line' || r.shape === 'arrow';
-      const ref = ink.length >= 3 ? refSize(ink) : 0;
-      if (big * this.cam.z < (line ? 80 : 48) || big < (line ? 4 : 2.5) * ref) return;
+      try {
+        r = shapeRecognize(P.cur, { z: this.cam.z });
+        if (!r || !r.pts || (P.tool.kind === 'highlighter' && r.shape !== 'line')) return;
+        // Only something bigger than the writing is meant as a shape: a 1, a 0 or a fraction bar held still a moment
+        // stays writing (and is read). A line at least 80 px on screen and 4 times the board's typical stroke, anything
+        // else 48 px and 2.5 times (with fewer than three strokes of writing on the board, the pixel sizes alone).
+        const ink = this.ink, line = r.shape === 'line' || r.shape === 'arrow';
+        const ref = ink.length >= 3 ? refSize(ink) : 0;
+        if (big * this.cam.z < (line ? 80 : 48) || big < (line ? 4 : 2.5) * ref) return;
+      } catch (err) { this._fault('scribble', err); return; }          // the stroke stays a stroke
       P.snap = r; P.snapAt = P.cur[P.cur.length - 1]; this.why = 'shape: ' + r.shape;
       this.redraw();
     }, 600);
@@ -2118,7 +2203,8 @@ class Pad {
   // an element made in code: points (world) and its look ({tool, color, size, shape, ...}); one undoable step
   addElement(pts, look) {
     if (!Array.isArray(pts) || !pts.length) return null;
-    const s = pts.map(q => [+q[0], +q[1]]);
+    const s = pts.filter(Array.isArray).map(q => [coordOf(q[0]), coordOf(q[1])]).filter(q => isFinite(q[0]) && isFinite(q[1]));
+    if (!s.length) return null;
     this.info.set(s, Object.assign({ type: null, width: null }, look || {}));
     this.strokes.push(s); this._push({ add: s }); this._changed();
     return s;
@@ -2144,17 +2230,21 @@ class Pad {
       const step = () => {
         if (gen !== this.gen) return;
         const t0 = performance.now();
-        while (performance.now() - t0 < 14) if (it.next().done) { this.recognize(start); return; }
+        // (a failure in the warm-up is said by _warm; one outside a piece of writing ends it: the read itself copes)
+        const next = () => { try { return it.next().done; } catch (err) { this._fault('read', err); return true; } };
+        while (performance.now() - t0 < 14) if (next()) { this.recognize(start); return; }
         this.timer = setTimeout(step, 0);
       };
       step();
     }, ms);
   }
+  // The reading is kept and announced whatever happens after it: a view, the answers or the training log that fails
+  // leaves the ink as written (and is said once, _fault)
   _emit(res) {
     this.result = res;
     this.resultStrokes = res ? this.ink : [];
     this._replan(true);
-    if (this.o.train) this._trainSee();
+    if (this.o.train) this._safe('train', () => this._trainSee());
     if (this.o.boxes) this.redraw();
     if (this.o.onResult) this.o.onResult(res, this);
     this.el.dispatchEvent(new CustomEvent('nib:result', { detail: res, bubbles: true }));
@@ -2163,9 +2253,20 @@ class Pad {
     clearTimeout(this.timer); this.gen++;
     const ink = this.ink;
     if (!ink.length) { this._emit(null); return null; }
-    let res;
-    if (this.o.separate) res = this._readParts(this._ropts());
-    else res = this.rec.recognize(ink, Object.assign(this._ropts(), { fix: this._fixFor(ink) }));
+    const ro = this._ropts();
+    let res = null;
+    try {
+      if (this.o.separate) res = this._readParts(ro);
+      else {
+        // one expression: a read that fails reads as nothing, and the same ink is not read again until it changes
+        const key = this._partKey(ink, ro);
+        if (this._badWhole !== key) {
+          try { res = this.rec.recognize(ink, Object.assign(ro, { fix: this._fixFor(ink) })); if (!padReadingOK(res)) throw new Error('Nib: the reading came back malformed'); }
+          catch (err) { res = null; this._badWhole = key; this._fault('read', err); }
+        }
+      }
+    } catch (err) { res = null; this._fault('read', err); }
+    if (!res) res = padEmptyReading();
     if (typeof start === 'number') res.ms = Math.round(performance.now() - start); // the whole read, not just its last pass
     this._emit(res);
     return res;
@@ -2173,12 +2274,21 @@ class Pad {
   // the recognizer's options (the pad's own)
   _ropts() { const o = Object.assign({}, this.o); o.smooth = +o.smooth > 0 ? +o.smooth : 0; return o; }
   // the classifier work for the next read, one stroke group per step (newest ink first)
+  // (a group whose warm-up fails is not warmed or read again while its part key stays the same: _badParts)
   *_warm(ro) {
     const ink = this.ink;
-    if (!this.o.separate) { yield* this.rec.warmup(ink, Object.assign({}, ro, { fix: this._fixFor(ink) })); return; }
+    if (!this.o.separate) {
+      const key = this._partKey(ink, ro);
+      if (this._badWhole === key) return;
+      try { yield* this.rec.warmup(ink, Object.assign({}, ro, { fix: this._fixFor(ink) })); }
+      catch (err) { this._badWhole = key; this._fault('read', err); }
+      return;
+    }
     for (const g of clustersOf(ink)) {
       const st = g.map(i => ink[i]);
-      if (!this._partCached(st, ro)) yield* this._recFor(st[0]).warmup(st, Object.assign({}, ro, { fix: this._fixFor(st) }));
+      if (this._partCached(st, ro)) continue;
+      try { yield* this._recFor(st[0]).warmup(st, Object.assign({}, ro, { fix: this._fixFor(st) })); }
+      catch (err) { this._partBad(this._partKey(st, ro), err); }
     }
   }
   // the corrections that apply to these strokes, as indices into them
@@ -2186,14 +2296,18 @@ class Pad {
     return this.fixes.filter(f => f.strokes.every(x => st.includes(x))).map(f => ({ strokes: f.strokes.map(x => st.indexOf(x)), label: f.label }));
   }
   // A board: each group of writing is read on its own (and kept while it does not change), then put together.
+  // A group whose reading fails (an engine bug on some odd ink) reads as nothing and stays ink; the rest are read.
   _readParts(ro) {
     const ink = this.ink;
+    let bad = 0;                                          // strokes in groups that could not be read
     const read = groups => groups.map(g => {
       const st = g.map(i => ink[i]);
       const key = this._partKey(st, ro);
       let res = this.parts.get(key);
-      if (!res) {
-        res = this._recFor(st[0]).recognize(st, Object.assign({}, ro, { fix: this._fixFor(st) }));
+      if (!res && this._badParts.has(key)) { res = padEmptyReading(); bad += st.length; }
+      else if (!res) {
+        try { res = this._recFor(st[0]).recognize(st, Object.assign({}, ro, { fix: this._fixFor(st) })); if (!padReadingOK(res)) throw new Error('Nib: the reading came back malformed'); }
+        catch (err) { this._partBad(key, err); bad += st.length; return { idx: g, strokes: st, result: padEmptyReading() }; }
         if (this.parts.size > 300) this.parts.clear();
         this.parts.set(key, res);
       }
@@ -2205,15 +2319,24 @@ class Pad {
     for (let round = 0; round < 8; round++) {
       const joined = joinOperands(parts);
       if (!joined) break;
-      parts = read(joined);
+      const was = bad;
+      bad = 0;
+      const next = read(joined);
+      if (bad > was) { bad = was; break; }                 // joined to writing that cannot be read: kept apart
+      parts = next;
     }
     return joinParts(parts);
+  }
+  _partBad(key, err) {
+    if (this._badParts.size > 300) this._badParts.clear();
+    this._badParts.add(key);
+    this._fault('read', err);
   }
   _partKey(st, ro) {
     const fx = this.fixes.filter(f => f.strokes.every(x => st.includes(x))).map(f => f.strokes.map(x => this._sid(x)).join('.') + '=' + f.label).join(';');
     return st.map(x => this._sid(x)).join(',') + '|' + fx + '|' + this.optsVersion + '|' + MEM.version;
   }
-  _partCached(st, ro) { return this.parts.has(this._partKey(st, ro)); }
+  _partCached(st, ro) { const k = this._partKey(st, ro); return this.parts.has(k) || this._badParts.has(k); }
   _recFor(first) { let r = this.recs.get(first); if (!r) { r = new Recognizer(); this.recs.set(first, r); } return r; }
   // re-label one recognized symbol (from result.symbols[i].candidates) and re-run
   // the reading's LaTeX with the answers written in after their "="
@@ -2314,8 +2437,10 @@ class Pad {
   // every element's points as [x, y, t] (a pen's pressure, kept as a fourth number inside, is left out)
   getStrokes() { return this.strokes.map(s => s.map(p => p.slice(0, 3))); }
   // [[x, y, t?], ...] or {x, y, t?} points, or {points} strokes; a stroke with no usable point is null
+  // (a coordinate is a number or a numeric string within COORD_MAX: coordOf; a null, '' or true is no coordinate)
   _cleanStrokes(strokes) {
-    const pt = p => (Array.isArray(p) ? [+p[0], +p[1], +p[2] || 0] : p && typeof p === 'object' ? [+p.x, +p.y, +p.t || 0] : null);
+    const t = v => (typeof v === 'number' || typeof v === 'string' ? +v || 0 : 0);
+    const pt = p => (Array.isArray(p) ? [coordOf(p[0]), coordOf(p[1]), t(p[2])] : p && typeof p === 'object' ? [coordOf(p.x), coordOf(p.y), t(p.t)] : null);
     return (Array.isArray(strokes) ? strokes : [])
       .map(s => (Array.isArray(s) ? s : s && Array.isArray(s.points) ? s.points : []).map(pt).filter(p => p && isFinite(p[0]) && isFinite(p[1])))
       .map(s => (s.length ? s : null));
@@ -2525,7 +2650,7 @@ class Pad {
   _putView(c) {
     const d = this.dpr || 1, W = this.canvas.width / d, H = this.canvas.height / d;
     const ok = c && isFinite(+c.x) && isFinite(+c.y) && +c.z > 0;
-    const z = ok ? Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, +c.z)) : 1, x = ok ? +c.x : 0, y = ok ? +c.y : 0;
+    const z = ok ? Math.max(PAD_ZMIN, Math.min(PAD_ZMAX, +c.z)) : 1, x = ok ? padCamXY(c.x) : 0, y = ok ? padCamXY(c.y) : 0;
     const w = ok && +c.w > 0 ? +c.w : W, h = ok && +c.h > 0 ? +c.h : H;
     this.cam = { x, y, z };
     this._want = { r: [x, y, x + w / z, y + h / z], z };
@@ -2598,18 +2723,21 @@ class Pad {
       if (this._trainReached(p.strokes, fresh)) { wait = Math.min(wait, 1000); continue; }   // being added to
       this._trainRecord(p, k);
     }
-    if (wait < Infinity) this._trainTimer = setTimeout(() => this._trainTick(), wait + 20);
+    if (wait < Infinity) this._trainTimer = setTimeout(() => this._safe('train', () => this._trainTick()), wait + 20);
   }
   // the page is being left (another page, Clear, deleted, the tab closed): keep every piece read on it now
   trainFlush() {
     if (!this.o.train) return 0;
-    const live = new Set(this.strokes), fresh = this._fresh();
     let n = 0;
-    for (const p of this._trainParts()) {
-      const k = this._trainKey(p.strokes);
-      if (this._trainDone(k) || !p.strokes.every(s => live.has(s)) || this._trainReached(p.strokes, fresh)) continue;
-      this._trainRecord(p, k); n++;
-    }
+    // (called on the way to Clear, another page and the like: a failure here must not stop them)
+    this._safe('train', () => {
+      const live = new Set(this.strokes), fresh = this._fresh();
+      for (const p of this._trainParts()) {
+        const k = this._trainKey(p.strokes);
+        if (this._trainDone(k) || !p.strokes.every(s => live.has(s)) || this._trainReached(p.strokes, fresh)) continue;
+        this._trainRecord(p, k); n++;
+      }
+    });
     return n;
   }
   _trainRecord(p, key) {

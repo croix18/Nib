@@ -29,6 +29,14 @@
 
 // the bars (measured: see test/scribble_check.js)
 const SCR = { share: 0.6, group: 0.5, fin: 0.75, deep: 0.125 };
+// What a scribble can be at most (1.6.7): more points, a longer path (screen px) or more turns along an axis than this
+// is ink, and is not looked at further (a stroke through the API with large coordinates took minutes, one of 200,000
+// points never finished). A scribble-out by hand is a few seconds of the pen going back and forth: a few hundred to a
+// few thousand points (a pen's coalesced events come about 240 a second), tens of legs. The bounds are far above that
+// because test/scribble_check.js scribbles over whole lines of writing with synthetic strokes up to 111,552 points,
+// 305,660 px and 447 turns, and its counts must not move; under them the work is kept down by the faster measures in
+// scrRepeats, scrDistC and scrOverlap (the same answers as before: test/hardening_check.js).
+const SCR_MAX = { points: 120000, path: 320000, legs: 500 };
 function scrLen(pts) { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; }
 function scrBox(pts) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -118,7 +126,7 @@ function scrSharp(pts, turns, R) {
 // average, within a tenth of its length and at most d) from end to end (both ends near that leg's ends).
 function scrRepeats(pts, turns, d) {
   const cut = [0].concat(turns, [pts.length - 1]), legs = [];
-  for (let k = 0; k + 1 < cut.length; k++) if (cut[k + 1] > cut[k]) { const L = pts.slice(cut[k], cut[k + 1] + 1); legs.push({ pts: L, len: scrLen(L) }); }
+  for (let k = 0; k + 1 < cut.length; k++) if (cut[k + 1] > cut[k]) { const L = pts.slice(cut[k], cut[k + 1] + 1); legs.push({ pts: L, len: scrLen(L), box: scrBox(L) }); }
   let n = 0, of = 0;
   for (let k = 2; k < legs.length; k++) {
     const leg = legs[k], m = Math.max(1, Math.floor(leg.pts.length / 8)), probe = [];
@@ -127,12 +135,21 @@ function scrRepeats(pts, turns, d) {
     const near = Math.min(d, Math.max(0.4 * d, 0.1 * leg.len)), ends = Math.max(1.2 * d, 0.15 * leg.len);
     const a0 = leg.pts[0], a1 = leg.pts[leg.pts.length - 1];
     let hit = false;
-    for (let j = 0; j <= k - 2 && !hit; j++) {
+    for (let j = k - 2; j >= 0 && !hit; j--) {                     // (nearest first: any one is enough)
       const o = legs[j].pts, b0 = o[0], b1 = o[o.length - 1], dd = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
       if (!((dd(a0, b0) <= ends && dd(a1, b1) <= ends) || (dd(a0, b1) <= ends && dd(a1, b0) <= ends))) continue;
-      let t = 0;
-      for (const p of probe) t += scrDist(p, o);
-      if (t / probe.length <= near) hit = true;
+      // (how far the points are from the other leg's box is never more than how far they are from the leg: when even
+      // that is past the bar, with a margin far above rounding, the leg is not on it; the leg is measured in pieces with
+      // their boxes; and the sum only grows, so once it is past the bar the rest need not be measured — the same answer
+      // as measuring every point against the whole leg, without the work)
+      const B = legs[j].box;
+      let lo = 0;
+      for (const p of probe) lo += Math.hypot(Math.max(B[0] - p[0], 0, p[0] - B[2]), Math.max(B[1] - p[1], 0, p[1] - B[3]));
+      if (lo * (1 - 1e-9) / probe.length > near) continue;
+      let t = 0, past = false;
+      const C = legs[j].chunks || (legs[j].chunks = scrChunks(o, 16));
+      for (const p of probe) { t += scrDistC(p, C); if (t / probe.length > near) { past = true; break; } }
+      if (!past && t / probe.length <= near) hit = true;
     }
     of++;
     if (hit) n++;
@@ -192,15 +209,23 @@ function scrLoopy(pts, len, z) {
 // how much of the path runs along another part of itself, within d: a stroke gone over again (to darken it, or to
 // mend it) runs along itself nearly all the way; a scribble only where it turns. The path walked in steps of d/2;
 // what is within d of a point farther along it than 3 d (not its own neighbours), as a share of the points.
+// (its grid: a Map of columns, each a Map of cells, keyed by the numbers themselves — the same cells as 'x,y' strings
+// were, without making a string per point)
 function scrOverlap(pts, d) {
-  const q = scrWalk(pts, d / 2), cell = new Map(), key = (x, y) => x + ',' + y;
-  q.forEach((p, i) => { const k = key(Math.floor(p[0] / d), Math.floor(p[1] / d)); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(i); });
+  const q = scrWalk(pts, d / 2), cols = new Map();
+  const cellAt = (x, y) => { const c = cols.get(x); return c ? c.get(y) : undefined; };
+  q.forEach((p, i) => {
+    const x = Math.floor(p[0] / d), y = Math.floor(p[1] / d);
+    let c = cols.get(x); if (!c) { c = new Map(); cols.set(x, c); }
+    let l = c.get(y); if (!l) { l = []; c.set(y, l); }
+    l.push(i);
+  });
   let n = 0;
   for (let i = 0; i < q.length; i++) {
     const p = q[i], cx = Math.floor(p[0] / d), cy = Math.floor(p[1] / d);
     let hit = false;
     for (let dx = -1; dx <= 1 && !hit; dx++) for (let dy = -1; dy <= 1 && !hit; dy++) {
-      for (const j of cell.get(key(cx + dx, cy + dy)) || []) if (Math.abs(i - j) > 6 && Math.hypot(q[j][0] - p[0], q[j][1] - p[1]) <= d) { hit = true; break; }
+      for (const j of cellAt(cx + dx, cy + dy) || []) if (Math.abs(i - j) > 6 && Math.hypot(q[j][0] - p[0], q[j][1] - p[1]) <= d) { hit = true; break; }
     }
     if (hit) n++;
   }
@@ -242,9 +267,15 @@ function scrNear(q, chunks, r) {
   }
   return false;
 }
-// the distance from p to the path, with its pieces' boxes to skip the far ones
+// the distance from p to the path, with its pieces' boxes to skip the far ones (measured first to the piece whose box is
+// nearest, so the rest are skipped from the start: the same nearest distance, found with far less work)
 function scrDistC(p, chunks) {
-  let best = Infinity;
+  let best = Infinity, first = null, lo = Infinity;
+  for (const c of chunks) {
+    const b = c.box, dx = Math.max(b[0] - p[0], 0, p[0] - b[2]), dy = Math.max(b[1] - p[1], 0, p[1] - b[3]), v = dx * dx + dy * dy;
+    if (v < lo) { lo = v; first = c; }
+  }
+  if (first) best = scrDist(p, first.part);
   for (const c of chunks) {
     const b = c.box, dx = Math.max(b[0] - p[0], 0, p[0] - b[2]), dy = Math.max(b[1] - p[1], 0, p[1] - b[3]);
     if (dx * dx + dy * dy >= best * best) continue;
@@ -267,11 +298,13 @@ function scrFill(dists, r) { let n = 0; for (const d of dists) if (d <= r) n++; 
 function scrQuant(dists, q) { return dists.length ? dists[Math.min(dists.length - 1, Math.floor(q * dists.length))] : 0; }
 function scribbleOf(pts, z) {
   z = z > 0 ? z : 1;
-  if (!Array.isArray(pts) || pts.length < 8) return null;
+  if (!Array.isArray(pts) || pts.length < 8 || pts.length > SCR_MAX.points) return null;
   for (const p of pts) if (!(p && isFinite(p[0]) && isFinite(p[1]))) return null;
   const box = scrBox(pts), big = Math.max(box[2] - box[0], box[3] - box[1]);
   if (big * z < 12) return null;                                   // a jot, not a scribble
-  const len = scrLen(pts), hull = scrHull(pts), A = Math.max(scrArea(hull), 1e-9), dense = len * len / A;
+  const len = scrLen(pts);
+  if (!(len * z <= SCR_MAX.path)) return null;                     // longer than any scribble (or no length at all)
+  const hull = scrHull(pts), A = Math.max(scrArea(hull), 1e-9), dense = len * len / A;
   if (dense < 20) return null;
   const axes = scrAxes(pts), span = ax => { let lo = Infinity, hi = -Infinity; for (const p of pts) { const v = p[0] * ax[0] + p[1] * ax[1]; if (v < lo) lo = v; if (v > hi) hi = v; } return hi - lo; };
   // it spans something across its length: a line gone over again and again (a 1 or a bar retraced) is not a scribble
@@ -279,6 +312,7 @@ function scribbleOf(pts, z) {
   let sc = null;
   for (const ax of axes) {
     const L = scrLegs(pts, ax);
+    if (L.turns.length >= SCR_MAX.legs) return null;               // more legs than a hand makes
     // legs at least 12 px, five or more, each at least half the longest; across most of the stroke — or, many and
     // close-packed, moving along a line of writing (up and down over a whole equation)
     if (!(L.R * z >= 12 && (L.R >= 0.25 * big || (L.n >= 8 && dense >= 40)) && L.n >= 5 && len >= 4 * L.R)) continue;
@@ -300,7 +334,8 @@ function scribbleOf(pts, z) {
   // and it is not a stroke gone over again: a letter or a digit written over to darken it runs along itself nearly all
   // the way and fills little of what it spans (a scribble runs along itself only where it turns; a tangle that crosses
   // itself everywhere still fills what it spans)
-  if (sc && scrOverlap(pts, 1.5 / z) >= 0.9 && scrFill(reach(), gap) < 0.67) sc = null;
+  // (the fill first: it is measured for every scribble anyway, and the walk along the path costs far more)
+  if (sc && scrFill(reach(), gap) < 0.67 && scrOverlap(pts, 1.5 / z) >= 0.9) sc = null;
   // a coil goes round and round one way, crossing itself (a stroke gone over again crosses itself too, back and forth)
   if (!sc && dense >= 45 && big * z >= 20 && scrLoopy(pts, len, z)) {
     const x = scrCrossings(pts, len);
@@ -333,9 +368,14 @@ function scrDepth(p, hull) {
 // what a scribble lies over: of a stroke's points (walked in small steps), how many are inside the scribble and
 // within its band (share), how many are inside it at all (fin), and how deep inside it the stroke is (the median of
 // its points' depths; 0 for those outside). {got, of, share, fin, depth}
+// is it a scribble as scribbleOf makes them (a host may hand anything to Nib.scribble.erase / .covers)?
+function scrIsScribble(sc) {
+  return !!sc && typeof sc === 'object' && Array.isArray(sc.hull) && Array.isArray(sc.chunks) && Array.isArray(sc.box) && Array.isArray(sc.path) &&
+    Array.isArray(sc.turns) && typeof sc.band === 'number' && typeof sc.reach === 'number' && sc.chunks.every(c => c && Array.isArray(c.part) && Array.isArray(c.box));
+}
 function scribbleCovers(sc, pts, z) {
   z = z > 0 ? z : 1;
-  if (!sc || !Array.isArray(pts) || !pts.length) return { got: 0, of: 0, share: 0, fin: 0, depth: 0 };
+  if (!scrIsScribble(sc) || !Array.isArray(pts) || !pts.length) return { got: 0, of: 0, share: 0, fin: 0, depth: 0 };
   const m = sc.band, B = sc.box, b = scrBox(pts);
   const size = Math.max(b[2] - b[0], b[3] - b[1]), step = Math.max(0.5 / z, Math.min(m / 2, size / 12 || m / 2));
   // nowhere near it: none of it (counted as the points it would be walked in, for a symbol's share)
@@ -410,6 +450,7 @@ function scrMeet(a, b) {
 function scribbleErase(sc, items, z) {
   z = z > 0 ? z : 1;
   const out = { erase: [], why: '', shares: [] };
+  if (sc && !scrIsScribble(sc)) { out.why = 'not a scribble'; return out; }
   if (!sc || !Array.isArray(items) || !items.length) { out.why = 'nothing under it'; return out; }
   const S = items.map((it, i) => {
     const pts = it && Array.isArray(it.pts) ? it.pts : [];

@@ -42,6 +42,17 @@ function ubox(a, b) { return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.m
 function boxGap(a, b) { return Math.max(0, b[0] - a[2], a[0] - b[2], b[1] - a[3], a[1] - b[3]); }
 function plen(s) { let t = 0; for (let i = 1; i < s.length; i++) t += Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]); return t; }
 
+// A coordinate that came in from outside (a host, saved work, a file, the API): a finite number, or a string that is
+// one ('12.5'), no farther than COORD_MAX from the origin; anything else is NaN, and its point is dropped. null, '',
+// true and [] are not coordinates (+null is 0: a NaN saved as JSON comes back as null, and would be a spike to the
+// origin). No board reaches 1e9 (the pad's camera is held inside it), and past it the float math of the classifier
+// and the layout can overflow.
+const COORD_MAX = 1e9;
+function coordOf(v) {
+  const x = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? +v : NaN;
+  return x >= -COORD_MAX && x <= COORD_MAX ? x : NaN;
+}
+
 function refSize(strokes) {
   const sz = strokes.map(s => { const b = sbox(s); return Math.max(b[2] - b[0], b[3] - b[1]); });
   const r = median(sz);
@@ -440,15 +451,24 @@ const PRESETS = {
     '\\infty', '\\ldots', '\\gamma', '\\lambda', '\\mu', '\\sigma', '\\phi', '\\{', '\\}', '!', 'l', 'I', 'o', 'O', 'X'] },
   numbers: { include: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ',', '-', '+', '/', '%', '$', '(', ')', '\\times', '\\div', '='] },
 };
+// what `symbols` names: a preset (looked up as its own property, so 'constructor' or '__proto__' is no preset), null
+// (all), an array of labels, or {include} / {exclude} (arrays); undefined for anything else
+function symbolSpec(symbols) {
+  if (symbols === undefined) return PRESETS.school;
+  if (typeof symbols === 'string') return Object.prototype.hasOwnProperty.call(PRESETS, symbols) ? PRESETS[symbols] : undefined;
+  if (symbols === null || Array.isArray(symbols)) return symbols;
+  if (typeof symbols === 'object' && (Array.isArray(symbols.include) || Array.isArray(symbols.exclude))) return symbols;
+  return undefined;
+}
 // times === false: × is never read (every cross is the letter x; multiply with · or brackets)
 function allowedMask(symbols, times) {
   const { cls, junk } = model();
   const mask = new Uint8Array(cls.length);
-  let spec = symbols === undefined ? PRESETS.school : (typeof symbols === 'string' ? PRESETS[symbols] : symbols);
-  if (spec === undefined) throw new Error('Nib: unknown symbol set ' + symbols);
+  const spec = symbolSpec(symbols);
+  if (spec === undefined) throw new Error('Nib: unknown symbol set ' + (typeof symbols === 'string' ? symbols : '(a ' + typeof symbols + ')'));
   if (spec === null) mask.fill(1);
   else if (Array.isArray(spec)) { for (const s of spec) if (s in model().idx) mask[model().idx[s]] = 1; }
-  else if (spec.include) { for (const s of spec.include) if (s in model().idx) mask[model().idx[s]] = 1; }
+  else if (Array.isArray(spec.include)) { for (const s of spec.include) if (s in model().idx) mask[model().idx[s]] = 1; }
   else { mask.fill(1); for (const s of spec.exclude) if (s in model().idx) mask[model().idx[s]] = 0; }
   if (times === false && '\\times' in model().idx) mask[model().idx['\\times']] = 0;
   mask[junk] = 1; mask[model().idx['-']] = 1;

@@ -38,10 +38,13 @@ function storePack(points, withPressure) {
   const wp = withPressure === undefined ? pts.some(q => q && q.length > 3 && Number.isFinite(q[3])) : !!withPressure;
   let buf = storeBuf, n = 0, lx = 0, ly = 0, lp = 0, any = false;
   buf[n++] = STORE_CODE[wp ? 1 : 0];
+  // a coordinate is a number or a numeric string: a null (a NaN that went through JSON), '', true or [] is none, and
+  // its point is left out (+null is 0: a spike to the origin)
+  const num = v => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? +v : NaN);
   for (let i = 0; i < pts.length; i++) {
     const q = pts[i];
     if (!q) continue;
-    const x = +q[0], y = +q[1];
+    const x = num(q[0]), y = num(q[1]);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
     if (n + 33 > buf.length) { const b = new Uint8Array(buf.length * 2); b.set(buf.subarray(0, n)); storeBuf = buf = b; }   // 3 values of up to 11 digits
     const X = storeQ(x * 10), Y = storeQ(y * 10);
