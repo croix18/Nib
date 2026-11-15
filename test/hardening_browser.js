@@ -241,7 +241,8 @@ const written = (tex, x, y, h) => {
     const read = await page.waitForFunction(() => { const P = document.getElementById('pad').pad; return P.result && P.resultStrokes.length === P.ink.length && P.result.parts && P.result.parts.some(p => /8\s*\+\s*1\s*=/.test(p.result.latex)); }, { timeout: 15000 }).then(() => true, () => false);
     const n1 = await page.evaluate(() => document.getElementById('pad').pad.strokes.length);
     ok(n1 === n0 + D.length && read, `the writing there is read (${n0} → ${n1} strokes; 8+1= ${read ? 'read' : 'not read'})`);
-    await wait(1500);
+    // (the Board saves half a second after the last change or reading: wait for the save itself)
+    await page.waitForFunction(n => { try { const d = JSON.parse(localStorage.getItem('nib-board-v3')); return d.pages[d.page].pk.length === n; } catch (e) { return false; } }, { timeout: 8000 }, n1).catch(() => {});
     const saved = await page.evaluate(() => { try { const d = JSON.parse(localStorage.getItem('nib-board-v3')); return d.pages[d.page].pk.length; } catch (e) { return -1; } });
     await page.reload({ waitUntil: 'load' });
     await page.waitForFunction(() => document.getElementById('pad').pad, { timeout: 10000 });
@@ -305,9 +306,11 @@ const written = (tex, x, y, h) => {
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5); await page.mouse.down();
     for (let i = 1; i <= 20; i++) await page.mouse.move(box.x + box.width * (0.5 + i * 0.5), box.y + box.height * (0.5 + i * 0.3));
     await page.mouse.up();
-    await wait(400);
-    const st = await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('replicator-v1') || '{}'); const ch = document.querySelector('.box .ch').textContent, s = d.glyphs[ch]; const last = s[s.length - 1]; return { ch, last, max: Math.max(...last.map(p => Math.max(p[0], p[1]))) }; });
-    ok(st.max <= 2 && st.max >= 1.9, `a stroke dragged ten boxes out of "${st.ch}" is kept to it and a box around it (reaches ${st.max})`);
+    // the Replicator saves 0.4 s after a change, later when the page is busy building its font: wait for the save
+    // itself (the letter's third stroke, after the two it was opened with), not for a fixed time
+    await page.waitForFunction(() => { const d = JSON.parse(localStorage.getItem('replicator-v1') || '{}'), ch = document.querySelector('.box .ch').textContent; return !!(d.glyphs && d.glyphs[ch] && d.glyphs[ch].length >= 3); }, { timeout: 8000 }).catch(() => {});
+    const st = await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('replicator-v1') || '{}'); const ch = document.querySelector('.box .ch').textContent, s = d.glyphs[ch]; const last = s[s.length - 1]; return { ch, last, n: s.length, max: Math.max(...last.map(p => Math.max(p[0], p[1]))) }; });
+    ok(st.n === 3 && st.max <= 2 && st.max >= 1.9, `a stroke dragged ten boxes out of "${st.ch}" is kept to it and a box around it (reaches ${st.max}; ${st.n} strokes saved)`);
     // (saved again with that stroke: what was opened is saved as it was taken in)
     const held = await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('replicator-v1') || '{}'); const all = [].concat(...Object.values(d.glyphs || {}).map(st => [].concat(...st)), ...Object.values(d.samples || {}).map(l => [].concat(...l.map(st => [].concat(...st))))); return { n: all.length, out: all.filter(p => p[0] < -1 || p[0] > 2 || p[1] < -1 || p[1] > 2).length }; });
     ok(held.n > 100 && held.out === 0, `the letters opened from storage are held to the box and a box around it (${held.out} of ${held.n} points outside)`);
